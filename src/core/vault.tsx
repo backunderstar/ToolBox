@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -56,6 +57,14 @@ export function useVault(): VaultContextValue {
 }
 
 export function VaultProvider({ children }: { children: ReactNode }) {
+  // 调试模式：?mock=1 时在浏览器（无 Tauri）中也能渲染笔记界面
+  const isMock = useMemo(
+    () => new URLSearchParams(window.location.search).has("mock"),
+    []
+  );
+  const isMockRef = useRef(isMock);
+  isMockRef.current = isMock;
+
   const [path, setPath] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -97,6 +106,11 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const save = useCallback(
     async (manual = false) => {
+      if (isMockRef.current) {
+        dirtyRef.current = false;
+        setDirty(false);
+        return;
+      }
       const { path: p, activePath: ap, content: c } = stateRef.current;
       if (!p || !ap) return;
       try {
@@ -121,6 +135,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const openFile = useCallback(
     async (rel: string) => {
+      if (isMockRef.current) return;
       const p = stateRef.current.path;
       if (!p) return;
       if (dirtyRef.current) await save(false);
@@ -146,6 +161,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   );
 
   const pickVault = useCallback(async () => {
+    if (isMockRef.current) return;
     try {
       const sel = (await open({
         directory: true,
@@ -166,6 +182,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [refresh, flash]);
 
   const newNote = useCallback(async () => {
+    if (isMockRef.current) return;
     const p = stateRef.current.path;
     if (!p) return;
     const ts = new Date()
@@ -184,6 +201,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const removeFile = useCallback(
     async (rel: string) => {
+      if (isMockRef.current) return;
       const p = stateRef.current.path;
       if (!p) return;
       try {
@@ -212,6 +230,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const renameFile = useCallback(
     async (from: string, to: string) => {
+      if (isMockRef.current) return;
       const p = stateRef.current.path;
       if (!p || from === to) return;
       try {
@@ -237,8 +256,18 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [save]
   );
 
-  /* 启动：读取已保存的工作区 + 最近打开 */
+  /* 启动：读取已保存的工作区 + 最近打开（mock 模式则用内置示例） */
   useEffect(() => {
+    if (isMock) {
+      setPath("mock-vault");
+      setFiles([{ name: "示例笔记.md", path: "示例笔记.md", isDir: false }]);
+      setActivePath("示例笔记.md");
+      setContent(
+        "# 示例笔记\n\n欢迎使用 ToolBox。\n\n- 列表一\n- 列表二\n\n```js\nconsole.log(1)\n```\n\n> 引用内容\n\n**加粗** 与 $E=mc^2$"
+      );
+      setRecent(["示例笔记.md"]);
+      return;
+    }
     let alive = true;
     (async () => {
       try {
@@ -261,7 +290,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [refresh, flash]);
+  }, [refresh, flash, isMock]);
 
   /* 搜索：防抖调用 Rust 全文搜索 */
   useEffect(() => {

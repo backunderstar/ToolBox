@@ -24,7 +24,9 @@ export default function App() {
 
 function AppInner() {
   const vault = useVault();
-  const [view, setView] = useState<ViewId>("overview");
+  const [view, setView] = useState<ViewId>(() =>
+    new URLSearchParams(window.location.search).has("mock") ? "notes" : "overview"
+  );
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [pingInfo, setPingInfo] = useState<PingInfo | null>(null);
 

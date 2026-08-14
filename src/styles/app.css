@@ -780,24 +780,54 @@
 }
 
 /* ============ Vditor 编辑器主题化（跟随设计令牌） ============ */
-.editor-host .vditor {
+/* 注意：Vditor 会把 vditor 类加到宿主元素本身，所以宿主级选择器用 .editor-host.vditor（同一元素），
+   子元素（工具栏/内容区等）用后代选择器 .editor-host .vditor-* */
+.editor-host.vditor {
+  --toolbar-background-color: var(--bg-soft);
+  --toolbar-icon-color: var(--fg-muted);
+  --toolbar-icon-hover-color: var(--accent);
+  --panel-background-color: var(--bg-elevated);
+  --panel-shadow: var(--shadow-2);
+  --textarea-background-color: var(--bg-elevated);
+  --textarea-text-color: var(--fg);
+  --border-color: var(--border);
+  --second-color: var(--border-strong);
+  --blockquote-color: var(--fg-muted);
+  --heading-border-color: var(--border);
+  --ir-bi-color: var(--accent-strong);
+  --ir-bracket-color: var(--fg-muted);
+  --ir-heading-color: var(--accent-strong);
+  --ir-link-color: var(--accent);
+  --ir-paren-color: var(--accent-strong);
+  --ir-title-color: var(--fg-faint);
+  --count-background-color: var(--accent-soft);
+  --resize-icon-color: var(--fg-faint);
+  --resize-hover-background-color: var(--accent-soft);
+  --resize-hover-icon-color: var(--accent-strong);
+  --callout-note-color: var(--pastel-blue-fg);
+  --callout-tip-color: var(--pastel-green-fg);
+  --callout-warning-color: var(--pastel-yellow-fg);
+  --callout-caution-color: var(--pastel-red-fg);
+  --callout-important-color: var(--accent-strong);
+  --callout-note-background-color: var(--pastel-blue-bg);
+  --callout-tip-background-color: var(--pastel-green-bg);
+  --callout-warning-background-color: var(--pastel-yellow-bg);
+  --callout-caution-background-color: var(--pastel-red-bg);
+  --callout-important-background-color: var(--accent-soft);
+}
+
+.editor-host.vditor {
   border: none;
   border-radius: 0;
   background: var(--bg-elevated);
   color: var(--fg);
 }
 .editor-host .vditor-toolbar {
-  background: var(--bg-soft);
   border-bottom: 1px solid var(--border);
   padding: 4px 8px;
 }
-.editor-host .vditor-toolbar__item button,
-.editor-host .vditor-toolbar__item .vditor-tooltipped {
-  color: var(--fg-muted);
-}
 .editor-host .vditor-toolbar__item button:hover,
 .editor-host .vditor-toolbar__item .vditor-tooltipped:hover {
-  color: var(--fg);
   background: var(--bg-elevated);
   border-radius: var(--radius-sm);
 }
@@ -810,14 +840,14 @@
 .editor-host .vditor-ir,
 .editor-host .vditor-wysiwyg,
 .editor-host .vditor-preview {
-  padding: 20px 28px 45vh;
+  padding: 24px 32px 20vh;
   max-width: 920px;
   margin: 0 auto;
 }
 .editor-host .vditor-reset {
   color: var(--fg);
   font-family: var(--font-sans);
-  font-size: var(--text-md);
+  font-size: 15px;
   line-height: 1.75;
 }
 .editor-host .vditor-reset h1,
@@ -856,13 +886,6 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
-.editor-host .vditor-ir .vditor-ir__marker--heading,
-.editor-host .vditor-ir .vditor-ir__marker--bi,
-.editor-host .vditor-ir .vditor-ir__marker--quote,
-.editor-host .vditor-ir .vditor-ir__marker--b,
-.editor-host .vditor-ir .vditor-ir__marker--i {
-  color: var(--accent);
-}
 .editor-host .vditor-hint {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -878,6 +901,6 @@
 .editor-host .vditor-preview ::selection {
   background: var(--accent-soft);
 }
-.editor-host .vditor--fullscreen {
+.editor-host.vditor--fullscreen {
   background: var(--bg-elevated);
 }
