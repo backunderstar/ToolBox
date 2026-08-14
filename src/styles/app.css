@@ -157,6 +157,25 @@
   color: var(--pastel-green-fg);
 }
 
+/* 导航侧栏折叠：48px 图标窄条 */
+.sidebar.collapsed {
+  width: 48px;
+  padding: var(--space-4) 6px;
+}
+.sidebar.collapsed .nav-label {
+  display: none;
+}
+.sidebar.collapsed .nav-group {
+  margin-bottom: var(--space-4);
+}
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 6px 0;
+}
+.sidebar.collapsed .nav-item span {
+  display: none;
+}
+
 /* ---------- 主区：由各视图自行管理滚动与内边距 ---------- */
 .main {
   flex: 1;
@@ -447,6 +466,27 @@
   gap: var(--space-2);
   padding: var(--space-3) var(--space-3) var(--space-2);
   border-bottom: 1px solid var(--border);
+}
+
+/* 文件面板折叠：40px 竖条 + 展开按钮 */
+.files-pane.collapsed {
+  width: 40px;
+  align-items: center;
+  padding-top: var(--space-3);
+}
+.files-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.files-expand:hover {
+  background: var(--bg-elevated);
+  color: var(--fg);
 }
 .files-title {
   flex: 1;
@@ -840,8 +880,8 @@
 .editor-host .vditor-ir,
 .editor-host .vditor-wysiwyg,
 .editor-host .vditor-preview {
-  padding: 24px 32px 20vh;
-  max-width: 920px;
+  padding: 20px 28px 120px;
+  max-width: 1100px;
   margin: 0 auto;
 }
 .editor-host .vditor-reset {

@@ -104,6 +104,31 @@ export const IconChevronRight = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconChevronLeft = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M15 6l-6 6 6 6" />
+  </svg>
+);
+
+export const IconPanelLeft = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+  </svg>
+);
+
+export const IconExpand = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+  </svg>
+);
+
+export const IconShrink = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+  </svg>
+);
+
 export const IconChevronDown = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}>
     <path d="M6 9l6 6 6-6" />

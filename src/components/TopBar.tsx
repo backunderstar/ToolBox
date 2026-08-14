@@ -1,4 +1,4 @@
-import { IconFolder, IconMoon, IconSun } from "./icons";
+import { IconFolder, IconMoon, IconPanelLeft, IconSun } from "./icons";
 import type { ThemeMode } from "../themes/theme";
 
 interface TopBarProps {
@@ -9,6 +9,8 @@ interface TopBarProps {
   searchEnabled: boolean;
   vaultName: string | null;
   onPickVault: () => void;
+  navCollapsed: boolean;
+  onToggleNav: () => void;
 }
 
 export function TopBar({
@@ -19,9 +21,20 @@ export function TopBar({
   searchEnabled,
   vaultName,
   onPickVault,
+  navCollapsed,
+  onToggleNav,
 }: TopBarProps) {
   return (
     <header className="topbar">
+      <button
+        className="icon-btn"
+        onClick={onToggleNav}
+        title={navCollapsed ? "展开导航侧栏" : "收起导航侧栏"}
+        aria-label="切换导航侧栏"
+      >
+        <IconPanelLeft width={15} height={15} />
+      </button>
+
       <div className="topbar-brand">
         <span className="topbar-title">ToolBox</span>
         <span className="topbar-tag">v0.1.0 · M1</span>

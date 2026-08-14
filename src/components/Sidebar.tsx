@@ -44,14 +44,18 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
 interface SidebarProps {
   activeView: ViewId;
   onSelect: (view: ViewId) => void;
+  collapsed: boolean;
 }
 
-export function Sidebar({ activeView, onSelect }: SidebarProps) {
+export function Sidebar({ activeView, onSelect, collapsed }: SidebarProps) {
   return (
-    <nav className="sidebar" aria-label="主导航">
+    <nav
+      className={`sidebar${collapsed ? " collapsed" : ""}`}
+      aria-label="主导航"
+    >
       {GROUPS.map((group) => (
         <div className="nav-group" key={group.label}>
-          <div className="nav-label">{group.label}</div>
+          {!collapsed && <div className="nav-label">{group.label}</div>}
           {group.items.map((item) => {
             const Icon = item.icon;
             const isActive = item.id === activeView;
@@ -63,18 +67,19 @@ export function Sidebar({ activeView, onSelect }: SidebarProps) {
                 disabled={!isClickable}
                 title={
                   item.milestone
-                    ? `规划于 ${item.milestone} 里程碑`
+                    ? `${item.label}（规划于 ${item.milestone} 里程碑）`
                     : item.label
                 }
                 onClick={() => onSelect(item.id as ViewId)}
               >
                 <Icon width={16} height={16} />
-                <span>{item.label}</span>
-                {item.now ? (
-                  <span className="nav-badge badge-now">就绪</span>
-                ) : item.milestone ? (
-                  <span className="nav-badge badge-plan">{item.milestone}</span>
-                ) : null}
+                {!collapsed && <span>{item.label}</span>}
+                {!collapsed &&
+                  (item.now ? (
+                    <span className="nav-badge badge-now">就绪</span>
+                  ) : item.milestone ? (
+                    <span className="nav-badge badge-plan">{item.milestone}</span>
+                  ) : null)}
               </button>
             );
           })}

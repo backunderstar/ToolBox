@@ -3,13 +3,31 @@ import { useVault } from "../core/vault";
 import type { SearchHit } from "../core/api";
 import { Editor } from "./Editor";
 import { FileTree } from "./FileTree";
-import { IconFileText, IconFolder, IconPlus } from "./icons";
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconExpand,
+  IconFileText,
+  IconFolder,
+  IconPlus,
+  IconShrink,
+} from "./icons";
 
 interface NotesViewProps {
   dark: boolean;
+  filesCollapsed: boolean;
+  focusMode: boolean;
+  onToggleFiles: () => void;
+  onToggleFocus: () => void;
 }
 
-export function NotesView({ dark }: NotesViewProps) {
+export function NotesView({
+  dark,
+  filesCollapsed,
+  focusMode,
+  onToggleFiles,
+  onToggleFocus,
+}: NotesViewProps) {
   const vault = useVault();
   const {
     path,
@@ -56,42 +74,62 @@ export function NotesView({ dark }: NotesViewProps) {
 
   return (
     <div className="notes">
-      {/* 文件侧栏 */}
-      <aside className="files-pane">
-        <div className="files-header">
-          <span className="files-title" title={path}>
-            {vaultName}
-          </span>
-          <button className="icon-btn sm" title="新建笔记" onClick={newNote}>
-            <IconPlus width={14} height={14} />
-          </button>
-        </div>
-
-        {recent.length > 0 && (
-          <div className="recent-block">
-            <div className="recent-label">最近打开</div>
-            {recent.slice(0, 5).map((r) => (
-              <button
-                key={r}
-                className="recent-item"
-                title={r}
-                onClick={() => openFile(r)}
-              >
-                <IconFileText width={12} height={12} />
-                <span>{r.split("/").pop()}</span>
+      {/* 文件侧栏（专注模式或折叠时隐藏/收窄） */}
+      {!focusMode &&
+        (filesCollapsed ? (
+          <aside className="files-pane collapsed">
+            <button
+              className="files-expand"
+              onClick={onToggleFiles}
+              title="展开文件面板"
+            >
+              <IconChevronRight width={16} height={16} />
+            </button>
+          </aside>
+        ) : (
+          <aside className="files-pane">
+            <div className="files-header">
+              <span className="files-title" title={path}>
+                {vaultName}
+              </span>
+              <button className="icon-btn sm" title="新建笔记" onClick={newNote}>
+                <IconPlus width={14} height={14} />
               </button>
-            ))}
-          </div>
-        )}
+              <button
+                className="icon-btn sm"
+                title="收起文件面板"
+                onClick={onToggleFiles}
+              >
+                <IconChevronLeft width={14} height={14} />
+              </button>
+            </div>
 
-        <FileTree
-          files={files}
-          activePath={activePath}
-          onOpen={openFile}
-          onRemove={removeFile}
-          onRename={renameFile}
-        />
-      </aside>
+            {recent.length > 0 && (
+              <div className="recent-block">
+                <div className="recent-label">最近打开</div>
+                {recent.slice(0, 5).map((r) => (
+                  <button
+                    key={r}
+                    className="recent-item"
+                    title={r}
+                    onClick={() => openFile(r)}
+                  >
+                    <IconFileText width={12} height={12} />
+                    <span>{r.split("/").pop()}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <FileTree
+              files={files}
+              activePath={activePath}
+              onOpen={openFile}
+              onRemove={removeFile}
+              onRename={renameFile}
+            />
+          </aside>
+        ))}
 
       {/* 编辑器区域 */}
       <div className="editor-area">
@@ -113,6 +151,17 @@ export function NotesView({ dark }: NotesViewProps) {
                 {activePath}
               </span>
               <div className="spacer" />
+              <button
+                className="icon-btn sm"
+                onClick={onToggleFocus}
+                title={focusMode ? "退出专注模式" : "专注模式（隐藏侧栏，全屏书写）"}
+              >
+                {focusMode ? (
+                  <IconShrink width={14} height={14} />
+                ) : (
+                  <IconExpand width={14} height={14} />
+                )}
+              </button>
               <button className="btn-ghost sm" onClick={() => save(true)}>
                 {dirty ? "保存" : "已保存"}
               </button>

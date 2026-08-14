@@ -66,8 +66,12 @@ window.addEventListener(
   (e) => {
     const t = e.target as HTMLElement | null;
     const tag = t?.tagName;
-    const src = (t as HTMLScriptElement | HTMLImageElement | HTMLLinkElement | null)
-      ?.src ?? (t as HTMLLinkElement | null)?.href;
+    let src: string | undefined;
+    if (tag === "LINK") {
+      src = (t as HTMLLinkElement).href;
+    } else if (t instanceof HTMLScriptElement || t instanceof HTMLImageElement) {
+      src = t.src;
+    }
     if (tag === "SCRIPT" || tag === "LINK" || tag === "IMG") {
       console.error(`[resource-error] <${tag}> ${src ?? "(无地址)"}`);
     }

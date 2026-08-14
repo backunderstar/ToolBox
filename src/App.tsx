@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
+import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, getInitialTheme, type ThemeMode } from "./themes/theme";
 import { TopBar } from "./components/TopBar";
@@ -30,6 +31,21 @@ function AppInner() {
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [pingInfo, setPingInfo] = useState<PingInfo | null>(null);
 
+  /* 布局偏好：导航折叠 / 文件面板折叠 / 专注模式（持久化） */
+  const [navCollapsed, setNavCollapsed] = useState(
+    () => loadLayoutPrefs().navCollapsed
+  );
+  const [filesCollapsed, setFilesCollapsed] = useState(
+    () => loadLayoutPrefs().filesCollapsed
+  );
+  const [focusMode, setFocusMode] = useState(
+    () => loadLayoutPrefs().focusMode
+  );
+
+  useEffect(() => {
+    saveLayoutPrefs({ navCollapsed, filesCollapsed, focusMode });
+  }, [navCollapsed, filesCollapsed, focusMode]);
+
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
@@ -53,6 +69,9 @@ function AppInner() {
     ? (vault.path.split(/[\\/]/).pop() ?? vault.path)
     : null;
 
+  /* 专注模式：导航与文件面板全部隐藏，编辑器占满 */
+  const navHidden = focusMode;
+
   return (
     <div className="app">
       <TopBar
@@ -63,9 +82,17 @@ function AppInner() {
         searchEnabled={view === "notes" && !!vault.path}
         vaultName={vaultName}
         onPickVault={vault.pickVault}
+        navCollapsed={navCollapsed}
+        onToggleNav={() => setNavCollapsed((c) => !c)}
       />
       <div className="body">
-        <Sidebar activeView={view} onSelect={setView} />
+        {!navHidden && (
+          <Sidebar
+            activeView={view}
+            onSelect={setView}
+            collapsed={navCollapsed}
+          />
+        )}
         <main className="main">
           {view === "overview" ? (
             <WelcomeView
@@ -74,7 +101,13 @@ function AppInner() {
               onOpenNotes={() => setView("notes")}
             />
           ) : (
-            <NotesView dark={theme === "dark"} />
+            <NotesView
+              dark={theme === "dark"}
+              filesCollapsed={filesCollapsed}
+              focusMode={focusMode}
+              onToggleFiles={() => setFilesCollapsed((c) => !c)}
+              onToggleFocus={() => setFocusMode((f) => !f)}
+            />
           )}
         </main>
       </div>
