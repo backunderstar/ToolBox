@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "主窗口默认能力：基础 IPC 权限（M0 阶段无需额外插件权限）",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

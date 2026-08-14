@@ -1,0 +1,20 @@
+[package]
+name = "toolbox"
+version = "0.1.0"
+description = "ToolBox — 个人工具箱桌面应用（Rust 核心）"
+edition = "2021"
+
+[lib]
+name = "toolbox_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Windows 上链接 WebView2 需要，Tauri 2 默认启用
+[target.'cfg(windows)'.dependencies]

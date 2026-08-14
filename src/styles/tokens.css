@@ -1,0 +1,106 @@
+/* ============================================================
+   设计令牌（Design Tokens）
+   主题系统的基础：所有组件只引用变量，不写死颜色。
+   亮/暗两套通过 [data-theme] 切换，主题包（M5）覆盖本文件变量即可。
+   ============================================================ */
+
+:root {
+  /* 字体 */
+  --font-sans: "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
+    "Noto Sans SC", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, monospace;
+
+  /* 字号阶梯 */
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 28px;
+
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* 动效 */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur: 200ms;
+}
+
+/* ---------- 亮色 ---------- */
+:root,
+[data-theme="light"] {
+  --bg: #f6f5f2; /* 暖骨白画布 */
+  --bg-soft: #fbfbfa;
+  --bg-elevated: #ffffff;
+
+  --fg: #201f1c; /* 墨色，不用纯黑 */
+  --fg-muted: #787774;
+  --fg-faint: #a8a49e;
+
+  --border: #e7e4dd;
+  --border-strong: #d6d2c8;
+
+  --accent: #b4532a; /* 陶土色：唯一强调色 */
+  --accent-strong: #93401f;
+  --accent-soft: #f3e5da;
+  --on-accent: #ffffff;
+
+  /* 淡彩语义色（仅用于标签/状态） */
+  --pastel-blue-bg: #e1f3fe;
+  --pastel-blue-fg: #1f6c9f;
+  --pastel-green-bg: #edf3ec;
+  --pastel-green-fg: #346538;
+  --pastel-yellow-bg: #fbf3db;
+  --pastel-yellow-fg: #956400;
+  --pastel-red-bg: #fdebec;
+  --pastel-red-fg: #9f2f2d;
+
+  --shadow-1: 0 1px 2px rgba(32, 31, 28, 0.04);
+  --shadow-2: 0 2px 10px rgba(32, 31, 28, 0.05);
+
+  --scrollbar: rgba(32, 31, 28, 0.18);
+}
+
+/* ---------- 暗色 ---------- */
+[data-theme="dark"] {
+  --bg: #1b1a17;
+  --bg-soft: #201f1b;
+  --bg-elevated: #24231f;
+
+  --fg: #e9e6df;
+  --fg-muted: #9d9990;
+  --fg-faint: #6e6b63;
+
+  --border: #302e28;
+  --border-strong: #3d3a33;
+
+  --accent: #d07a4f;
+  --accent-strong: #e08e62;
+  --accent-soft: #382a20;
+  --on-accent: #1b1a17;
+
+  --pastel-blue-bg: #1f3442;
+  --pastel-blue-fg: #7cc0e8;
+  --pastel-green-bg: #243328;
+  --pastel-green-fg: #8fc494;
+  --pastel-yellow-bg: #38311d;
+  --pastel-yellow-fg: #d9b45c;
+  --pastel-red-bg: #3d2526;
+  --pastel-red-fg: #e08a86;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.35);
+
+  --scrollbar: rgba(233, 230, 223, 0.22);
+}
