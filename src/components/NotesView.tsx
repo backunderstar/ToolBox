@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useVault } from "../core/vault";
 import type { SearchHit } from "../core/api";
 import { Editor } from "./Editor";
@@ -175,12 +176,27 @@ function SearchResults({
               className="result-item"
               onClick={() => onOpen(hit.path)}
             >
-              <div className="result-title">{hit.path}</div>
-              <div className="result-snippet">{hit.snippet}</div>
+              <div className="result-title">
+                {highlight(hit.path, query)}
+              </div>
+              <div className="result-snippet">
+                {highlight(hit.snippet, query)}
+              </div>
             </button>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+/** 大小写不敏感的关键词高亮（安全转义正则） */
+function highlight(text: string, query: string): ReactNode {
+  if (!query) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "ig"));
+  const lower = query.toLowerCase();
+  return parts.map((part, i) =>
+    part.toLowerCase() === lower ? <mark key={i}>{part}</mark> : part
   );
 }

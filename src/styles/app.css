@@ -157,11 +157,18 @@
   color: var(--pastel-green-fg);
 }
 
-/* ---------- 主区 ---------- */
+/* ---------- 主区：由各视图自行管理滚动与内边距 ---------- */
 .main {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 概览视图：自带滚动与留白 */
+.welcome {
+  height: 100%;
   overflow-y: auto;
-  padding: var(--space-8) var(--space-8) var(--space-8);
+  padding: var(--space-8);
 }
 
 /* 首屏 */
@@ -421,7 +428,6 @@
   display: flex;
   height: 100%;
   min-height: 0;
-  margin: calc(-1 * var(--space-8));
   background: var(--bg-elevated);
 }
 
@@ -712,4 +718,115 @@
   display: flex;
   gap: var(--space-3);
   margin-top: var(--space-5);
+}
+
+/* 搜索结果关键词高亮 */
+.result-snippet mark {
+  background: var(--pastel-yellow-bg);
+  color: var(--pastel-yellow-fg);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* ============ Vditor 编辑器主题化（跟随设计令牌） ============ */
+.editor-host .vditor {
+  border: none;
+  border-radius: 0;
+  background: var(--bg-elevated);
+  color: var(--fg);
+}
+.editor-host .vditor-toolbar {
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 8px;
+}
+.editor-host .vditor-toolbar__item button,
+.editor-host .vditor-toolbar__item .vditor-tooltipped {
+  color: var(--fg-muted);
+}
+.editor-host .vditor-toolbar__item button:hover,
+.editor-host .vditor-toolbar__item .vditor-tooltipped:hover {
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+}
+.editor-host .vditor-content,
+.editor-host .vditor-ir,
+.editor-host .vditor-wysiwyg,
+.editor-host .vditor-preview {
+  background: var(--bg-elevated);
+}
+.editor-host .vditor-ir,
+.editor-host .vditor-wysiwyg,
+.editor-host .vditor-preview {
+  padding: 20px 28px 45vh;
+  max-width: 920px;
+  margin: 0 auto;
+}
+.editor-host .vditor-reset {
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: 1.75;
+}
+.editor-host .vditor-reset h1,
+.editor-host .vditor-reset h2,
+.editor-host .vditor-reset h3,
+.editor-host .vditor-reset h4 {
+  color: var(--fg);
+}
+.editor-host .vditor-reset a {
+  color: var(--accent);
+}
+.editor-host .vditor-reset blockquote {
+  color: var(--fg-muted);
+  border-left-color: var(--border-strong);
+  background: var(--bg-soft);
+}
+.editor-host .vditor-reset code {
+  color: var(--accent-strong);
+  background: var(--bg-soft);
+}
+.editor-host .vditor-reset pre {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+}
+.editor-host .vditor-reset pre code {
+  background: transparent;
+}
+.editor-host .vditor-reset table {
+  border-color: var(--border);
+}
+.editor-host .vditor-reset th,
+.editor-host .vditor-reset td {
+  border-color: var(--border);
+}
+.editor-host .vditor-ir pre.vditor-reset {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.editor-host .vditor-ir .vditor-ir__marker--heading,
+.editor-host .vditor-ir .vditor-ir__marker--bi,
+.editor-host .vditor-ir .vditor-ir__marker--quote,
+.editor-host .vditor-ir .vditor-ir__marker--b,
+.editor-host .vditor-ir .vditor-ir__marker--i {
+  color: var(--accent);
+}
+.editor-host .vditor-hint {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+}
+.editor-host .vditor-hint__item--current {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.editor-host .vditor-ir ::selection,
+.editor-host .vditor-wysiwyg ::selection,
+.editor-host .vditor-preview ::selection {
+  background: var(--accent-soft);
+}
+.editor-host .vditor--fullscreen {
+  background: var(--bg-elevated);
 }

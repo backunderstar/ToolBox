@@ -73,7 +73,7 @@ export function WelcomeView({ ping, theme, onOpenNotes }: WelcomeViewProps) {
   const ok = ping?.message === "pong";
 
   return (
-    <div>
+    <div className="welcome">
       <section className="hero fade-in">
         <div className="hero-overline">ToolBox · Personal Workbench</div>
         <h1>个人工具箱</h1>
