@@ -1,20 +1,49 @@
-import { IconMoon, IconSun } from "./icons";
+import { IconFolder, IconMoon, IconSun } from "./icons";
 import type { ThemeMode } from "../themes/theme";
 
 interface TopBarProps {
   theme: ThemeMode;
   onToggleTheme: () => void;
+  query: string;
+  onQueryChange: (q: string) => void;
+  searchEnabled: boolean;
+  vaultName: string | null;
+  onPickVault: () => void;
 }
 
-export function TopBar({ theme, onToggleTheme }: TopBarProps) {
+export function TopBar({
+  theme,
+  onToggleTheme,
+  query,
+  onQueryChange,
+  searchEnabled,
+  vaultName,
+  onPickVault,
+}: TopBarProps) {
   return (
     <header className="topbar">
       <div className="topbar-brand">
         <span className="topbar-title">ToolBox</span>
-        <span className="topbar-tag">v0.1.0 · M0</span>
+        <span className="topbar-tag">v0.1.0 · M1</span>
       </div>
 
-      <div className="search" title="M1 里程碑开放全局搜索">
+      <button
+        className="workspace-btn"
+        onClick={onPickVault}
+        title="选择 / 切换工作区文件夹"
+      >
+        <IconFolder width={13} height={13} />
+        <span>{vaultName ?? "选择工作区"}</span>
+      </button>
+
+      <div
+        className={`search${searchEnabled ? "" : " disabled"}`}
+        title={
+          searchEnabled
+            ? "搜索文件名与笔记内容"
+            : "进入「笔记」并选择工作区后可用"
+        }
+      >
         <svg
           width="13"
           height="13"
@@ -29,9 +58,10 @@ export function TopBar({ theme, onToggleTheme }: TopBarProps) {
         </svg>
         <input
           type="text"
-          placeholder="全局搜索（M1 开放）"
-          disabled
-          aria-disabled="true"
+          placeholder="搜索笔记（文件名 + 内容）"
+          value={query}
+          disabled={!searchEnabled}
+          onChange={(e) => onQueryChange(e.target.value)}
         />
         <kbd>Ctrl K</kbd>
       </div>

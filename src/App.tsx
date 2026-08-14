@@ -1,15 +1,27 @@
 import { useEffect, useState } from "react";
 import { ping, type PingInfo } from "./core/ipc";
+import { VaultProvider, useVault } from "./core/vault";
 import { applyTheme, getInitialTheme, type ThemeMode } from "./themes/theme";
 import { TopBar } from "./components/TopBar";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, type ViewId } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { WelcomeView } from "./components/WelcomeView";
+import { NotesView } from "./components/NotesView";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/app.css";
 
 export default function App() {
+  return (
+    <VaultProvider>
+      <AppInner />
+    </VaultProvider>
+  );
+}
+
+function AppInner() {
+  const vault = useVault();
+  const [view, setView] = useState<ViewId>("overview");
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [pingInfo, setPingInfo] = useState<PingInfo | null>(null);
 
@@ -32,16 +44,41 @@ export default function App() {
   const toggleTheme = () =>
     setTheme((t) => (t === "light" ? "dark" : "light"));
 
+  const vaultName = vault.path
+    ? (vault.path.split(/[\\/]/).pop() ?? vault.path)
+    : null;
+
   return (
     <div className="app">
-      <TopBar theme={theme} onToggleTheme={toggleTheme} />
+      <TopBar
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        query={vault.query}
+        onQueryChange={vault.setQuery}
+        searchEnabled={view === "notes" && !!vault.path}
+        vaultName={vaultName}
+        onPickVault={vault.pickVault}
+      />
       <div className="body">
-        <Sidebar />
+        <Sidebar activeView={view} onSelect={setView} />
         <main className="main">
-          <WelcomeView ping={pingInfo} theme={theme} />
+          {view === "overview" ? (
+            <WelcomeView
+              ping={pingInfo}
+              theme={theme}
+              onOpenNotes={() => setView("notes")}
+            />
+          ) : (
+            <NotesView dark={theme === "dark"} />
+          )}
         </main>
       </div>
-      <StatusBar ping={pingInfo} theme={theme} />
+      <StatusBar
+        ping={pingInfo}
+        theme={theme}
+        vaultName={vaultName}
+        status={vault.status}
+      />
     </div>
   );
 }

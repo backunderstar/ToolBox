@@ -10,12 +10,14 @@ import {
 } from "./icons";
 import type { ComponentType, SVGProps } from "react";
 
+export type ViewId = "overview" | "notes";
+
 interface NavItem {
   id: string;
   label: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   milestone?: string; // 规划中的里程碑，缺省表示可用
-  now?: boolean; // 当前骨架已具备
+  now?: boolean; // 当前已实现
 }
 
 const GROUPS: { label: string; items: NavItem[] }[] = [
@@ -23,7 +25,7 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
     label: "工作区",
     items: [
       { id: "overview", label: "概览", icon: IconGrid, now: true },
-      { id: "notes", label: "笔记", icon: IconFileText, milestone: "M1" },
+      { id: "notes", label: "笔记", icon: IconFileText, now: true },
       { id: "tools", label: "数据工具", icon: IconSliders, milestone: "M3" },
       { id: "checklist", label: "清单", icon: IconCheckSquare, milestone: "M4" },
       { id: "records", label: "记录", icon: IconNotebook, milestone: "M4" },
@@ -39,9 +41,12 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-const ACTIVE = "overview";
+interface SidebarProps {
+  activeView: ViewId;
+  onSelect: (view: ViewId) => void;
+}
 
-export function Sidebar() {
+export function Sidebar({ activeView, onSelect }: SidebarProps) {
   return (
     <nav className="sidebar" aria-label="主导航">
       {GROUPS.map((group) => (
@@ -49,17 +54,19 @@ export function Sidebar() {
           <div className="nav-label">{group.label}</div>
           {group.items.map((item) => {
             const Icon = item.icon;
-            const isActive = item.id === ACTIVE;
+            const isActive = item.id === activeView;
+            const isClickable = item.id === "overview" || item.id === "notes";
             return (
               <button
                 key={item.id}
                 className={`nav-item${isActive ? " active" : ""}`}
-                disabled={!item.now && !isActive}
+                disabled={!isClickable}
                 title={
                   item.milestone
                     ? `规划于 ${item.milestone} 里程碑`
                     : item.label
                 }
+                onClick={() => onSelect(item.id as ViewId)}
               >
                 <Icon width={16} height={16} />
                 <span>{item.label}</span>

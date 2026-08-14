@@ -14,6 +14,7 @@ interface Module {
   name: string;
   desc: string;
   milestone: string;
+  done: boolean;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
 }
 
@@ -21,37 +22,43 @@ const MODULES: Module[] = [
   {
     name: "笔记",
     desc: "Markdown 编辑、文件树与全文搜索，以普通文件落地，可 git 版本化。",
-    milestone: "M1",
+    milestone: "M1 已完成",
+    done: true,
     icon: IconFileText,
   },
   {
     name: "数据工具",
     desc: "JSON 格式化、时间戳转换、CSV 转换等，以插件形式内置。",
-    milestone: "M3",
+    milestone: "M3 规划中",
+    done: false,
     icon: IconSliders,
   },
   {
     name: "清单",
     desc: "工作清单与打卡，结构化 JSON 存储，可与笔记双向链接。",
-    milestone: "M4",
+    milestone: "M4 规划中",
+    done: false,
     icon: IconCheckSquare,
   },
   {
     name: "记录",
     desc: "工作日志与流水记录，支持筛选、统计与导出。",
-    milestone: "M4",
+    milestone: "M4 规划中",
+    done: false,
     icon: IconNotebook,
   },
   {
     name: "AI 整理",
     desc: "选段摘要、笔记问答（RAG），提供商可配置，以插件接入。",
-    milestone: "M6",
+    milestone: "M6 规划中",
+    done: false,
     icon: IconSparkle,
   },
   {
     name: "博客发布",
     desc: "笔记带 frontmatter 一键发布，集成 Zola 静态博客生成。",
-    milestone: "M7",
+    milestone: "M7 规划中",
+    done: false,
     icon: IconGlobe,
   },
 ];
@@ -59,9 +66,10 @@ const MODULES: Module[] = [
 interface WelcomeViewProps {
   ping: PingInfo | null;
   theme: ThemeMode;
+  onOpenNotes: () => void;
 }
 
-export function WelcomeView({ ping, theme }: WelcomeViewProps) {
+export function WelcomeView({ ping, theme, onOpenNotes }: WelcomeViewProps) {
   const ok = ping?.message === "pong";
 
   return (
@@ -73,6 +81,11 @@ export function WelcomeView({ ping, theme }: WelcomeViewProps) {
           笔记、数据、清单与博客发布，围绕一个普通文件夹展开。
           数据始终是你的，随时可迁移、可备份、可发布。
         </p>
+        <div className="hero-actions">
+          <button className="btn-primary" onClick={onOpenNotes}>
+            进入笔记
+          </button>
+        </div>
       </section>
 
       <section className="env-card fade-in" style={{ animationDelay: "80ms" }}>
@@ -113,7 +126,9 @@ export function WelcomeView({ ping, theme }: WelcomeViewProps) {
                 <div className="module-name">{m.name}</div>
                 <p className="module-desc">{m.desc}</p>
                 <div className="module-meta">
-                  <span className="tag tag-plan">{m.milestone} 规划中</span>
+                  <span className={`tag ${m.done ? "tag-done" : "tag-plan"}`}>
+                    {m.milestone}
+                  </span>
                   <span className="tag tag-muted">插件化</span>
                 </div>
               </article>
