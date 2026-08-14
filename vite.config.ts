@@ -9,7 +9,14 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      // 忽略 Rust 侧与文件写入工具的临时文件（避免 EBUSY 崩溃）
+      ignored: [
+        "**/src-tauri/**",
+        "**/.git/**",
+        "**/.*.tmpdir/**",
+        "**/*.tmp",
+        "**/*.log",
+      ],
     },
   },
 });
