@@ -26,6 +26,13 @@ fn ping() -> PingInfo {
     }
 }
 
+/// 调试通道：前端把 console.error / 未捕获错误转发到这里，
+/// 打印到终端（`pnpm tauri dev` 的输出中可见，便于排查白屏/编辑器问题）。
+#[tauri::command]
+fn log_console(msg: String) {
+    eprintln!("[webview] {msg}");
+}
+
 /// 启动应用。
 ///
 /// M1 已注册：`ping` + vault 工作区 + 笔记文件操作 + 文件夹选择对话框。
@@ -35,6 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             ping,
+            log_console,
             vault::vault_get,
             vault::vault_set,
             notes::fs_list,

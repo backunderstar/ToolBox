@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, getInitialTheme, type ThemeMode } from "./themes/theme";
 import { TopBar } from "./components/TopBar";
 import { Sidebar, type ViewId } from "./components/Sidebar";
@@ -13,9 +14,11 @@ import "./styles/app.css";
 
 export default function App() {
   return (
-    <VaultProvider>
-      <AppInner />
-    </VaultProvider>
+    <ErrorBoundary>
+      <VaultProvider>
+        <AppInner />
+      </VaultProvider>
+    </ErrorBoundary>
   );
 }
 

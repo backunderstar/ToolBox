@@ -13,7 +13,8 @@ if (!existsSync(src)) {
   process.exit(1);
 }
 
-// 按需加载、当前用不到的重型引擎不拷贝（mathjax/lute/echarts 等）
+// 按需加载、当前用不到的重型引擎不拷贝（mathjax/echarts 等）
+// 注意：lute 是 IR（即时渲染）模式的必需解析引擎，不能排除！
 const SKIP_JS_DIRS = new Set([
   "abcjs",
   "echarts",
@@ -21,7 +22,6 @@ const SKIP_JS_DIRS = new Set([
   "graphviz",
   "markmap",
   "mathjax",
-  "lute",
   "plantuml",
   "smiles-drawer",
   "wavedrom",
@@ -29,11 +29,12 @@ const SKIP_JS_DIRS = new Set([
 
 mkdirSync(dst, { recursive: true });
 cpSync(join(src, "index.css"), join(dst, "index.css"));
+cpSync(join(src, "index.js"), join(dst, "index.js"));
 for (const rel of ["css", "images"]) {
   cpSync(join(src, rel), join(dst, rel), { recursive: true });
 }
 mkdirSync(join(dst, "js"), { recursive: true });
-for (const dir of ["highlight.js", "i18n", "icons", "katex", "mermaid"]) {
+for (const dir of ["highlight.js", "i18n", "icons", "katex", "lute", "mermaid"]) {
   cpSync(join(src, "js", dir), join(dst, "js", dir), { recursive: true });
 }
 

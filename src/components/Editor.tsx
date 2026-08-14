@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Vditor from "vditor";
 import "vditor/dist/index.css";
 
@@ -46,6 +46,7 @@ const TOOLBAR = [
  */
 export function Editor({ doc, onChange, onSave, dark, placeholderText }: EditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -56,32 +57,50 @@ export function Editor({ doc, onChange, onSave, dark, placeholderText }: EditorP
     const host = hostRef.current;
     if (!host) return;
 
-    const vd = new Vditor(host, {
-      height: "100%",
-      mode: "ir",
-      theme: dark ? "dark" : "classic",
-      lang: "zh_CN",
-      icon: "ant",
-      cdn: "/vditor",
-      placeholder: placeholderText ?? "",
-      value: doc,
-      cache: { enable: false },
-      counter: { enable: false },
-      outline: { enable: false, position: "right" },
-      toolbar: TOOLBAR,
-      input: (value) => onChangeRef.current(value),
-      blur: () => onSaveRef.current(),
-      after: () => {
-        requestAnimationFrame(() => vd.focus());
-      },
-    });
+    try {
+      const vd = new Vditor(host, {
+        height: "100%",
+        mode: "ir",
+        theme: dark ? "dark" : "classic",
+        lang: "zh_CN",
+        icon: "ant",
+        cdn: "/vditor",
+        placeholder: placeholderText ?? "",
+        value: doc,
+        cache: { enable: false },
+        counter: { enable: false },
+        outline: { enable: false, position: "right" },
+        toolbar: TOOLBAR,
+        input: (value) => onChangeRef.current(value),
+        blur: () => onSaveRef.current(),
+        after: () => {
+          requestAnimationFrame(() => vd.focus());
+        },
+      });
 
-    return () => {
-      vd.destroy();
-    };
+      return () => {
+        try {
+          vd.destroy();
+        } catch (e) {
+          console.error("[vditor-destroy]", e);
+        }
+      };
+    } catch (e) {
+      console.error("[vditor-init]", e);
+      setInitError(e instanceof Error ? e.message : String(e));
+    }
     // 组件按 key 重建：仅在挂载时初始化
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (initError) {
+    return (
+      <div className="editor-error">
+        <p>编辑器初始化失败：</p>
+        <pre>{initError}</pre>
+      </div>
+    );
+  }
 
   return <div className="editor-host" ref={hostRef} />;
 }

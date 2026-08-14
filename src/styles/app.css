@@ -720,6 +720,57 @@
   margin-top: var(--space-5);
 }
 
+/* 错误兜底展示 */
+.fatal-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  height: 100vh;
+  padding: var(--space-8);
+  background: var(--bg);
+  color: var(--fg);
+}
+.fatal-error h2 {
+  margin: 0;
+}
+.fatal-error pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.fatal-error p {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+.editor-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  color: var(--pastel-red-fg);
+  font-size: var(--text-sm);
+}
+.editor-error p {
+  margin: 0;
+}
+.editor-error pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* 搜索结果关键词高亮 */
 .result-snippet mark {
   background: var(--pastel-yellow-bg);

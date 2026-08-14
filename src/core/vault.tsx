@@ -83,6 +83,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     try {
       const list = await fsList(p);
       setFiles(list);
+      // 清理最近打开中已不存在的文件（删除/移动后不残留）
+      setRecent((prev) => {
+        const valid = prev.filter((r) => list.some((f) => !f.isDir && f.path === r));
+        if (valid.length === prev.length) return prev;
+        localStorage.setItem(RECENT_KEY, JSON.stringify(valid));
+        return valid;
+      });
     } catch (e) {
       flash(String(e));
     }
@@ -126,6 +133,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         addRecent(rel);
       } catch (e) {
         flash(String(e));
+        // 文件已不存在（例如被外部删除）：从最近打开中移除
+        setRecent((prev) => {
+          const next = prev.filter((r) => r !== rel);
+          if (next.length === prev.length) return prev;
+          localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+          return next;
+        });
       }
     },
     [save, addRecent, flash]
@@ -181,6 +195,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           dirtyRef.current = false;
           setDirty(false);
         }
+        // 同步清理最近打开（含目录删除时其下所有文件）
+        setRecent((prev) => {
+          const next = prev.filter((r) => r !== rel && !r.startsWith(rel + "/"));
+          if (next.length === prev.length) return prev;
+          localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+          return next;
+        });
         flash(`已删除 ${rel}`);
       } catch (e) {
         flash(String(e));
