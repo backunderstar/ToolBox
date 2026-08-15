@@ -29,6 +29,9 @@ pulldown-cmark = "0.12"
 trash = "5"
 # 浮窗清单：记忆窗口位置/大小
 tauri-plugin-window-state = "2"
+# AI API Key 安全存储：Windows 凭据管理器（macOS Keychain / Linux Secret Service）
+# 注意：keyring 3 无默认 features，必须显式启用平台后端（windows-native）
+keyring = { version = "3", features = ["windows-native", "crypto-rust"] }
 
 # Windows 上链接 WebView2 需要，Tauri 2 默认启用
 [target.'cfg(windows)'.dependencies]

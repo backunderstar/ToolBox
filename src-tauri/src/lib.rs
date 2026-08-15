@@ -102,6 +102,7 @@ pub fn run() {
             plugins::plugins_invoke,
             ai::ai_config_get,
             ai::ai_config_set,
+            ai::ai_config_set_key,
             ai::ai_config_clear_key,
             ai::ai_chat,
             ai::ai_test,
@@ -156,7 +157,6 @@ pub const FLOAT_WINDOW: &str = "float";
 
 /// 主窗口屏幕外自愈：若窗口位于明显屏幕外（显示器变更/window-state 残留），移到屏幕中心。
 fn ensure_main_visible(app: &tauri::AppHandle) {
-    use tauri::Manager;
     let Some(main) = app.get_webview_window("main") else {
         return;
     };

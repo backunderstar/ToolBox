@@ -100,8 +100,9 @@ export const openUrl = (url: string) => {
 
 export interface AiConfig {
   baseUrl: string;
-  apiKey: string;
   model: string;
+  /** 是否已配置 API Key（Key 存系统凭据管理器，不返回明文） */
+  hasKey: boolean;
 }
 
 export interface ChatMessage {
@@ -110,8 +111,11 @@ export interface ChatMessage {
 }
 
 export const aiConfigGet = () => invoke<AiConfig>("ai_config_get");
-export const aiConfigSet = (config: AiConfig) =>
+export const aiConfigSet = (config: { baseUrl: string; model: string }) =>
   invoke<void>("ai_config_set", { config });
+/** 保存 API Key 到系统凭据管理器（Windows 凭据管理器 / Keychain） */
+export const aiConfigSetKey = (key: string) =>
+  invoke<void>("ai_config_set_key", { key });
 export const aiConfigClearKey = () => invoke<void>("ai_config_clear_key");
 export const aiChat = (messages: ChatMessage[]) =>
   invoke<string>("ai_chat", { messages });
