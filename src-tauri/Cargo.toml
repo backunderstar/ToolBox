@@ -19,6 +19,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2.7.2"
 tauri-plugin-opener = "2"
+# 单实例：第二实例退出并在首实例触发回调（Windows 内部即命名 Mutex，
+# 与之前手写实现同机制，由官方维护；跨平台可用）
+tauri-plugin-single-instance = "2"
 # M6 AI：OpenAI 兼容 API 调用（阻塞版 + rustls，避免系统 OpenSSL）
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 # M7 博客预览：内置静态文件服务器
