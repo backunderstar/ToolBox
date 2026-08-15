@@ -22,15 +22,24 @@ fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("vault.json"))
 }
 
+/// 读取当前工作区路径（供命令与后台任务复用）。
+pub fn read_vault_path(app: &tauri::AppHandle) -> Result<Option<String>, String> {
+    let path = settings_path(app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("读取配置失败: {e}"))?;
+    let settings: VaultSettings =
+        serde_json::from_str(&raw).map_err(|e| format!("解析配置失败: {e}"))?;
+    Ok(settings.path)
+}
+
 /// 读取当前工作区路径（未设置过则返回默认）。
 #[tauri::command]
 pub fn vault_get(app: tauri::AppHandle) -> Result<VaultSettings, String> {
-    let path = settings_path(&app)?;
-    if !path.exists() {
-        return Ok(VaultSettings::default());
-    }
-    let raw = std::fs::read_to_string(&path).map_err(|e| format!("读取配置失败: {e}"))?;
-    serde_json::from_str(&raw).map_err(|e| format!("解析配置失败: {e}"))
+    Ok(VaultSettings {
+        path: read_vault_path(&app)?,
+    })
 }
 
 /// 设置工作区路径并持久化（校验必须是存在的文件夹）。

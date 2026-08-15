@@ -6,9 +6,11 @@
 //! - `ai`      AI 网关：多提供商、对话、连通性测试（M6 落地）
 //! - `blog`    博客发布：frontmatter、站点生成与预览（M7 落地）
 //! - `projects` 项目文件管理：项目目录/归档/默认应用打开（M8 落地）
+//! - `backup`   自动备份：vault → .toolbox/backups，保留 N 份（Backlog 落地）
 //! - `git`     Git 集成：备份与版本历史（后续规划）
 
 pub mod ai;
+pub mod backup;
 pub mod blog;
 pub mod notes;
 pub mod path;

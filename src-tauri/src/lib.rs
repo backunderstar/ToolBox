@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{ai, blog, notes, projects, vault};
+use core::{ai, backup, blog, notes, projects, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -101,7 +101,16 @@ pub fn run() {
             projects::projects_delete,
             projects::projects_files,
             projects::projects_open,
+            backup::backup_now_cmd,
+            backup::backup_config_get,
+            backup::backup_config_set,
+            backup::backup_list,
         ])
+        .setup(|app| {
+            // 后台自动备份线程（随应用常驻，读取配置按间隔执行）
+            backup::spawn_auto(app.handle().clone());
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

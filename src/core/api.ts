@@ -177,3 +177,32 @@ export const projectsFiles = (vault: string, name: string, dir: string) =>
   invoke<ProjectFile[]>("projects_files", { vault, name, dir });
 export const projectsOpen = (vault: string, name: string, rel: string) =>
   invoke<void>("projects_open", { vault, name, rel });
+
+/* ---- 自动备份 ---- */
+
+export interface BackupConfig {
+  enabled: boolean;
+  intervalMinutes: number;
+  keep: number;
+  /** 上次成功备份时间（unix 秒） */
+  lastBackupAt: number | null;
+}
+
+export interface BackupInfo {
+  path: string;
+  sizeBytes: number;
+  fileCount: number;
+}
+
+export interface BackupEntry {
+  name: string;
+  /** unix 秒 */
+  timestamp: number;
+  sizeBytes: number;
+}
+
+export const backupConfigGet = () => invoke<BackupConfig>("backup_config_get");
+export const backupConfigSet = (config: BackupConfig) =>
+  invoke<void>("backup_config_set", { config });
+export const backupNow = (vault: string) => invoke<BackupInfo>("backup_now_cmd", { vault });
+export const backupList = (vault: string) => invoke<BackupEntry[]>("backup_list", { vault });
