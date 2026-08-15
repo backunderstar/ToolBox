@@ -210,7 +210,8 @@ fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 创建桌面浮窗：无边框、透明、置顶、不进任务栏；位置/大小由 window-state 插件记忆。
+/// 创建桌面浮窗：无边框、透明、**不置顶**（桌面层小组件，不遮挡其他窗口）；
+/// 位置/大小由 window-state 插件记忆。
 fn create_float_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     let win = tauri::WebviewWindowBuilder::new(
         app,
@@ -222,7 +223,6 @@ fn create_float_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     .min_inner_size(240.0, 300.0)
     .transparent(true)
     .decorations(false)
-    .always_on_top(true)
     .skip_taskbar(true)
     .resizable(true)
     .build();
@@ -233,11 +233,100 @@ fn create_float_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             if let Err(e) = w.show() {
                 eprintln!("[float] show 失败: {e}");
             }
+            // 置底（桌面层）：不遮挡其他窗口；交互结束后失去焦点自动回到底层
+            #[cfg(target_os = "windows")]
+            {
+                float_to_bottom(w);
+                w.on_window_event(|event| {
+                    if let tauri::WindowEvent::Focused(false) = event {
+                        float_to_bottom_any();
+                    }
+                });
+            }
         }
         Err(e) => eprintln!("[float] 浮窗创建失败: {e}"),
     }
     win.map(|_| ())
 }
+
+/// 把浮窗窗口 Z 序置底（HWND_BOTTOM）：普通窗口之下、桌面之上。
+/// tao 的 HWND 为 isize，直接 extern 声明 Win32 API，零额外依赖。
+#[cfg(target_os = "windows")]
+mod win_bottom {
+    use std::os::raw::c_void;
+
+    const HWND_BOTTOM: isize = 1;
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowPos(
+            hwnd: *mut c_void,
+            insert_after: isize,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> i32;
+    }
+
+    /// 记录浮窗 HWND，供失焦事件回调置底（回调拿不到窗口引用）。
+    pub static FLOAT_HWND: std::sync::Mutex<Option<isize>> = std::sync::Mutex::new(None);
+
+    pub fn set_bottom(hwnd: isize) {
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd as *mut c_void,
+                HWND_BOTTOM,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+    }
+
+    pub fn float_to_bottom(win: &tauri::WebviewWindow) {
+        if let Ok(hwnd) = win.hwnd() {
+            // tauri 的 HWND 是 windows crate 的元组结构体，.0 为原生指针
+            let raw = hwnd.0 as isize;
+            if let Ok(mut g) = FLOAT_HWND.lock() {
+                *g = Some(raw);
+            }
+            set_bottom(raw);
+        }
+    }
+
+    pub fn float_to_bottom_any() {
+        let hwnd = {
+            let g = FLOAT_HWND.lock().unwrap_or_else(|p| p.into_inner());
+            *g
+        };
+        if let Some(hwnd) = hwnd {
+            set_bottom(hwnd);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn float_to_bottom(win: &tauri::WebviewWindow) {
+    win_bottom::float_to_bottom(win);
+}
+
+#[cfg(target_os = "windows")]
+fn float_to_bottom_any() {
+    win_bottom::float_to_bottom_any();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn float_to_bottom(_win: &tauri::WebviewWindow) {}
+
+#[cfg(not(target_os = "windows"))]
+fn float_to_bottom_any() {}
 
 /// 显示 / 隐藏浮窗（主窗口顶栏按钮调用）。返回操作后的可见状态。
 #[tauri::command]
