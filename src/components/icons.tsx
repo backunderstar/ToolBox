@@ -218,3 +218,61 @@ export const IconLink = (p: SVGProps<SVGSVGElement>) => (
     <path d="M16 11.5l2.5-2.5a3.5 3.5 0 0 0-5-5L11 6.5" />
   </svg>
 );
+
+/* ---- M8 项目文件管理：文件类型图标（按扩展名映射） ---- */
+
+/** 文档（通用文件） */
+export const IconFileDoc = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M6 3h8l4 4v14H6z" />
+    <path d="M14 3v4h4" />
+    <path d="M9.5 12h5M9.5 16h5" />
+  </svg>
+);
+
+/** 表格 */
+export const IconFileSheet = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M6 3h8l4 4v14H6z" />
+    <path d="M14 3v4h4" />
+    <path d="M9 12h6M9 15h6M9 18h6" />
+    <path d="M12 12v6" />
+  </svg>
+);
+
+/** 图片 */
+export const IconFileImage = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M6 3h8l4 4v14H6z" />
+    <path d="M14 3v4h4" />
+    <circle cx="9.5" cy="10" r="1.4" />
+    <path d="M8 17l3-3 2 2 3-3" />
+  </svg>
+);
+
+/** 压缩包 */
+export const IconFileArchive = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M6 3h8l4 4v14H6z" />
+    <path d="M14 3v4h4" />
+    <path d="M9 11h6M9 11l-1 6h8l-1-6M9 14h6" />
+  </svg>
+);
+
+/** 代码 */
+export const IconFileCode = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M6 3h8l4 4v14H6z" />
+    <path d="M14 3v4h4" />
+    <path d="M9.5 12l-2 2 2 2M14.5 12l2 2-2 2" />
+  </svg>
+);
+
+/** 归档（项目已归档标识） */
+export const IconArchive = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M4 8h16v12H4z" />
+    <path d="M4 8l2-4h12l2 4" />
+    <path d="M10 13h4" />
+  </svg>
+);

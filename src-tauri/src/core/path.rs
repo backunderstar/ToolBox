@@ -1,10 +1,10 @@
-//! 路径安全工具：vault 相对路径 → 绝对路径（拒绝越界）。
+//! 路径安全工具：相对路径 → 绝对路径（拒绝越界）。
 
 use std::path::{Component, Path, PathBuf};
 
-/// 将 vault 相对路径（UI 统一 `/` 分隔）解析为绝对路径。
-/// 严格拒绝：空串、`.`/`..`、绝对路径、根路径与盘符前缀，防止越出工作区。
-pub fn resolve_safe(vault: &str, rel: &str) -> Result<PathBuf, String> {
+/// 将相对路径（UI 统一 `/` 分隔）解析为 `root` 下的绝对路径。
+/// 严格拒绝：空串、`.`/`..`、绝对路径、根路径与盘符前缀，防止越出 root。
+pub fn resolve_relative(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let rel = rel.trim().replace('\\', "/");
     if rel.is_empty() {
         return Err("路径为空".to_string());
@@ -20,16 +20,21 @@ pub fn resolve_safe(vault: &str, rel: &str) -> Result<PathBuf, String> {
     {
         return Err(format!("非法路径: {rel}"));
     }
-    let joined = PathBuf::from(vault).join(rel_path);
-    // 纵深防御：规范化后再确认仍在 vault 内（处理符号链接/`..` 残留等）
-    let vault_canon = canonical_parent(Path::new(vault));
+    let joined = root.join(rel_path);
+    // 纵深防御：规范化后再确认仍在 root 内（处理符号链接/`..` 残留等）
+    let root_canon = canonical_parent(root);
     let joined_canon = canonical_parent(&joined);
-    if let (Some(vc), Some(jc)) = (vault_canon, joined_canon) {
-        if !jc.starts_with(&vc) {
-            return Err(format!("路径越出工作区: {rel}"));
+    if let (Some(rc), Some(jc)) = (root_canon, joined_canon) {
+        if !jc.starts_with(&rc) {
+            return Err(format!("路径越出根目录: {rel}"));
         }
     }
     Ok(joined)
+}
+
+/// 将 vault 相对路径解析为绝对路径（根 = vault 目录）。
+pub fn resolve_safe(vault: &str, rel: &str) -> Result<PathBuf, String> {
+    resolve_relative(Path::new(vault), rel)
 }
 
 /// 对路径做规范化（存在时 canonicalize；不存在时对最近存在的祖先规范化后拼接），

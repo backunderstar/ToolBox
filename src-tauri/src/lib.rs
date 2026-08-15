@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{ai, blog, notes, vault};
+use core::{ai, blog, notes, projects, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -94,6 +94,13 @@ pub fn run() {
             blog::blog_preview_start,
             blog::blog_preview_stop,
             blog::blog_open_folder,
+            projects::projects_list,
+            projects::projects_create,
+            projects::projects_archive,
+            projects::projects_unarchive,
+            projects::projects_delete,
+            projects::projects_files,
+            projects::projects_open,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

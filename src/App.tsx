@@ -4,6 +4,7 @@ import { VaultProvider, useVault } from "./core/vault";
 import { PluginProvider } from "./core/plugins";
 import { ChecklistProvider } from "./core/checklists";
 import { RecordsProvider } from "./core/records";
+import { ProjectsProvider } from "./core/projects";
 import { NavProvider } from "./core/navigation";
 import type { ViewParams } from "./core/navigation";
 import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
@@ -18,6 +19,7 @@ import { PluginsView } from "./components/PluginsView";
 import { ToolsView } from "./components/ToolsView";
 import { ChecklistView } from "./components/ChecklistView";
 import { RecordsView } from "./components/RecordsView";
+import { ProjectsView } from "./components/ProjectsView";
 import { AIChatView } from "./components/AIChatView";
 import { BlogView } from "./components/BlogView";
 import { SettingsView } from "./components/SettingsView";
@@ -32,7 +34,9 @@ export default function App() {
         <PluginProvider>
           <ChecklistProvider>
             <RecordsProvider>
-              <AppInner />
+              <ProjectsProvider>
+                <AppInner />
+              </ProjectsProvider>
             </RecordsProvider>
           </ChecklistProvider>
         </PluginProvider>
@@ -179,6 +183,8 @@ function AppInner() {
               <ChecklistView />
             ) : view === "records" ? (
               <RecordsView />
+            ) : view === "projects" ? (
+              <ProjectsView />
             ) : view === "ai" ? (
               <AIChatView />
             ) : view === "blog" ? (

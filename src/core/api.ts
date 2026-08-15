@@ -146,3 +146,34 @@ export const blogPreviewStart = (vault: string) =>
 export const blogPreviewStop = () => invoke<void>("blog_preview_stop");
 export const blogOpenFolder = (vault: string) =>
   invoke<void>("blog_open_folder", { vault });
+
+/* ---- M8 项目文件管理 ---- */
+
+export interface ProjectInfo {
+  name: string;
+  archived: boolean;
+  fileCount: number;
+}
+
+export interface ProjectFile {
+  name: string;
+  /** 相对项目根，/ 分隔 */
+  path: string;
+  isDir: boolean;
+  size: number | null;
+}
+
+export const projectsList = (vault: string) =>
+  invoke<ProjectInfo[]>("projects_list", { vault });
+export const projectsCreate = (vault: string, name: string) =>
+  invoke<void>("projects_create", { vault, name });
+export const projectsArchive = (vault: string, name: string) =>
+  invoke<void>("projects_archive", { vault, name });
+export const projectsUnarchive = (vault: string, name: string) =>
+  invoke<void>("projects_unarchive", { vault, name });
+export const projectsDelete = (vault: string, name: string, permanent = false) =>
+  invoke<void>("projects_delete", { vault, name, permanent });
+export const projectsFiles = (vault: string, name: string, dir: string) =>
+  invoke<ProjectFile[]>("projects_files", { vault, name, dir });
+export const projectsOpen = (vault: string, name: string, rel: string) =>
+  invoke<void>("projects_open", { vault, name, rel });
