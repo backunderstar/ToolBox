@@ -246,6 +246,10 @@ ToolBox/
    - [x] 设置页骨架
 
 > 进度：M0 ✓ → M1 ✓（笔记+设置）→ M2 ✓（插件系统，53da90d）→ M3 ✓（数据工具，e6d864f）→ M4 ✓（清单与记录，双向链接，4ba3ecc）。
+>
+> 真实运行验证方法：临时在 `src-tauri/tauri.conf.json` 的 windows[0] 加
+> `"additionalBrowserArgs": "--remote-debugging-port=9226"`，`pnpm tauri dev` 后
+> 用 `node scripts/cdp-e2e-clean.mjs 9226` 驱动真实 WebView2 做端到端检查（验证后移除该配置）。
 
 > 注：当前 AI 会话的沙箱禁止执行外部程序（运行 exe 被拒绝），所以构建/运行命令需要你在自己终端执行；文件读写、代码编写、脚手架文件生成我都可以直接完成。
 

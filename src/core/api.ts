@@ -49,6 +49,9 @@ export const vaultSet = (path: string) =>
 
 export const fsList = (vault: string) =>
   invoke<FileEntry[]>("fs_list", { vault });
+/** 列出 vault 指定目录下的全部条目（含非 .md 文件，供 JSON 数据枚举） */
+export const fsListDir = (vault: string, dir: string) =>
+  invoke<FileEntry[]>("fs_list_dir", { vault, dir });
 export const fsRead = (vault: string, rel: string) =>
   invoke<string>("fs_read", { vault, rel });
 export const fsWrite = (vault: string, rel: string, content: string) =>

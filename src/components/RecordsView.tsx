@@ -10,7 +10,7 @@ import { IconFileText, IconPlus, IconTrash } from "./icons";
  */
 export function RecordsView() {
   const nav = useNav();
-  const { records, loading, refresh, create, save, remove, extractLinks } =
+  const { records, loading, create, save, remove, extractLinks } =
     useRecords();
 
   const [currentId, setCurrentId] = useState<string | null>(null);

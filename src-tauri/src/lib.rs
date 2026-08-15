@@ -7,6 +7,7 @@ mod rpc;
 use core::{notes, vault};
 use plugins::PluginManager;
 use serde::Serialize;
+use std::sync::Mutex;
 
 /// `ping` 命令的返回结构：用于验证前端 ↔ Rust 核心的 IPC 链路。
 #[derive(Serialize)]
@@ -61,7 +62,8 @@ fn open_in_explorer(path: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(PluginManager::default())
+        // 插件命令签名要求 Mutex<PluginManager>（见 plugins/mod.rs 的 State 参数）
+        .manage(Mutex::new(PluginManager::default()))
         .invoke_handler(tauri::generate_handler![
             ping,
             log_console,
@@ -69,6 +71,7 @@ pub fn run() {
             vault::vault_get,
             vault::vault_set,
             notes::fs_list,
+            notes::fs_list_dir,
             notes::fs_read,
             notes::fs_write,
             notes::fs_create,

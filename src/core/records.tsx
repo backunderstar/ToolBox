@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import { fsList, fsRead, fsWrite, fsDelete } from "./api";
+import { fsListDir, fsRead, fsWrite, fsDelete } from "./api";
 import type { FileEntry } from "./api";
 import { useVault } from "./vault";
 
@@ -120,10 +120,8 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   const loadReal = useCallback(async (): Promise<RecordData[]> => {
     const p = vaultRef.current;
     if (!p) return [];
-    const list: FileEntry[] = await fsList(p);
-    const files = list.filter(
-      (f) => !f.isDir && f.path.startsWith(DIR + "/") && f.path.endsWith(".json")
-    );
+    const list: FileEntry[] = await fsListDir(p, DIR);
+    const files = list.filter((f) => !f.isDir && f.path.endsWith(".json"));
     const out: RecordData[] = [];
     for (const f of files) {
       try {
