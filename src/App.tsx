@@ -11,6 +11,7 @@ import { StatusBar } from "./components/StatusBar";
 import { WelcomeView } from "./components/WelcomeView";
 import { NotesView } from "./components/NotesView";
 import { PluginsView } from "./components/PluginsView";
+import { SettingsView } from "./components/SettingsView";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/app.css";
@@ -106,6 +107,12 @@ function AppInner() {
             />
           ) : view === "plugins" ? (
             <PluginsView />
+          ) : view === "settings" ? (
+            <SettingsView
+              theme={theme}
+              onSetTheme={setTheme}
+              ping={pingInfo}
+            />
           ) : (
             <NotesView
               dark={theme === "dark"}

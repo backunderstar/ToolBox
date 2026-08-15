@@ -76,3 +76,9 @@ export const pluginsInvoke = (
   command: string,
   args: unknown
 ) => invoke<unknown>("plugins_invoke", { vault, id, command, args });
+
+/* ---- 系统 ---- */
+
+/** 在系统文件管理器中打开路径（Windows：资源管理器） */
+export const openInExplorer = (path: string) =>
+  invoke<void>("open_in_explorer", { path });

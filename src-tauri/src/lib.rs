@@ -34,6 +34,26 @@ fn log_console(msg: String) {
     eprintln!("[webview] {msg}");
 }
 
+/// 在系统文件管理器中打开指定路径（Windows：explorer.exe）。
+/// 用于设置页"在资源管理器中打开工作区"。
+#[tauri::command]
+fn open_in_explorer(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // explorer 是 GUI 程序：spawn 后不等待，避免阻塞主线程
+        std::process::Command::new("explorer.exe")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开资源管理器失败（{path}）: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        Err("当前平台暂不支持打开文件管理器".to_string())
+    }
+}
+
 /// 启动应用。
 ///
 /// M1 已注册：`ping` + vault 工作区 + 笔记文件操作 + 文件夹选择对话框。
@@ -45,6 +65,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping,
             log_console,
+            open_in_explorer,
             vault::vault_get,
             vault::vault_set,
             notes::fs_list,
