@@ -131,7 +131,6 @@ pub fn run() {
             float_set_locked,
         ])
         .setup(|app| {
-            use tauri::Manager;
             // 后台自动备份线程（随应用常驻，读取配置按间隔执行）
             backup::spawn_auto(app.handle().clone());
             // 系统托盘（关窗常驻后台）
