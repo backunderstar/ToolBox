@@ -36,7 +36,6 @@ export function NotesView({
     activePath,
     content,
     dirty,
-    recent,
     query,
     results,
     searching,
@@ -104,23 +103,6 @@ export function NotesView({
                 <IconChevronLeft width={14} height={14} />
               </button>
             </div>
-
-            {recent.length > 0 && (
-              <div className="recent-block">
-                <div className="recent-label">最近打开</div>
-                {recent.slice(0, 5).map((r) => (
-                  <button
-                    key={r}
-                    className="recent-item"
-                    title={r}
-                    onClick={() => openFile(r)}
-                  >
-                    <IconFileText width={12} height={12} />
-                    <span>{r.split("/").pop()}</span>
-                  </button>
-                ))}
-              </div>
-            )}
 
             <FileTree
               files={files}

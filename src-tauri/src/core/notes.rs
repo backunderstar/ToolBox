@@ -8,6 +8,8 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 const IGNORED_DIRS: &[&str] = &[".git", ".toolbox", "node_modules", "target", "site"];
+/// 笔记统一存放目录（vault/notes/），文件树与搜索都只作用于该目录
+const NOTES_DIR: &str = "notes";
 /// 全文搜索每文件最多读取的字节数（防止大文件拖垮搜索）
 const SEARCH_READ_LIMIT: u64 = 256 * 1024;
 
@@ -27,15 +29,37 @@ pub struct SearchHit {
     pub snippet: String,
 }
 
-/// 递归列出 vault 内所有目录与 .md 文件（忽略隐藏/无关目录），目录优先、按名排序。
+/// 确保 notes/ 目录存在；首次使用时把旧布局（vault 根下的 .md）迁移进去。
+/// 幂等：目录已存在时直接返回。
+fn ensure_notes_dir(root: &Path) -> Result<PathBuf, String> {
+    let notes = root.join(NOTES_DIR);
+    if notes.is_dir() {
+        return Ok(notes);
+    }
+    std::fs::create_dir_all(&notes).map_err(|e| format!("创建笔记目录失败: {e}"))?;
+    // 迁移旧布局：仅移动 vault 根层的 .md（data/plugins/.toolbox/site 等子目录不动）
+    if let Ok(read) = std::fs::read_dir(root) {
+        for entry in read.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".md") && entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                let _ = std::fs::rename(entry.path(), notes.join(&name));
+            }
+        }
+    }
+    Ok(notes)
+}
+
+/// 递归列出 notes/ 目录下所有子目录与 .md 文件（忽略隐藏/无关目录），
+/// 目录优先、按名排序。返回路径带 `notes/` 前缀（相对 vault，供读写/搜索使用）。
 #[tauri::command]
 pub async fn fs_list(vault: String) -> Result<Vec<FileEntry>, String> {
     let root = PathBuf::from(&vault);
     if !root.is_dir() {
         return Err(format!("工作区不存在: {vault}"));
     }
+    let notes = ensure_notes_dir(&root)?;
     let mut out = Vec::new();
-    walk(&root, &root, "", &mut out);
+    walk(&notes, &notes, NOTES_DIR, &mut out);
     Ok(out)
 }
 
@@ -150,20 +174,23 @@ pub fn fs_rename(vault: String, from: String, to: String) -> Result<(), String> 
     std::fs::rename(&a, &b).map_err(|e| format!("重命名失败: {e}"))
 }
 
-/// 搜索：文件名包含匹配优先，其次全文包含匹配（大小写不敏感），返回带片段的结果。
+/// 搜索笔记：仅扫描 notes/ 目录，文件名包含匹配优先，其次全文包含匹配（大小写不敏感）。
 #[tauri::command]
 pub async fn fs_search(vault: String, query: String) -> Result<Vec<SearchHit>, String> {
     let root = PathBuf::from(&vault);
     if !root.is_dir() {
         return Ok(Vec::new());
     }
+    let Ok(notes) = ensure_notes_dir(&root) else {
+        return Ok(Vec::new());
+    };
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Ok(Vec::new());
     }
 
     let mut files = Vec::new();
-    collect_md(&root, &root, "", &mut files);
+    collect_md(&notes, &notes, NOTES_DIR, &mut files);
 
     let mut hits = Vec::new();
     for (rel, abs) in files {
@@ -226,5 +253,72 @@ fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBu
         } else if name.ends_with(".md") {
             out.push((rel, entry.path()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp_vault(tag: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("toolbox-notes-test-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    /// 旧布局迁移：vault 根下的 .md 应被移入 notes/，子目录（data 等）不受影响。
+    #[test]
+    fn migrates_root_md_into_notes() {
+        let v = tmp_vault("migrate");
+        std::fs::write(v.join("旧笔记.md"), "# 旧").unwrap();
+        std::fs::create_dir_all(v.join("data")).unwrap();
+        std::fs::write(v.join("data/keep.json"), "{}").unwrap();
+        std::fs::write(v.join("data/keep.md"), "# 数据目录里的 md 不迁移").unwrap();
+
+        let list = tauri::async_runtime::block_on(fs_list(v.to_string_lossy().to_string())).unwrap();
+        // 根层 .md 已迁入 notes/，data 目录及其中的 md 不出现
+        let paths: Vec<_> = list.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"notes/旧笔记.md"), "迁移后应位于 notes/: {paths:?}");
+        assert!(!paths.iter().any(|p| p.contains("data")), "不应枚举 data 目录: {paths:?}");
+        assert!(v.join("notes/旧笔记.md").exists(), "根层 md 应被移走");
+        assert!(!v.join("旧笔记.md").exists());
+        assert!(v.join("data/keep.md").exists(), "data 目录内容不动");
+        // 返回的 name 是 notes/ 下的直接子项名（文件树顶层显示用）
+        let entry = list.iter().find(|f| f.path == "notes/旧笔记.md").unwrap();
+        assert_eq!(entry.name, "旧笔记.md");
+        assert!(!entry.is_dir);
+
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    /// 空 vault：fs_list 应创建 notes/ 并返回空列表。
+    #[test]
+    fn creates_empty_notes_dir() {
+        let v = tmp_vault("empty");
+        let list = tauri::async_runtime::block_on(fs_list(v.to_string_lossy().to_string())).unwrap();
+        assert!(list.is_empty());
+        assert!(v.join("notes").is_dir(), "notes/ 应被创建");
+
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    /// 子文件夹内的 md 也要枚举，路径带 notes/ 前缀。
+    #[test]
+    fn lists_subfolders() {
+        let v = tmp_vault("sub");
+        std::fs::create_dir_all(v.join("notes/工作")).unwrap();
+        std::fs::write(v.join("notes/工作/日报.md"), "# 日报").unwrap();
+        std::fs::write(v.join("notes/顶层.md"), "# 顶层").unwrap();
+
+        let list = tauri::async_runtime::block_on(fs_list(v.to_string_lossy().to_string())).unwrap();
+        let paths: Vec<_> = list.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"notes/工作/日报.md"));
+        assert!(paths.contains(&"notes/顶层.md"));
+        assert!(paths.contains(&"notes/工作"));
+        let dir = list.iter().find(|f| f.path == "notes/工作").unwrap();
+        assert!(dir.is_dir);
+
+        std::fs::remove_dir_all(&v).ok();
     }
 }

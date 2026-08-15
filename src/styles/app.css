@@ -496,39 +496,6 @@
   white-space: nowrap;
 }
 
-.recent-block {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--border);
-}
-.recent-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--fg-faint);
-  margin-bottom: var(--space-1);
-}
-.recent-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: 3px 6px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  color: var(--fg-muted);
-  text-align: left;
-}
-.recent-item:hover {
-  background: var(--bg-elevated);
-  color: var(--fg);
-}
-.recent-item span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .file-tree {
   flex: 1;
   overflow-y: auto;

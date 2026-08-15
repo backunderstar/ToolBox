@@ -22,7 +22,6 @@ import {
 } from "./api";
 import type { FileEntry, SearchHit } from "./api";
 
-const RECENT_KEY = "toolbox.recent";
 const AUTOSAVE_DELAY = 800;
 const SEARCH_DELAY = 300;
 
@@ -32,7 +31,6 @@ interface VaultContextValue {
   activePath: string | null;
   content: string;
   dirty: boolean;
-  recent: string[];
   query: string;
   results: SearchHit[] | null;
   searching: boolean;
@@ -70,7 +68,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [activePath, setActivePath] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [recent, setRecent] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -92,13 +89,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     try {
       const list = await fsList(p);
       setFiles(list);
-      // 清理最近打开中已不存在的文件（删除/移动后不残留）
-      setRecent((prev) => {
-        const valid = prev.filter((r) => list.some((f) => !f.isDir && f.path === r));
-        if (valid.length === prev.length) return prev;
-        localStorage.setItem(RECENT_KEY, JSON.stringify(valid));
-        return valid;
-      });
     } catch (e) {
       flash(String(e));
     }
@@ -131,14 +121,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [flash]
   );
 
-  const addRecent = useCallback((rel: string) => {
-    setRecent((prev) => {
-      const next = [rel, ...prev.filter((r) => r !== rel)].slice(0, 10);
-      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
-
   const openFile = useCallback(
     async (rel: string) => {
       if (isMockRef.current) return;
@@ -151,19 +133,11 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setContent(text);
         dirtyRef.current = false;
         setDirty(false);
-        addRecent(rel);
       } catch (e) {
         flash(String(e));
-        // 文件已不存在（例如被外部删除）：从最近打开中移除
-        setRecent((prev) => {
-          const next = prev.filter((r) => r !== rel);
-          if (next.length === prev.length) return prev;
-          localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-          return next;
-        });
       }
     },
-    [save, addRecent, flash]
+    [save, flash]
   );
 
   const pickVault = useCallback(async () => {
@@ -195,7 +169,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       .toISOString()
       .replace(/[-:T]/g, "")
       .slice(0, 14);
-    const rel = `笔记-${ts}.md`;
+    // 笔记统一存放在工作区 notes/ 目录下
+    const rel = `notes/笔记-${ts}.md`;
     try {
       await fsCreate(p, rel);
       await refresh(p);
@@ -219,13 +194,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           dirtyRef.current = false;
           setDirty(false);
         }
-        // 同步清理最近打开（含目录删除时其下所有文件）
-        setRecent((prev) => {
-          const next = prev.filter((r) => r !== rel && !r.startsWith(rel + "/"));
-          if (next.length === prev.length) return prev;
-          localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-          return next;
-        });
         flash(`已删除 ${rel}`);
       } catch (e) {
         flash(String(e));
@@ -262,16 +230,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [save]
   );
 
-  /* 启动：读取已保存的工作区 + 最近打开（mock 模式则用内置示例） */
+  /* 启动：读取已保存的工作区（mock 模式则用内置示例） */
   useEffect(() => {
     if (isMock) {
       setPath("mock-vault");
-      setFiles([{ name: "示例笔记.md", path: "示例笔记.md", isDir: false }]);
-      setActivePath("示例笔记.md");
+      setFiles([{ name: "示例笔记.md", path: "notes/示例笔记.md", isDir: false }]);
+      setActivePath("notes/示例笔记.md");
       setContent(
         "# 示例笔记\n\n欢迎使用 ToolBox。\n\n- 列表一\n- 列表二\n\n```js\nconsole.log(1)\n```\n\n> 引用内容\n\n**加粗** 与 $E=mc^2$"
       );
-      setRecent(["示例笔记.md"]);
       return;
     }
     let alive = true;
@@ -285,14 +252,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         flash(String(e));
       }
     })();
-    const saved = localStorage.getItem(RECENT_KEY);
-    if (saved) {
-      try {
-        setRecent(JSON.parse(saved) as string[]);
-      } catch {
-        /* 忽略损坏数据 */
-      }
-    }
     return () => {
       alive = false;
     };
@@ -333,7 +292,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       activePath,
       content,
       dirty,
-      recent,
       query,
       results,
       searching,
@@ -354,7 +312,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       activePath,
       content,
       dirty,
-      recent,
       query,
       results,
       searching,

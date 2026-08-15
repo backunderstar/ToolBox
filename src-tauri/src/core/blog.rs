@@ -120,9 +120,14 @@ fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBu
 }
 
 fn scan_posts(vault: &str) -> Vec<PostMeta> {
-    let root = PathBuf::from(vault);
+    // 博客文章来自笔记目录（vault/notes/），不扫描 data/plugins 等其他目录
+    let root = PathBuf::from(vault).join("notes");
+    if !root.is_dir() {
+        return Vec::new();
+    }
     let mut files = Vec::new();
-    collect_md(&root, &root, "", &mut files);
+    // base 传 "notes"，返回的 rel 带前缀，与 fs_read/前端路径保持一致
+    collect_md(&root, &root, "notes", &mut files);
     let mut posts = Vec::new();
     for (rel, abs) in files {
         let Ok(content) = std::fs::read_to_string(&abs) else {
