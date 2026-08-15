@@ -36,15 +36,15 @@ const MODULES: Module[] = [
   {
     name: "清单",
     desc: "工作清单与打卡，结构化 JSON 存储，可与笔记双向链接。",
-    milestone: "M4 规划中",
-    done: false,
+    milestone: "M4 已完成",
+    done: true,
     icon: IconCheckSquare,
   },
   {
     name: "记录",
     desc: "工作日志与流水记录，支持筛选、统计与导出。",
-    milestone: "M4 规划中",
-    done: false,
+    milestone: "M4 已完成",
+    done: true,
     icon: IconNotebook,
   },
   {

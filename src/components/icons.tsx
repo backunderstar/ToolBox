@@ -210,3 +210,11 @@ export const IconArrowLeft = (p: SVGProps<SVGSVGElement>) => (
     <path d="M19 12H5M11 6l-6 6 6 6" />
   </svg>
 );
+
+export const IconLink = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M9.5 14.5l5-5" />
+    <path d="M8 12.5L5.5 15a3.5 3.5 0 0 0 5 5L13 17.5" />
+    <path d="M16 11.5l2.5-2.5a3.5 3.5 0 0 0-5-5L11 6.5" />
+  </svg>
+);

@@ -3,6 +3,7 @@ import { useVault } from "../core/vault";
 import type { SearchHit } from "../core/api";
 import { Editor } from "./Editor";
 import { FileTree } from "./FileTree";
+import { Backlinks } from "./Backlinks";
 import {
   IconChevronLeft,
   IconChevronRight,
@@ -166,6 +167,7 @@ export function NotesView({
                 {dirty ? "保存" : "已保存"}
               </button>
             </div>
+            <Backlinks activePath={activePath} />
             <div className="editor-body">
               <Editor
                 key={`${activePath}|${dark}`}

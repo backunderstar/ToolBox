@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
 import { PluginProvider } from "./core/plugins";
+import { ChecklistProvider } from "./core/checklists";
+import { RecordsProvider } from "./core/records";
+import { NavProvider } from "./core/navigation";
+import type { ViewParams } from "./core/navigation";
 import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, getInitialTheme, type ThemeMode } from "./themes/theme";
@@ -12,6 +16,8 @@ import { WelcomeView } from "./components/WelcomeView";
 import { NotesView } from "./components/NotesView";
 import { PluginsView } from "./components/PluginsView";
 import { ToolsView } from "./components/ToolsView";
+import { ChecklistView } from "./components/ChecklistView";
+import { RecordsView } from "./components/RecordsView";
 import { SettingsView } from "./components/SettingsView";
 import "./styles/tokens.css";
 import "./styles/base.css";
@@ -22,7 +28,11 @@ export default function App() {
     <ErrorBoundary>
       <VaultProvider>
         <PluginProvider>
-          <AppInner />
+          <ChecklistProvider>
+            <RecordsProvider>
+              <AppInner />
+            </RecordsProvider>
+          </ChecklistProvider>
         </PluginProvider>
       </VaultProvider>
     </ErrorBoundary>
@@ -34,6 +44,7 @@ function AppInner() {
   const [view, setView] = useState<ViewId>(() =>
     new URLSearchParams(window.location.search).has("mock") ? "notes" : "overview"
   );
+  const [viewParams, setViewParams] = useState<ViewParams>({});
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [pingInfo, setPingInfo] = useState<PingInfo | null>(null);
 
@@ -78,61 +89,96 @@ function AppInner() {
   /* 专注模式：导航与文件面板全部隐藏，编辑器占满 */
   const navHidden = focusMode;
 
+  /* 跨视图导航（供双向链接跳转） */
+  const navValue = useMemo(
+    () => ({
+      view,
+      params: viewParams,
+      go: (v: ViewId, params?: ViewParams) => {
+        setView(v);
+        setViewParams(params ?? {});
+      },
+      openNote: (rel: string) => {
+        setView("notes");
+        setViewParams({});
+        void vault.openFile(rel);
+      },
+      openChecklist: (id: string) => {
+        setView("checklist");
+        setViewParams({ openChecklistId: id });
+      },
+      openRecord: (id: string) => {
+        setView("records");
+        setViewParams({ openRecordId: id });
+      },
+    }),
+    [view, viewParams, vault]
+  );
+
   return (
-    <div className="app">
-      <TopBar
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        query={vault.query}
-        onQueryChange={vault.setQuery}
-        searchEnabled={view === "notes" && !!vault.path}
-        vaultName={vaultName}
-        onPickVault={vault.pickVault}
-        navCollapsed={navCollapsed}
-        onToggleNav={() => setNavCollapsed((c) => !c)}
-      />
-      <div className="body">
-        {!navHidden && (
-          <Sidebar
-            activeView={view}
-            onSelect={setView}
-            collapsed={navCollapsed}
-          />
-        )}
-        <main className="main">
-          {view === "overview" ? (
-            <WelcomeView
-              ping={pingInfo}
-              theme={theme}
-              onOpenNotes={() => setView("notes")}
-            />
-          ) : view === "plugins" ? (
-            <PluginsView />
-          ) : view === "tools" ? (
-            <ToolsView />
-          ) : view === "settings" ? (
-            <SettingsView
-              theme={theme}
-              onSetTheme={setTheme}
-              ping={pingInfo}
-            />
-          ) : (
-            <NotesView
-              dark={theme === "dark"}
-              filesCollapsed={filesCollapsed}
-              focusMode={focusMode}
-              onToggleFiles={() => setFilesCollapsed((c) => !c)}
-              onToggleFocus={() => setFocusMode((f) => !f)}
+    <NavProvider value={navValue}>
+      <div className="app">
+        <TopBar
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          query={vault.query}
+          onQueryChange={vault.setQuery}
+          searchEnabled={view === "notes" && !!vault.path}
+          vaultName={vaultName}
+          onPickVault={vault.pickVault}
+          navCollapsed={navCollapsed}
+          onToggleNav={() => setNavCollapsed((c) => !c)}
+        />
+        <div className="body">
+          {!navHidden && (
+            <Sidebar
+              activeView={view}
+              onSelect={(v) => {
+                setView(v);
+                setViewParams({});
+              }}
+              collapsed={navCollapsed}
             />
           )}
-        </main>
+          <main className="main">
+            {view === "overview" ? (
+              <WelcomeView
+                ping={pingInfo}
+                theme={theme}
+                onOpenNotes={() => setView("notes")}
+              />
+            ) : view === "plugins" ? (
+              <PluginsView />
+            ) : view === "tools" ? (
+              <ToolsView />
+            ) : view === "checklist" ? (
+              <ChecklistView />
+            ) : view === "records" ? (
+              <RecordsView />
+            ) : view === "settings" ? (
+              <SettingsView
+                theme={theme}
+                onSetTheme={setTheme}
+                ping={pingInfo}
+              />
+            ) : (
+              <NotesView
+                dark={theme === "dark"}
+                filesCollapsed={filesCollapsed}
+                focusMode={focusMode}
+                onToggleFiles={() => setFilesCollapsed((c) => !c)}
+                onToggleFocus={() => setFocusMode((f) => !f)}
+              />
+            )}
+          </main>
+        </div>
+        <StatusBar
+          ping={pingInfo}
+          theme={theme}
+          vaultName={vaultName}
+          status={vault.status}
+        />
       </div>
-      <StatusBar
-        ping={pingInfo}
-        theme={theme}
-        vaultName={vaultName}
-        status={vault.status}
-      />
-    </div>
+    </NavProvider>
   );
 }

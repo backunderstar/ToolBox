@@ -37,7 +37,7 @@ export function TopBar({
 
       <div className="topbar-brand">
         <span className="topbar-title">ToolBox</span>
-        <span className="topbar-tag">v0.1.0 · M3</span>
+        <span className="topbar-tag">v0.1.0 · M4</span>
       </div>
 
       <button
