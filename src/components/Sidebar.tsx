@@ -11,7 +11,7 @@ import {
 } from "./icons";
 import type { ComponentType, SVGProps } from "react";
 
-export type ViewId = "overview" | "notes" | "plugins" | "settings";
+export type ViewId = "overview" | "notes" | "plugins" | "tools" | "settings";
 
 interface NavItem {
   id: string;
@@ -28,7 +28,7 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
       { id: "overview", label: "概览", icon: IconGrid, now: true },
       { id: "notes", label: "笔记", icon: IconFileText, now: true },
       { id: "plugins", label: "插件", icon: IconPuzzle, now: true },
-      { id: "tools", label: "数据工具", icon: IconSliders, milestone: "M3" },
+      { id: "tools", label: "数据工具", icon: IconSliders, now: true },
       { id: "checklist", label: "清单", icon: IconCheckSquare, milestone: "M4" },
       { id: "records", label: "记录", icon: IconNotebook, milestone: "M4" },
     ],
@@ -65,6 +65,7 @@ export function Sidebar({ activeView, onSelect, collapsed }: SidebarProps) {
               item.id === "overview" ||
               item.id === "notes" ||
               item.id === "plugins" ||
+              item.id === "tools" ||
               item.id === "settings";
             return (
               <button

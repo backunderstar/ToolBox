@@ -11,6 +11,7 @@ import { StatusBar } from "./components/StatusBar";
 import { WelcomeView } from "./components/WelcomeView";
 import { NotesView } from "./components/NotesView";
 import { PluginsView } from "./components/PluginsView";
+import { ToolsView } from "./components/ToolsView";
 import { SettingsView } from "./components/SettingsView";
 import "./styles/tokens.css";
 import "./styles/base.css";
@@ -107,6 +108,8 @@ function AppInner() {
             />
           ) : view === "plugins" ? (
             <PluginsView />
+          ) : view === "tools" ? (
+            <ToolsView />
           ) : view === "settings" ? (
             <SettingsView
               theme={theme}

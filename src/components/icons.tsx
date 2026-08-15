@@ -161,3 +161,52 @@ export const IconPuzzle = (p: SVGProps<SVGSVGElement>) => (
     <path d="M7 6H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3h-2.2a1.6 1.6 0 0 1 0-3.2H20v-2" />
   </svg>
 );
+
+/* ---- M3 数据工具图标 ---- */
+
+export const IconBraces = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M9 4a3 3 0 0 0-3 3v2.5a2 2 0 0 1-2 2 2 2 0 0 1 2 2V16a3 3 0 0 0 3 3" />
+    <path d="M15 4a3 3 0 0 1 3 3v2.5a2 2 0 0 0 2 2 2 2 0 0 0-2 2V16a3 3 0 0 1-3 3" />
+  </svg>
+);
+
+export const IconClock = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 8v4l2.6 2.6" />
+  </svg>
+);
+
+export const IconHash = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M5 9h14M5 15h14M10 4l-2.4 16M16.4 4L14 20" />
+  </svg>
+);
+
+export const IconText = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M6 19l5.5-14L17 19" />
+    <path d="M8 14h7" />
+  </svg>
+);
+
+export const IconEnter = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M20 4v5a4 4 0 0 1-4 4H4" />
+    <path d="M8 9l-4 4 4 4" />
+  </svg>
+);
+
+export const IconCopy = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+  </svg>
+);
+
+export const IconArrowLeft = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M19 12H5M11 6l-6 6 6 6" />
+  </svg>
+);

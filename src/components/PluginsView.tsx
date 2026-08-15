@@ -1,21 +1,8 @@
 import { useState } from "react";
 import { usePlugins } from "../core/plugins";
 import { useVault } from "../core/vault";
-import { IconGear, IconRefresh, IconPlus } from "./icons";
-
-/** 示例命令的默认测试参数（让两个示例插件开箱即用） */
-const EXAMPLE_ARGS: Record<string, string> = {
-  "text-stats:analyze": JSON.stringify(
-    { text: "你好，世界！\n这是第二行。\n\n新段落开始。" },
-    null,
-    2
-  ),
-  "csv-tool:csv.convert": JSON.stringify(
-    { csv: "名称,数量\n苹果,3\n香蕉,5", format: "json" },
-    null,
-    2
-  ),
-};
+import { CommandTry } from "./CommandTry";
+import { IconGear, IconRefresh } from "./icons";
 
 const RUNTIME_LABEL: Record<string, string> = {
   webview: "JS",
@@ -34,34 +21,6 @@ export function PluginsView() {
     usePlugins();
 
   const [busy, setBusy] = useState<Record<string, boolean>>({});
-  const [tryPanel, setTryPanel] = useState<{ pluginId: string; command: string } | null>(null);
-  const [argsText, setArgsText] = useState("{}");
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
-  const [running, setRunning] = useState(false);
-
-  const run = async () => {
-    if (!tryPanel || running) return;
-    setRunning(true);
-    setResult(null);
-    try {
-      let args: unknown = {};
-      if (argsText.trim()) {
-        args = JSON.parse(argsText);
-      }
-      const out = await invoke(tryPanel.pluginId, tryPanel.command, args);
-      setResult({ ok: true, text: JSON.stringify(out, null, 2) });
-    } catch (e) {
-      setResult({ ok: false, text: String(e) });
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  const openTry = (pluginId: string, command: string) => {
-    setTryPanel({ pluginId, command });
-    setArgsText(EXAMPLE_ARGS[`${pluginId}:${command}`] ?? "{}");
-    setResult(null);
-  };
 
   const toggle = async (id: string, enabled: boolean) => {
     setBusy((b) => ({ ...b, [id]: true }));
@@ -85,11 +44,6 @@ export function PluginsView() {
     }
   };
 
-  const doRefresh = async () => {
-    setResult(null);
-    await refresh();
-  };
-
   return (
     <div className="plugins-view scroll-area">
       <header className="view-header">
@@ -98,7 +52,7 @@ export function PluginsView() {
           <p className="view-sub">用 JS / Python 扩展 ToolBox 的能力</p>
         </div>
         <div className="view-actions">
-          <button className="btn" onClick={doRefresh} disabled={loading}>
+          <button className="btn" onClick={() => void refresh()} disabled={loading}>
             <IconRefresh width={14} height={14} />
             {loading ? "刷新中…" : "刷新"}
           </button>
@@ -163,47 +117,14 @@ export function PluginsView() {
                   <div className="plugin-commands">
                     <span className="plugin-commands-label">命令</span>
                     {commands.map((c) => (
-                      <span key={c.id} className="command-chip">
-                        <span className="command-name">{c.name}</span>
-                        <button
-                          className="command-try"
-                          onClick={() => openTry(p.id, c.id)}
-                          title={`调用 ${c.id}`}
-                        >
-                          <IconPlus width={11} height={11} />
-                          试用
-                        </button>
-                      </span>
+                      <CommandTry
+                        key={c.id}
+                        pluginId={p.id}
+                        command={c.id}
+                        name={c.name}
+                        invoke={invoke}
+                      />
                     ))}
-                  </div>
-                )}
-
-                {tryPanel?.pluginId === p.id && (
-                  <div className="try-panel">
-                    <div className="try-head">
-                      <span className="try-title">
-                        试用命令 <code>{tryPanel.command}</code>
-                      </span>
-                      <button
-                        className="btn btn-sm"
-                        onClick={run}
-                        disabled={running}
-                      >
-                        {running ? "运行中…" : "运行"}
-                      </button>
-                    </div>
-                    <textarea
-                      className="try-args"
-                      value={argsText}
-                      onChange={(e) => setArgsText(e.target.value)}
-                      spellCheck={false}
-                      placeholder='JSON 参数，如 {"text": "你好"}'
-                    />
-                    {result && (
-                      <pre className={`try-result ${result.ok ? "ok" : "err"}`}>
-                        {result.text}
-                      </pre>
-                    )}
                   </div>
                 )}
               </section>

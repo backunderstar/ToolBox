@@ -28,9 +28,9 @@ const MODULES: Module[] = [
   },
   {
     name: "数据工具",
-    desc: "JSON 格式化、时间戳转换、CSV 转换等，以插件形式内置。",
-    milestone: "M3 规划中",
-    done: false,
+    desc: "JSON 格式化、时间戳转换、Base64、CSV 转换等，以插件形式内置。",
+    milestone: "M3 已完成",
+    done: true,
     icon: IconSliders,
   },
   {
