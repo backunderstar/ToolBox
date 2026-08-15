@@ -7,7 +7,7 @@ import { IconArrowLeft } from "./icons";
 
 /**
  * 数据工具视图（M3）：
- * - 内置工具：JSON / 时间戳 / Base64 / UUID / 行尾（纯前端）
+ * - 内置工具：Base64（纯前端）
  * - 插件命令：已启用插件声明的命令（如 csv.convert、文本统计）
  */
 export function ToolsView() {

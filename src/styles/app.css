@@ -265,7 +265,6 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-4);
-  max-width: 900px;
 }
 .module-card {
   display: flex;
@@ -690,7 +689,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: 760px;
 }
 .result-item {
   display: block;
@@ -863,8 +861,19 @@
   color: var(--fg);
 }
 .editor-host .vditor-toolbar {
+  /* padding-left 与正文列左内边距(24px)保持一致；!important 压过 Vditor 内联的 35px minPadding，
+     腾出空间保证最小窗口（编辑区 436px）下工具栏单行不换行 */
   border-bottom: 1px solid var(--border);
-  padding: 4px 8px;
+  padding: 4px 6px 4px 24px !important;
+}
+/* 工具栏单行：收紧按钮宽度与分隔线间距，保证最小窗口宽度（编辑区约 436px）下也不换行。
+   换行会白白吃掉 35~70px 的编辑高度（@media 之外 Vditor 工具栏用 float 布局无法 CSS 限行） */
+.editor-host .vditor-toolbar__item .vditor-tooltipped {
+  width: 22px;
+  padding: 10px 3px;
+}
+.editor-host .vditor-toolbar__divider {
+  margin: var(--toolbar-divider-margin-top) 4px;
 }
 .editor-host .vditor-toolbar__item button:hover,
 .editor-host .vditor-toolbar__item .vditor-tooltipped:hover {
@@ -880,7 +889,9 @@
 .editor-host .vditor-ir,
 .editor-host .vditor-wysiwyg,
 .editor-host .vditor-preview {
-  padding: 20px 28px 120px;
+  /* 垂直内边距用 !important 覆盖 Vditor 内联 padding（否则其 inline 10px 会覆盖我们的值）；
+     水平 24px 与工具栏对齐 */
+  padding: 20px 24px 120px !important;
   max-width: 1100px;
   margin: 0 auto;
 }
@@ -958,7 +969,6 @@
   justify-content: space-between;
   gap: var(--space-4);
   margin-bottom: var(--space-6);
-  max-width: 860px;
 }
 .view-header h1 {
   margin: 0;
@@ -1012,7 +1022,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-width: 860px;
 }
 .plugin-card {
   padding: var(--space-5);
@@ -1226,7 +1235,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-width: 680px;
+  max-width: 760px;
+  margin: 0 auto;
 }
 .settings-card {
   padding: var(--space-5);
@@ -1326,9 +1336,6 @@
   overflow-y: auto;
   padding: var(--space-6) var(--space-8);
 }
-.tool-grid {
-  max-width: 900px;
-}
 .tool-card {
   display: flex;
   flex-direction: column;
@@ -1362,13 +1369,10 @@
 .tools-plugins {
   margin-top: var(--space-8);
 }
-.tools-plugins .plugin-list {
-  max-width: 860px;
-}
 
 /* 工具台 */
 .tool-workspace {
-  max-width: 860px;
+  max-width: 1100px;
 }
 .tool-workspace-head {
   display: flex;
@@ -1704,7 +1708,6 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  max-width: 860px;
   gap: var(--space-3);
 }
 .ai-chat {
@@ -1736,7 +1739,7 @@
 .ai-msg {
   display: flex;
   gap: var(--space-3);
-  max-width: 92%;
+  max-width: min(92%, 880px);
 }
 .ai-msg-user {
   align-self: flex-end;
@@ -1993,7 +1996,7 @@
   overflow-y: auto;
 }
 .blog-detail {
-  max-width: 680px;
+  max-width: 760px;
   margin: 0 auto;
   padding: var(--space-6) var(--space-8);
   display: flex;

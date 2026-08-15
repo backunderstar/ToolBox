@@ -75,6 +75,8 @@ export function PluginsView() {
           {plugins.map((p) => {
             const commands = commandsOf(p.id);
             const err = p.error ?? runtimeErrors[p.id];
+            // webview 入口求值失败时，以"错误"状态展示（Rust 侧不知道前端加载结果）
+            const status = runtimeErrors[p.id] ? "error" : p.status;
             return (
               <section className="plugin-card" key={p.id}>
                 <div className="plugin-head">
@@ -82,8 +84,8 @@ export function PluginsView() {
                     <h2>{p.name}</h2>
                     <span className="badge badge-version">v{p.version}</span>
                     <span className="badge badge-runtime">{RUNTIME_LABEL[p.runtime] ?? p.runtime}</span>
-                    <span className={`badge badge-status badge-status-${p.status}`}>
-                      {STATUS_TEXT[p.status] ?? p.status}
+                    <span className={`badge badge-status badge-status-${status}`}>
+                      {STATUS_TEXT[status] ?? status}
                     </span>
                   </div>
                   <div className="plugin-actions">

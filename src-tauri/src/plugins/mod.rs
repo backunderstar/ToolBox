@@ -208,9 +208,16 @@ impl PluginManager {
                 },
                 entry: r.manifest.entry.clone(),
                 enabled: self.enabled.contains(&r.manifest.id),
+                // 状态语义：
+                // - error 优先（清单/启动/崩溃等错误）
+                // - process 插件：进程存活才算 ready
+                // - webview 插件：无子进程，入口由前端加载；
+                //   启用即视为 ready（入口求值失败由前端 runtimeErrors 展示为错误）
                 status: if r.error.is_some() {
                     "error"
-                } else if r.process.is_some() {
+                } else if r.manifest.runtime == PluginRuntime::Process {
+                    if r.process.is_some() { "ready" } else { "stopped" }
+                } else if self.enabled.contains(&r.manifest.id) {
                     "ready"
                 } else {
                     "stopped"
