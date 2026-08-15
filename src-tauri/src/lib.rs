@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{notes, vault};
+use core::{ai, blog, notes, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -64,6 +64,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // 插件命令签名要求 Mutex<PluginManager>（见 plugins/mod.rs 的 State 参数）
         .manage(Mutex::new(PluginManager::default()))
+        .manage(blog::PreviewState::default())
         .invoke_handler(tauri::generate_handler![
             ping,
             log_console,
@@ -82,6 +83,16 @@ pub fn run() {
             plugins::plugins_set_enabled,
             plugins::plugins_reload,
             plugins::plugins_invoke,
+            ai::ai_config_get,
+            ai::ai_config_set,
+            ai::ai_config_clear_key,
+            ai::ai_chat,
+            ai::ai_test,
+            blog::blog_list,
+            blog::blog_generate,
+            blog::blog_preview_start,
+            blog::blog_preview_stop,
+            blog::blog_open_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

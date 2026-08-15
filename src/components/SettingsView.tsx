@@ -10,6 +10,7 @@ import {
   type ThemeDef,
 } from "../themes/themes";
 import { ThemeEditor } from "./ThemeEditor";
+import { AISettings } from "./AISettings";
 import { IconFolder, IconPlus, IconTrash } from "./icons";
 
 interface SettingsViewProps {
@@ -175,12 +176,15 @@ export function SettingsView({ themeId, onSetThemeId, ping }: SettingsViewProps)
           )}
         </section>
 
+        {/* ---- AI 提供商 ---- */}
+        <AISettings />
+
         {/* ---- 关于 ---- */}
         <section className="settings-card">
           <h2 className="settings-title">关于</h2>
           <div className="settings-row">
             <span className="settings-label">ToolBox</span>
-            <span className="settings-value">v0.1.0 · M1–M5</span>
+            <span className="settings-value">v0.1.0 · M1–M7</span>
           </div>
           <div className="settings-row">
             <span className="settings-label">核心版本</span>

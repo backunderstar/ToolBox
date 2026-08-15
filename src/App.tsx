@@ -18,6 +18,8 @@ import { PluginsView } from "./components/PluginsView";
 import { ToolsView } from "./components/ToolsView";
 import { ChecklistView } from "./components/ChecklistView";
 import { RecordsView } from "./components/RecordsView";
+import { AIChatView } from "./components/AIChatView";
+import { BlogView } from "./components/BlogView";
 import { SettingsView } from "./components/SettingsView";
 import "./styles/tokens.css";
 import "./styles/base.css";
@@ -147,7 +149,6 @@ function AppInner() {
             {view === "overview" ? (
               <WelcomeView
                 ping={pingInfo}
-                theme={themeMode}
                 themeName={themeName}
                 onOpenNotes={() => setView("notes")}
               />
@@ -159,6 +160,10 @@ function AppInner() {
               <ChecklistView />
             ) : view === "records" ? (
               <RecordsView />
+            ) : view === "ai" ? (
+              <AIChatView />
+            ) : view === "blog" ? (
+              <BlogView />
             ) : view === "settings" ? (
               <SettingsView
                 themeId={themeId}

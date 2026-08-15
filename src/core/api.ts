@@ -85,3 +85,54 @@ export const pluginsInvoke = (
 /** 在系统文件管理器中打开路径（Windows：资源管理器） */
 export const openInExplorer = (path: string) =>
   invoke<void>("open_in_explorer", { path });
+
+/* ---- M6 AI ---- */
+
+export interface AiConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export const aiConfigGet = () => invoke<AiConfig>("ai_config_get");
+export const aiConfigSet = (config: AiConfig) =>
+  invoke<void>("ai_config_set", { config });
+export const aiConfigClearKey = () => invoke<void>("ai_config_clear_key");
+export const aiChat = (messages: ChatMessage[]) =>
+  invoke<string>("ai_chat", { messages });
+export const aiTest = () => invoke<string>("ai_test");
+
+/* ---- M7 博客 ---- */
+
+export interface PostMeta {
+  path: string;
+  title: string;
+  date: string;
+  tags: string[];
+  status: string;
+}
+
+export interface BlogListResult {
+  posts: PostMeta[];
+}
+
+export interface BlogGenerateResult {
+  siteDir: string;
+  posts: number;
+  indexUrl: string;
+}
+
+export const blogList = (vault: string) =>
+  invoke<BlogListResult>("blog_list", { vault });
+export const blogGenerate = (vault: string, siteTitle: string) =>
+  invoke<BlogGenerateResult>("blog_generate", { vault, siteTitle });
+export const blogPreviewStart = (vault: string) =>
+  invoke<string>("blog_preview_start", { vault });
+export const blogPreviewStop = () => invoke<void>("blog_preview_stop");
+export const blogOpenFolder = (vault: string) =>
+  invoke<void>("blog_open_folder", { vault });

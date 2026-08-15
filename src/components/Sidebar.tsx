@@ -18,6 +18,8 @@ export type ViewId =
   | "tools"
   | "checklist"
   | "records"
+  | "ai"
+  | "blog"
   | "settings";
 
 interface NavItem {
@@ -43,8 +45,8 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "系统",
     items: [
-      { id: "ai", label: "AI 整理", icon: IconSparkle, milestone: "M6" },
-      { id: "blog", label: "博客发布", icon: IconGlobe, milestone: "M7" },
+      { id: "ai", label: "AI 整理", icon: IconSparkle, now: true },
+      { id: "blog", label: "博客发布", icon: IconGlobe, now: true },
       { id: "settings", label: "设置", icon: IconGear, now: true },
     ],
   },
@@ -75,6 +77,8 @@ export function Sidebar({ activeView, onSelect, collapsed }: SidebarProps) {
               item.id === "tools" ||
               item.id === "checklist" ||
               item.id === "records" ||
+              item.id === "ai" ||
+              item.id === "blog" ||
               item.id === "settings";
             return (
               <button

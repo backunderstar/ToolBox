@@ -1,6 +1,5 @@
 import type { CSSProperties, ComponentType, SVGProps } from "react";
 import type { PingInfo } from "../core/ipc";
-import type { ThemeMode } from "../themes/themes";
 import {
   IconCheckSquare,
   IconFileText,
@@ -50,27 +49,26 @@ const MODULES: Module[] = [
   {
     name: "AI 整理",
     desc: "选段摘要、笔记问答（RAG），提供商可配置，以插件接入。",
-    milestone: "M6 规划中",
-    done: false,
+    milestone: "M6 已完成",
+    done: true,
     icon: IconSparkle,
   },
   {
     name: "博客发布",
     desc: "笔记带 frontmatter 一键发布，集成 Zola 静态博客生成。",
-    milestone: "M7 规划中",
-    done: false,
+    milestone: "M7 已完成",
+    done: true,
     icon: IconGlobe,
   },
 ];
 
 interface WelcomeViewProps {
   ping: PingInfo | null;
-  theme: ThemeMode;
   themeName: string;
   onOpenNotes: () => void;
 }
 
-export function WelcomeView({ ping, theme, themeName, onOpenNotes }: WelcomeViewProps) {
+export function WelcomeView({ ping, themeName, onOpenNotes }: WelcomeViewProps) {
   const ok = ping?.message === "pong";
 
   return (
