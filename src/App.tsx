@@ -9,11 +9,12 @@ import { ProjectsProvider } from "./core/projects";
 import { NavProvider } from "./core/navigation";
 import type { ViewParams } from "./core/navigation";
 import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
+import { loadNavPrefs, saveNavPrefs, type NavPrefs } from "./core/navPrefs";
 import { floatToggle } from "./core/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, getInitialTheme, toggleTheme, getThemeBase, findTheme } from "./themes/themes";
 import { TopBar } from "./components/TopBar";
-import { Sidebar, type ViewId } from "./components/Sidebar";
+import { Sidebar, NAV_GROUPS, type ViewId } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { WelcomeView } from "./components/WelcomeView";
 import { NotesView } from "./components/NotesView";
@@ -83,9 +84,18 @@ function AppInner() {
     () => loadLayoutPrefs().focusMode
   );
 
+  /* 导航栏偏好：顺序 + 隐藏（localStorage 持久化） */
+  const [navPrefs, setNavPrefs] = useState<NavPrefs>(() =>
+    loadNavPrefs(NAV_GROUPS)
+  );
+
   useEffect(() => {
     saveLayoutPrefs({ navCollapsed, filesCollapsed, focusMode });
   }, [navCollapsed, filesCollapsed, focusMode]);
+
+  useEffect(() => {
+    saveNavPrefs(navPrefs);
+  }, [navPrefs]);
 
   useEffect(() => {
     applyTheme(themeId);
@@ -183,6 +193,7 @@ function AppInner() {
                 setViewParams({});
               }}
               collapsed={navCollapsed}
+              prefs={navPrefs}
             />
           )}
           <main className="main">
@@ -211,6 +222,8 @@ function AppInner() {
                 themeId={themeId}
                 onSetThemeId={setThemeId}
                 ping={pingInfo}
+                navPrefs={navPrefs}
+                onNavPrefsChange={setNavPrefs}
               />
             ) : (
               <NotesView
