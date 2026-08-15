@@ -33,16 +33,25 @@ export function parseFrontmatter(content: string): FmResult {
   return { fm, body: restBody.replace(/^\r?\n+/, ""), hasFm: true };
 }
 
-/** 设置 status 并返回新内容（无 frontmatter 时在顶部插入） */
+/**
+ * 设置 status 并返回新内容。
+ * 行级替换 `status:` 行（保留注释、键序、格式），而不是重建整个 frontmatter——
+ * 原实现会丢注释并重排键序，对"只改状态"的操作改动面过大。
+ * 无 frontmatter 时在顶部插入完整块。
+ */
 export function setStatus(content: string, status: string): string {
-  const { fm, body, hasFm } = parseFrontmatter(content);
-  fm.status = status;
-  const fmText = Object.entries(fm)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join("\n");
-  const head = `---\n${fmText}\n---`;
-  if (hasFm) {
-    return `${head}\n\n${body}`;
+  const { hasFm } = parseFrontmatter(content);
+  if (!hasFm) {
+    return `---\nstatus: ${status}\n---\n\n${content.trimStart()}`;
   }
-  return `${head}\n\n${content.trimStart()}`;
+  const body = content.startsWith("\uFEFF") ? content.slice(1) : content;
+  const rest = body.slice(3);
+  const end = rest.indexOf("\n---");
+  const fmRaw = rest.slice(0, end).trim();
+  const restBody = rest.slice(end + 4);
+  const statusRe = /^status\s*:.*$/m;
+  const newFm = statusRe.test(fmRaw)
+    ? fmRaw.replace(statusRe, `status: ${status}`)
+    : `${fmRaw}${fmRaw ? "\n" : ""}status: ${status}`;
+  return `---\n${newFm}\n---${restBody}`;
 }

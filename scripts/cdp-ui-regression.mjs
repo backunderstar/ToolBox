@@ -25,7 +25,9 @@ await send("Runtime.enable");
 await new Promise((r) => setTimeout(r, 1800));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 1. 进入笔记并打开一篇
+// 1. 进入笔记并打开一篇（先确保在笔记视图，避免受上一脚本遗留视图影响）
+await ev(`(() => { const b = [...document.querySelectorAll('.sidebar .nav-item')].find(x => x.textContent.includes('笔记')); if (b) b.click(); return !!b; })()`);
+await sleep(1500);
 await ev(`(() => { const b = document.querySelector('.welcome .btn-primary'); if (b) b.click(); return !!b; })()`);
 await sleep(2200);
 const opened = await ev(`(() => {

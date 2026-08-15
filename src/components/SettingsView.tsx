@@ -8,6 +8,8 @@ import {
   findTheme,
   swatchOf,
   deleteCustomTheme,
+  exportThemesJson,
+  importThemesJson,
   type ThemeDef,
 } from "../themes/themes";
 import { ThemeEditor } from "./ThemeEditor";
@@ -17,6 +19,7 @@ import { NavSettings } from "./NavSettings";
 import { IconFolder, IconPlus, IconTrash } from "./icons";
 import { APP_TAG } from "../core/version";
 import { onRowKeyDown } from "../core/keyboard";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface SettingsViewProps {
   themeId: string;
@@ -36,6 +39,8 @@ export function SettingsView({
   const vault = useVault();
   const [opening, setOpening] = useState(false);
   const [editing, setEditing] = useState<ThemeDef | null>(null);
+  const [themeIo, setThemeIo] = useState(false);
+  const [confirmDelTheme, setConfirmDelTheme] = useState<ThemeDef | null>(null);
   /* 删除/新建自定义主题后强制重渲染（listThemes 读 localStorage） */
   const [, force] = useReducer((x: number) => x + 1, 0);
 
@@ -69,10 +74,10 @@ export function SettingsView({
   };
 
   const removeCustom = (id: string) => {
-    if (!window.confirm("删除这个自定义主题？")) return;
     deleteCustomTheme(id);
     if (themeId === id) onSetThemeId("default-light");
     setEditing(null);
+    setConfirmDelTheme(null);
     force();
   };
 
@@ -157,9 +162,10 @@ export function SettingsView({
                       <button
                         className="theme-delete"
                         title="删除主题"
+                        aria-label={`删除主题 ${t.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          removeCustom(t.id);
+                          setConfirmDelTheme(t);
                         }}
                       >
                         <IconTrash width={12} height={12} />
@@ -173,10 +179,21 @@ export function SettingsView({
                   <IconPlus width={12} height={12} />
                   基于当前主题新建
                 </button>
+                <button className="btn btn-sm" onClick={() => setThemeIo((v) => !v)}>
+                  {themeIo ? "收起导出/导入" : "导出 / 导入主题"}
+                </button>
                 <span className="settings-hint">
                   自定义主题保存在本机，可随时调整或删除
                 </span>
               </div>
+              {themeIo && (
+                <ThemeIoPanel
+                  onDone={() => {
+                    setThemeIo(false);
+                    force();
+                  }}
+                />
+              )}
             </>
           ) : (
             <ThemeEditor
@@ -227,6 +244,86 @@ export function SettingsView({
           </div>
         </section>
       </div>
+      <ConfirmDialog
+        open={confirmDelTheme !== null}
+        title="删除主题"
+        message={confirmDelTheme ? `确定删除自定义主题「${confirmDelTheme.name}」？` : ""}
+        confirmText="删除"
+        danger
+        onCancel={() => setConfirmDelTheme(null)}
+        onConfirm={() => {
+          if (confirmDelTheme) removeCustom(confirmDelTheme.id);
+        }}
+      />
+    </div>
+  );
+}
+
+/** 主题导出/导入面板：导出 = 复制 JSON；导入 = 粘贴 JSON 后应用。 */
+function ThemeIoPanel({ onDone }: { onDone: () => void }) {
+  const [exported] = useState(() => exportThemesJson());
+  const [importText, setImportText] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [msgErr, setMsgErr] = useState(false);
+
+  const copyExport = async () => {
+    try {
+      await navigator.clipboard.writeText(exported);
+      setMsg("已复制到剪贴板");
+      setMsgErr(false);
+    } catch {
+      setMsg("复制失败：请手动选择文本复制");
+      setMsgErr(true);
+    }
+  };
+
+  const doImport = () => {
+    try {
+      const n = importThemesJson(importText);
+      setMsg(`导入成功：${n} 个主题`);
+      setMsgErr(false);
+      onDone();
+    } catch (e) {
+      setMsg(String(e));
+      setMsgErr(true);
+    }
+  };
+
+  return (
+    <div className="theme-io">
+      <div className="settings-row">
+        <span className="settings-label">导出</span>
+        <div className="settings-actions" style={{ flex: 1, minWidth: 0 }}>
+          <textarea
+            className="theme-io-textarea"
+            readOnly
+            value={exported}
+            rows={4}
+            placeholder="（暂无自定义主题）"
+          />
+          <button className="btn btn-sm" onClick={() => void copyExport()} disabled={!exported.trim()}>
+            复制
+          </button>
+        </div>
+      </div>
+      <div className="settings-row">
+        <span className="settings-label">导入</span>
+        <div className="settings-actions" style={{ flex: 1, minWidth: 0 }}>
+          <textarea
+            className="theme-io-textarea"
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            rows={4}
+            placeholder="粘贴主题 JSON（从其他机器导出的文本）"
+          />
+          <button className="btn btn-sm" onClick={doImport} disabled={!importText.trim()}>
+            应用
+          </button>
+        </div>
+      </div>
+      {msg && (
+        <p className={`settings-message ${msgErr ? "err" : "ok"}`}>{msg}</p>
+      )}
     </div>
   );
 }

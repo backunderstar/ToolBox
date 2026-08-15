@@ -7,6 +7,7 @@ mod rpc;
 use core::{ai, backup, blog, notes, projects, todos, vault};
 use plugins::PluginManager;
 use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::Manager;
@@ -233,8 +234,36 @@ fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// 浮窗可见性记忆：%APPDATA%/com.toolbox.desktop/float.json。
+/// 上次隐藏后启动应用不应再弹出浮窗（window-state 只记忆位置/尺寸）。
+fn float_visible_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建配置目录失败: {e}"))?;
+    Ok(dir.join("float.json"))
+}
+
+fn read_float_visible(app: &tauri::AppHandle) -> bool {
+    let Ok(p) = float_visible_path(app) else {
+        return true;
+    };
+    std::fs::read_to_string(&p)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|v| v.get("visible").and_then(|x| x.as_bool()))
+        .unwrap_or(true)
+}
+
+fn write_float_visible(app: &tauri::AppHandle, visible: bool) {
+    if let Ok(p) = float_visible_path(app) {
+        let _ = std::fs::write(&p, format!("{{\"visible\": {visible}}}"));
+    }
+}
+
 /// 创建桌面浮窗：无边框、透明、**不置顶**（桌面层小组件，不遮挡其他窗口）；
-/// 位置/大小由 window-state 插件记忆。
+/// 位置/大小由 window-state 插件记忆；初始可见性按上次状态恢复。
 fn create_float_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     let win = tauri::WebviewWindowBuilder::new(
         app,
@@ -252,9 +281,15 @@ fn create_float_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     match &win {
         Ok(w) => {
             eprintln!("[float] 浮窗已创建 label={}", w.label());
-            // 透明窗口在 Windows 上可能保持隐藏（等待 WebView 初始化），显式显示
-            if let Err(e) = w.show() {
-                eprintln!("[float] show 失败: {e}");
+            // 透明窗口在 Windows 上可能保持隐藏（等待 WebView 初始化），
+            // 按记忆的可见性显式显示/隐藏（上次隐藏则不打扰）
+            let visible = read_float_visible(app);
+            if visible {
+                if let Err(e) = w.show() {
+                    eprintln!("[float] show 失败: {e}");
+                }
+            } else {
+                let _ = w.hide();
             }
             // 置底（桌面层）：不遮挡其他窗口；交互结束后失去焦点自动回到底层
             #[cfg(target_os = "windows")]
@@ -360,9 +395,11 @@ fn float_toggle(app: tauri::AppHandle) -> Result<bool, String> {
     };
     if win.is_visible().unwrap_or(true) {
         win.hide().map_err(|e| format!("隐藏浮窗失败: {e}"))?;
+        write_float_visible(&app, false);
         Ok(false)
     } else {
         win.show().map_err(|e| format!("显示浮窗失败: {e}"))?;
+        write_float_visible(&app, true);
         win.set_focus().ok();
         Ok(true)
     }

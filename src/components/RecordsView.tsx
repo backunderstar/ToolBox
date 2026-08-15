@@ -4,6 +4,7 @@ import type { RecordData } from "../core/records";
 import { useNav } from "../core/navigation";
 import { onRowKeyDown } from "../core/keyboard";
 import { IconFileText, IconPlus, IconTrash } from "./icons";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 /**
  * 记录视图（M4）：左侧记录列表（筛选/统计）+ 右侧编辑器（标题/日期/标签/正文）。
@@ -92,8 +93,9 @@ export function RecordsView() {
     }
   };
 
-  const deleteRecord = async (id: string, title: string) => {
-    if (!window.confirm(`删除记录「${title}」？`)) return;
+  const [confirmDel, setConfirmDel] = useState<{ id: string; title: string } | null>(null);
+
+  const deleteRecord = async (id: string) => {
     if (currentId === id) {
       await flush(); // 先落盘待保存内容，避免被删除文件被写回
       setCurrentId(null);
@@ -215,9 +217,10 @@ export function RecordsView() {
                 <button
                   className="tree-action danger"
                   title="删除记录"
+                  aria-label={`删除记录 ${r.title}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void deleteRecord(r.id, r.title);
+                    setConfirmDel({ id: r.id, title: r.title });
                   }}
                 >
                   <IconTrash width={12} height={12} />
@@ -287,6 +290,18 @@ export function RecordsView() {
           </div>
         )}
       </section>
+      <ConfirmDialog
+        open={confirmDel !== null}
+        title="删除记录"
+        message={confirmDel ? `确定删除记录「${confirmDel.title}」？此操作不可撤销。` : ""}
+        confirmText="删除"
+        danger
+        onCancel={() => setConfirmDel(null)}
+        onConfirm={() => {
+          if (confirmDel) void deleteRecord(confirmDel.id);
+          setConfirmDel(null);
+        }}
+      />
     </div>
   );
 }

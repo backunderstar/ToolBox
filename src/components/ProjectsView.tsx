@@ -15,6 +15,7 @@ import {
   IconRefresh,
   IconTrash,
 } from "./icons";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 /**
  * 项目文件管理视图（M8）：
@@ -61,6 +62,7 @@ export function ProjectsView() {
 function ProjectList() {
   const p = useProjects();
   const [newName, setNewName] = useState("");
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const create = () => {
     if (!newName.trim()) return;
@@ -69,9 +71,7 @@ function ProjectList() {
   };
 
   const remove = (name: string) => {
-    if (window.confirm(`删除项目「${name}」？将移入系统回收站。`)) {
-      void p.remove(name);
-    }
+    void p.remove(name);
   };
 
   const active = p.projects.filter((x) => !x.archived);
@@ -107,7 +107,7 @@ function ProjectList() {
             <button className="btn btn-sm" onClick={() => void p.archive(name)}>
               归档
             </button>
-            <button className="btn btn-sm danger" onClick={() => remove(name)}>
+            <button className="btn btn-sm danger" onClick={() => setConfirmDel(name)}>
               <IconTrash width={12} height={12} />
               删除
             </button>
@@ -125,12 +125,24 @@ function ProjectList() {
             <button className="btn btn-sm" onClick={() => void p.unarchive(name)}>
               还原
             </button>
-            <button className="btn btn-sm danger" onClick={() => remove(name)}>
+            <button className="btn btn-sm danger" onClick={() => setConfirmDel(name)}>
               <IconTrash width={12} height={12} />
               删除
             </button>
           </>
         )}
+      />
+      <ConfirmDialog
+        open={confirmDel !== null}
+        title="删除项目"
+        message={confirmDel ? `确定删除项目「${confirmDel}」？将移入系统回收站。` : ""}
+        confirmText="删除"
+        danger
+        onCancel={() => setConfirmDel(null)}
+        onConfirm={() => {
+          if (confirmDel) remove(confirmDel);
+          setConfirmDel(null);
+        }}
       />
     </>
   );

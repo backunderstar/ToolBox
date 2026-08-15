@@ -155,6 +155,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         title: "选择工作区文件夹",
       })) as string | null;
       if (!sel) return;
+      // 切换前把未保存内容落盘（写入旧工作区），防止防抖窗口内的输入丢失
+      if (dirtyRef.current) await save(false);
       await vaultSet(sel);
       setPath(sel);
       setActivePath(null);
@@ -166,7 +168,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       flash(String(e));
     }
-  }, [refresh, flash]);
+  }, [refresh, flash, save]);
 
   const newNote = useCallback(async () => {
     if (isMockRef.current) return;

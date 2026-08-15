@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::Manager;
 
@@ -17,6 +18,11 @@ const DEFAULT_INTERVAL_MIN: u64 = 30;
 const DEFAULT_KEEP: usize = 10;
 /// 后台检查周期
 const CHECK_INTERVAL: Duration = Duration::from_secs(60);
+
+/// 备份全局互斥：手动"立即备份"与后台自动备份并发时，
+/// unique_backup_dir 的"存在检查后创建"是 TOCTOU，两份备份会混写进
+/// 同一目录，prune 也会打断复制。锁在 `backup_now` 内持有（复制 + prune）。
+static BACKUP_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -197,8 +203,10 @@ fn dir_size(dir: &Path) -> u64 {
 
 /* ---------------- 命令 ---------------- */
 
-/// 立即备份（手动或后台任务调用）。
+/// 立即备份（手动或后台任务调用）。全局锁防止手动/自动并发。
 pub fn backup_now(app: &tauri::AppHandle, vault: &str) -> Result<BackupInfo, String> {
+    // 整个复制 + prune 持锁：并发备份会混写同一目录 / 互相打断 prune
+    let _guard = BACKUP_LOCK.lock().map_err(|_| "备份正在进行中".to_string())?;
     let root = PathBuf::from(vault);
     if !root.is_dir() {
         return Err(format!("工作区不存在: {vault}"));
@@ -210,6 +218,10 @@ pub fn backup_now(app: &tauri::AppHandle, vault: &str) -> Result<BackupInfo, Str
     let (size, count) = copy_dir_all(&root, &dir, true)?;
     let keep = load_config(app).keep.max(1);
     prune(&backups, keep);
+    // 手动/自动备份成功后都更新计时，避免手动备份后自动备份仍按旧计时触发
+    let mut cfg = load_config(app);
+    cfg.last_backup_at = Some(unix_now());
+    let _ = save_config(app, &cfg);
     Ok(BackupInfo {
         path: dir.to_string_lossy().to_string(),
         size_bytes: size,
@@ -217,9 +229,12 @@ pub fn backup_now(app: &tauri::AppHandle, vault: &str) -> Result<BackupInfo, Str
     })
 }
 
+/// 立即备份命令：async + spawn_blocking，大 vault 复制不再冻结 UI 主线程。
 #[tauri::command]
-pub fn backup_now_cmd(app: tauri::AppHandle, vault: String) -> Result<BackupInfo, String> {
-    backup_now(&app, &vault)
+pub async fn backup_now_cmd(app: tauri::AppHandle, vault: String) -> Result<BackupInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || backup_now(&app, &vault))
+        .await
+        .map_err(|e| format!("备份任务失败: {e}"))?
 }
 
 #[tauri::command]

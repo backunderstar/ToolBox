@@ -127,6 +127,38 @@ export function deleteCustomTheme(id: string): void {
   saveCustomThemes(loadCustomThemes().filter((t) => t.id !== id));
 }
 
+/** 导出全部自定义主题为 JSON 文本（备份 / 换机迁移 / 分享） */
+export function exportThemesJson(): string {
+  return JSON.stringify(loadCustomThemes(), null, 2);
+}
+
+/** 导入主题 JSON：逐条校验后追加/更新自定义主题，返回成功导入个数。
+ *  格式错误（非数组 / 缺 id、name、base）抛错或跳过。 */
+export function importThemesJson(raw: string): number {
+  const arr = JSON.parse(raw) as unknown;
+  if (!Array.isArray(arr)) throw new Error("格式错误：应为主题数组");
+  let n = 0;
+  for (const t of arr) {
+    const d = t as Partial<ThemeDef>;
+    if (!d || typeof d.id !== "string" || !d.id || typeof d.name !== "string") continue;
+    if (d.base !== "light" && d.base !== "dark") continue;
+    const tokens =
+      d.tokens && typeof d.tokens === "object" && !Array.isArray(d.tokens)
+        ? (d.tokens as Record<string, string>)
+        : {};
+    upsertCustomTheme({
+      id: d.id,
+      name: d.name,
+      base: d.base,
+      description: typeof d.description === "string" ? d.description : "",
+      tokens,
+      custom: true,
+    });
+    n++;
+  }
+  return n;
+}
+
 /* ---------------- 引擎 ---------------- */
 
 function overrideStyle(): HTMLStyleElement {

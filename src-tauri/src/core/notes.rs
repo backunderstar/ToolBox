@@ -151,20 +151,18 @@ pub fn fs_create(vault: String, rel: String) -> Result<(), String> {
     std::fs::rename(&tmp, &p).map_err(|e| format!("创建失败: {e}"))
 }
 
-/// 删除文件或目录。只允许删除 notes/ 目录**内部**的内容，
-/// 防止 `fs_delete("notes")` 之类调用把整个笔记目录删掉。
+/// 删除文件或目录（**进系统回收站**，可恢复）。
+/// 保护：不能删 vault 根、不能删 notes/ 目录本身（笔记/清单/记录等
+/// 都经由本命令删除，仅禁止"目录本体"级别的误删）。
 #[tauri::command]
 pub fn fs_delete(vault: String, rel: String) -> Result<(), String> {
     let p = resolve_safe(&vault, &rel)?;
-    let notes = PathBuf::from(&vault).join(NOTES_DIR);
-    if p == notes || !p.starts_with(&notes) {
-        return Err(format!("只能删除笔记目录内的文件: {rel}"));
+    let root = PathBuf::from(&vault);
+    let notes = root.join(NOTES_DIR);
+    if p == root || p == notes {
+        return Err(format!("不能删除目录本身: {rel}"));
     }
-    if p.is_dir() {
-        std::fs::remove_dir_all(&p).map_err(|e| format!("删除目录失败: {e}"))
-    } else {
-        std::fs::remove_file(&p).map_err(|e| format!("删除失败: {e}"))
-    }
+    trash::delete(&p).map_err(|e| format!("删除失败（移入回收站失败）: {e}"))
 }
 
 /// 重命名 / 移动。目标已存在时拒绝（Windows rename 会静默覆盖，内容不可恢复）。

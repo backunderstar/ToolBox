@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::State;
+use tauri::{Manager, State};
 
 /// 插件命令调用超时。
 pub const API_TIMEOUT: Duration = Duration::from_secs(30);
@@ -62,39 +62,81 @@ impl Default for PluginManager {
     }
 }
 
-/* ---------------- 启用状态持久化 (<vault>/.toolbox/plugins.json) ---------------- */
+/* ---------------- 启用状态持久化（%APPDATA%，按 vault 记录） ----------------
+   安全设计：启用状态**不**放在 vault 内。vault 可能是分享/下载来的，
+   若状态在其中，打开不可信 vault 会按预置的 plugins.json 自动拉起
+   插件进程（等于执行任意代码）。状态存应用配置目录，按 vault 路径分键；
+   旧版 vault 内状态首次读取时自动迁移并清除旧文件。 */
 
-fn enabled_path(vault: &Path) -> PathBuf {
-    vault.join(".toolbox").join("plugins.json")
+fn vault_key(vault: &Path) -> String {
+    // Windows 路径大小写不敏感：统一小写 + 正斜杠，避免大小写不同导致双状态
+    vault.to_string_lossy().replace('\\', "/").to_lowercase()
 }
 
-fn load_enabled(vault: &Path) -> HashSet<String> {
-    let Ok(raw) = std::fs::read_to_string(enabled_path(vault)) else {
-        return HashSet::new();
+fn state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建配置目录失败: {e}"))?;
+    Ok(dir.join("plugins.json"))
+}
+
+fn load_state_map(app: &tauri::AppHandle) -> serde_json::Map<String, Value> {
+    let Ok(p) = state_path(app) else {
+        return serde_json::Map::new();
     };
-    let Ok(v) = serde_json::from_str::<Value>(&raw) else {
-        return HashSet::new();
-    };
-    v.get("enabled")
-        .and_then(|e| e.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(String::from))
-                .collect()
-        })
+    std::fs::read_to_string(&p)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|v| v.as_object().cloned())
         .unwrap_or_default()
 }
 
-fn save_enabled(vault: &Path, enabled: &HashSet<String>) -> Result<(), String> {
-    let p = enabled_path(vault);
-    if let Some(parent) = p.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
+fn save_state_map(app: &tauri::AppHandle, map: &serde_json::Map<String, Value>) -> Result<(), String> {
+    let p = state_path(app)?;
+    let raw = serde_json::to_string_pretty(&Value::Object(map.clone())).map_err(|e| e.to_string())?;
+    std::fs::write(&p, raw).map_err(|e| format!("保存启用状态失败: {e}"))
+}
+
+fn load_enabled(app: &tauri::AppHandle, vault: &Path) -> HashSet<String> {
+    let key = vault_key(vault);
+    let mut map = load_state_map(app);
+    // 旧版迁移：vault/.toolbox/plugins.json（{enabled:[...]}）→ 全局按 vault 记
+    let legacy = vault.join(".toolbox").join("plugins.json");
+    if map.is_empty() && legacy.exists() {
+        if let Ok(raw) = std::fs::read_to_string(&legacy) {
+            if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(&raw) {
+                if let Some(Value::Array(arr)) = obj.get("enabled") {
+                    map.insert(
+                        key.clone(),
+                        Value::Array(
+                            arr.iter()
+                                .filter_map(|x| x.as_str().map(|s| Value::String(s.to_string())))
+                                .collect(),
+                        ),
+                    );
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&legacy); // 状态双源清除，防止旧文件再次生效
+        let _ = save_state_map(app, &map);
     }
+    map.get(&key)
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_default()
+}
+
+fn save_enabled(app: &tauri::AppHandle, vault: &Path, enabled: &HashSet<String>) -> Result<(), String> {
+    let mut map = load_state_map(app);
     let mut arr: Vec<String> = enabled.iter().cloned().collect();
     arr.sort();
-    let raw = serde_json::to_string_pretty(&serde_json::json!({ "enabled": arr }))
-        .map_err(|e| e.to_string())?;
-    std::fs::write(&p, raw).map_err(|e| format!("保存启用状态失败: {e}"))
+    map.insert(
+        vault_key(vault),
+        Value::Array(arr.into_iter().map(Value::String).collect()),
+    );
+    save_state_map(app, &map)
 }
 
 /* ---------------- 管理器 ---------------- */
@@ -102,7 +144,7 @@ fn save_enabled(vault: &Path, enabled: &HashSet<String>) -> Result<(), String> {
 impl PluginManager {
     /// 重新发现 `<vault>/plugins/*` 中的插件。
     /// 已启用且为 process 的插件自动启动；错误逐条记录不阻断其他插件。
-    pub fn refresh(&mut self, vault: &Path) -> Result<(), String> {
+    pub fn refresh(&mut self, app: &tauri::AppHandle, vault: &Path) -> Result<(), String> {
         for rec in &mut self.records {
             if let Some(p) = rec.process.take() {
                 p.shutdown();
@@ -110,7 +152,7 @@ impl PluginManager {
         }
         self.records.clear();
         self.vault = Some(vault.to_path_buf());
-        self.enabled = load_enabled(vault);
+        self.enabled = load_enabled(app, vault);
 
         let plugins_dir = vault.join("plugins");
         if !plugins_dir.is_dir() {
@@ -191,6 +233,21 @@ impl PluginManager {
                 }
             }
         }
+        // 失效 id 清理：插件目录已删除后，enabled 里的残留 id 会导致
+        // 重新放回同名插件时自动启用（可能意外）。发现即移除并持久化。
+        let valid: HashSet<String> = self.records.iter().map(|r| r.manifest.id.clone()).collect();
+        let stale: Vec<String> = self
+            .enabled
+            .iter()
+            .filter(|id| !valid.contains(*id))
+            .cloned()
+            .collect();
+        if !stale.is_empty() {
+            for id in stale {
+                self.enabled.remove(&id);
+            }
+            save_enabled(app, vault, &self.enabled)?;
+        }
         Ok(())
     }
 
@@ -228,7 +285,7 @@ impl PluginManager {
             .collect()
     }
 
-    pub fn set_enabled(&mut self, id: &str, enabled: bool) -> Result<(), String> {
+    pub fn set_enabled(&mut self, app: &tauri::AppHandle, id: &str, enabled: bool) -> Result<(), String> {
         let idx = self
             .records
             .iter()
@@ -252,7 +309,7 @@ impl PluginManager {
             self.records[idx].error = None;
         }
         if let Some(v) = &self.vault {
-            save_enabled(v, &self.enabled)?;
+            save_enabled(app, v, &self.enabled)?;
         }
         Ok(())
     }
@@ -386,14 +443,14 @@ impl PluginManager {
 
 /* ---------------- IPC 命令 ---------------- */
 
-fn ensure_refreshed(m: &mut PluginManager, vault: &str) -> Result<(), String> {
+fn ensure_refreshed(m: &mut PluginManager, app: &tauri::AppHandle, vault: &str) -> Result<(), String> {
     let v = PathBuf::from(vault);
     let changed = match &m.vault {
         Some(cur) => !paths_equal(cur, &v),
         None => true,
     };
     if changed {
-        m.refresh(&v)?;
+        m.refresh(app, &v)?;
     }
     Ok(())
 }
@@ -411,39 +468,43 @@ fn paths_equal(a: &Path, b: &Path) -> bool {
 
 #[tauri::command]
 pub async fn plugins_list(
+    app: tauri::AppHandle,
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
 ) -> Result<Vec<PluginInfo>, String> {
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &vault)?;
+    ensure_refreshed(&mut m, &app, &vault)?;
     Ok(m.list())
 }
 
 #[tauri::command]
 pub async fn plugins_set_enabled(
+    app: tauri::AppHandle,
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
     id: String,
     enabled: bool,
 ) -> Result<(), String> {
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &vault)?;
-    m.set_enabled(&id, enabled)
+    ensure_refreshed(&mut m, &app, &vault)?;
+    m.set_enabled(&app, &id, enabled)
 }
 
 #[tauri::command]
 pub async fn plugins_reload(
+    app: tauri::AppHandle,
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
     id: String,
 ) -> Result<(), String> {
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &vault)?;
+    ensure_refreshed(&mut m, &app, &vault)?;
     m.reload(&id)
 }
 
 #[tauri::command]
 pub async fn plugins_invoke(
+    app: tauri::AppHandle,
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
     id: String,
@@ -451,7 +512,7 @@ pub async fn plugins_invoke(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &vault)?;
+    ensure_refreshed(&mut m, &app, &vault)?;
     m.invoke(&id, &command, args)
 }
 

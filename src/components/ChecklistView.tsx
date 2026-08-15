@@ -4,6 +4,7 @@ import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
 import { onRowKeyDown } from "../core/keyboard";
 import { IconFileText, IconPlus, IconTrash } from "./icons";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 /**
  * 清单视图（M4）：左侧清单列表 + 右侧清单编辑器（打卡/进度/笔记关联）。
@@ -31,6 +32,7 @@ export function ChecklistView() {
   const [newItem, setNewItem] = useState("");
   const [pickingNote, setPickingNote] = useState<string | null>(null);
   const [noteQuery, setNoteQuery] = useState("");
+  const [confirmDel, setConfirmDel] = useState<{ id: string; title: string } | null>(null);
 
   /* 从导航参数打开指定清单 */
   useEffect(() => {
@@ -127,11 +129,10 @@ export function ChecklistView() {
                 <button
                   className="tree-action danger"
                   title="删除清单"
+                  aria-label={`删除清单 ${m.title}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (window.confirm(`删除清单「${m.title}」？`)) {
-                      void remove(m.id);
-                    }
+                    setConfirmDel({ id: m.id, title: m.title });
                   }}
                 >
                   <IconTrash width={12} height={12} />
@@ -277,6 +278,18 @@ export function ChecklistView() {
           </div>
         )}
       </section>
+      <ConfirmDialog
+        open={confirmDel !== null}
+        title="删除清单"
+        message={confirmDel ? `确定删除清单「${confirmDel.title}」？此操作不可撤销。` : ""}
+        confirmText="删除"
+        danger
+        onCancel={() => setConfirmDel(null)}
+        onConfirm={() => {
+          if (confirmDel) void remove(confirmDel.id);
+          setConfirmDel(null);
+        }}
+      />
     </div>
   );
 }

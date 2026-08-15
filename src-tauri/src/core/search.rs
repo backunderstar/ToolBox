@@ -151,7 +151,7 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
 /// None = 读取失败（权限等）：调用方跳过该文件，不索引空内容。
 fn read_index_content(abs: &Path) -> Option<String> {
     use std::io::Read;
-    let mut f = std::fs::File::open(abs).ok()?;
+    let f = std::fs::File::open(abs).ok()?;
     let mut buf = Vec::new();
     if f.take(INDEX_READ_LIMIT).read_to_end(&mut buf).is_err() {
         return None;
@@ -177,8 +177,30 @@ fn make_snippet(content: &str, q: &str) -> String {
         .to_string()
 }
 
-/// 全文搜索入口：同步索引 → 文件名匹配优先 → 内容匹配（FTS/LIKE）。
+/// 全文搜索入口（带自愈）：索引损坏（崩溃残留等）时删库重建一次，
+/// 仍失败才报错——避免"文件存在但损坏"时每次搜索都静默失败。
 pub fn search(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
+    match search_once(vault, query) {
+        Ok(hits) => Ok(hits),
+        Err(first) => {
+            reset_index(&PathBuf::from(vault));
+            match search_once(vault, query) {
+                Ok(hits) => Ok(hits),
+                Err(_) => Err(format!("搜索索引异常，已尝试重建仍失败: {first}")),
+            }
+        }
+    }
+}
+
+/// 删除索引库及其 WAL/SHM 派生文件（笔记是真源，索引可随时重建）。
+fn reset_index(root: &Path) {
+    for name in ["search-fts.sqlite", "search-fts.sqlite-wal", "search-fts.sqlite-shm"] {
+        let _ = std::fs::remove_file(root.join(".toolbox").join(name));
+    }
+}
+
+/// 单次搜索：同步索引 → 文件名匹配优先 → 内容匹配（FTS/LIKE）。
+fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     let root = PathBuf::from(vault);
     let notes = root.join(NOTES_DIR);
     if !root.is_dir() || !notes.is_dir() {
