@@ -32,6 +32,9 @@ tauri-plugin-window-state = "2"
 # AI API Key 安全存储：Windows 凭据管理器（macOS Keychain / Linux Secret Service）
 # 注意：keyring 3 无默认 features，必须显式启用平台后端（windows-native）
 keyring = { version = "3", features = ["windows-native", "crypto-rust"] }
+# 全文搜索：SQLite FTS5（trigram 分词器，中文子串匹配）。
+# 注意：bundled 不含 FTS5，必须用 bundled-full（编译捆绑 SQLite 源码，含 SQLITE_ENABLE_FTS5）
+rusqlite = { version = "0.32", features = ["bundled-full"] }
 
 # Windows 上链接 WebView2 需要，Tauri 2 默认启用
 [target.'cfg(windows)'.dependencies]

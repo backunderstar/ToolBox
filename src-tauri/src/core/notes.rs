@@ -8,10 +8,9 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 const IGNORED_DIRS: &[&str] = &[".git", ".toolbox", "node_modules", "target", "site"];
-/// 笔记统一存放目录（vault/notes/），文件树与搜索都只作用于该目录
-const NOTES_DIR: &str = "notes";
-/// 全文搜索每文件最多读取的字节数（防止大文件拖垮搜索）
-const SEARCH_READ_LIMIT: u64 = 256 * 1024;
+/// 笔记统一存放目录（vault/notes/），文件树与搜索都只作用于该目录。
+/// 由 `search` 模块共享（FTS 索引同样只扫这里）。
+pub(crate) const NOTES_DIR: &str = "notes";
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -19,14 +18,6 @@ pub struct FileEntry {
     pub name: String,
     pub path: String, // vault 相对路径，/ 分隔
     pub is_dir: bool,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchHit {
-    pub path: String,
-    pub filename: String,
-    pub snippet: String,
 }
 
 /// 确保 notes/ 目录存在；首次使用时把旧布局（vault 根下的 .md）迁移进去。
@@ -174,66 +165,14 @@ pub fn fs_rename(vault: String, from: String, to: String) -> Result<(), String> 
     std::fs::rename(&a, &b).map_err(|e| format!("重命名失败: {e}"))
 }
 
-/// 搜索笔记：仅扫描 notes/ 目录，文件名包含匹配优先，其次全文包含匹配（大小写不敏感）。
+/// 搜索笔记：转发到 FTS5 索引实现（`core::search`）。
+/// 命令签名不变（vault, query → hits），前端无需改动。
 #[tauri::command]
-pub async fn fs_search(vault: String, query: String) -> Result<Vec<SearchHit>, String> {
-    let root = PathBuf::from(&vault);
-    if !root.is_dir() {
-        return Ok(Vec::new());
-    }
-    let Ok(notes) = ensure_notes_dir(&root) else {
-        return Ok(Vec::new());
-    };
-    let q = query.trim().to_lowercase();
-    if q.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut files = Vec::new();
-    collect_md(&notes, &notes, NOTES_DIR, &mut files);
-
-    let mut hits = Vec::new();
-    for (rel, abs) in files {
-        let filename = abs
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        if filename.to_lowercase().contains(&q) {
-            hits.push(SearchHit {
-                path: rel,
-                filename,
-                snippet: "文件名匹配".to_string(),
-            });
-            continue;
-        }
-        let Ok(f) = std::fs::File::open(&abs) else {
-            continue;
-        };
-        use std::io::Read;
-        let mut buf = Vec::new();
-        let _ = f.take(SEARCH_READ_LIMIT).read_to_end(&mut buf);
-        let content = String::from_utf8_lossy(&buf);
-        let lower = content.to_lowercase();
-        let Some(idx) = lower.find(&q) else {
-            continue;
-        };
-        let start = idx.saturating_sub(30);
-        let end = (idx + q.len() + 60).min(content.len());
-        // 用原字符串的安全边界切片段，避免在非字符边界 panic
-        let s = content.floor_char_boundary(start.min(content.len()));
-        let e = content.floor_char_boundary(end.min(content.len()));
-        let snippet = content
-            .get(s..e)
-            .unwrap_or("")
-            .replace('\n', " ")
-            .trim()
-            .to_string();
-        hits.push(SearchHit { path: rel, filename, snippet });
-    }
-    Ok(hits)
+pub async fn fs_search(vault: String, query: String) -> Result<Vec<crate::core::search::SearchHit>, String> {
+    crate::core::search::search(&vault, &query)
 }
 
-fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
+pub(crate) fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };

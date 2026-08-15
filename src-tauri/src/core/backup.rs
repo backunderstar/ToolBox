@@ -93,13 +93,17 @@ fn backups_root(vault: &str) -> PathBuf {
     PathBuf::from(vault).join(BACKUP_DIR)
 }
 
-/// 排除规则：site（博客生成物，可重建）、备份目录自身、临时文件
+/// 排除规则：site（博客生成物，可重建）、备份目录自身、FTS 搜索索引
+/// （派生数据，可从笔记重建）、临时文件
 fn is_skipped(parent: &Path, name: &str) -> bool {
     if name == "site" {
         return true;
     }
-    if parent.file_name().map(|n| n == ".toolbox").unwrap_or(false) && name == "backups" {
-        return true;
+    if parent.file_name().map(|n| n == ".toolbox").unwrap_or(false) {
+        // 备份目录自身防递归；FTS 索引是派生数据，笔记才是真源
+        if name == "backups" || name == "search-fts.sqlite" {
+            return true;
+        }
     }
     name.ends_with(".tmp") || name.ends_with('~') || name == "desktop.ini"
 }
@@ -356,7 +360,9 @@ mod tests {
     fn skip_rules() {
         assert!(is_skipped(Path::new("vault"), "site"));
         assert!(is_skipped(Path::new("vault/.toolbox"), "backups"));
+        assert!(is_skipped(Path::new("vault/.toolbox"), "search-fts.sqlite"), "FTS 索引不进备份（派生数据）");
         assert!(!is_skipped(Path::new("vault"), ".toolbox"), ".toolbox 本身要复制（含 plugins.json）");
+        assert!(!is_skipped(Path::new("vault"), "search-fts.sqlite"), "根目录下的同名文件不该被误排除");
         assert!(is_skipped(Path::new("vault"), "a.tmp"));
         assert!(!is_skipped(Path::new("vault"), "notes"));
     }

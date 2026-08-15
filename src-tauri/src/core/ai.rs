@@ -248,8 +248,6 @@ fn extract_error(body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     /// keyring 真实读写（Windows 凭据管理器）。需要桌面会话；CI 无会话时跳过。
     #[test]
     fn keyring_roundtrip() {

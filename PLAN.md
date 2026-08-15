@@ -195,8 +195,8 @@ Vault（用户自选的工作区目录）
 | ✅ 已完成 | 打包版 CSP 配置 | 生产构建启用严格 Content-Security-Policy（响应头注入，含 Vditor/插件兼容：style 放行 inline、插件走 blob: 执行）；开发模式不受限 |
 | ✅ 已完成 | 自动备份 | vault 定时备份到 `.toolbox/backups/`（保留最近 N 份，可配置；设置页管理） |
 | ✅ 已完成 | 系统托盘 | 关窗最小化到托盘常驻；托盘菜单（显示主窗口/显示隐藏浮窗/退出）+ 单击切换 |
-| 待排期 | 插件 stdin 写入超时 | 极端挂死场景兜底（进程插件写 stdin 卡死时超时回收） |
-| 待排期 | 全文搜索性能 | 大 vault 下 SQLite FTS5 / tantivy 索引，工程量较大 |
+| ✅ 已完成 | 插件 stdin 写入超时 | 插件不读 stdin 挂死时写管道缓冲满会无限阻塞——改为写线程 + 超时回收，超时即终止进程；含挂死单测 |
+| ✅ 已完成 | 全文搜索性能 | SQLite FTS5（trigram 分词器）索引，增量同步 + 文件名优先 + 短词 LIKE 兜底；实测 3000 篇热查询 ~200ms；rusqlite 需 bundled-full |
 
 ---
 

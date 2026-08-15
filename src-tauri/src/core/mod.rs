@@ -8,6 +8,7 @@
 //! - `projects` 项目文件管理：项目目录/归档/默认应用打开（M8 落地）
 //! - `backup`   自动备份：vault → .toolbox/backups，保留 N 份（Backlog 落地）
 //! - `todos`    快速待办：浮窗清单数据层（vault/data/todos/todos.json）
+//! - `search`   全文搜索：SQLite FTS5 索引（vault/.toolbox/search-fts.sqlite）
 //! - `git`     Git 集成：备份与版本历史（后续规划）
 
 pub mod ai;
@@ -16,5 +17,6 @@ pub mod blog;
 pub mod notes;
 pub mod path;
 pub mod projects;
+pub mod search;
 pub mod todos;
 pub mod vault;

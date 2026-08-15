@@ -594,4 +594,54 @@ mod tests {
         assert!(err.contains("超时") || err.contains("timeout"), "错误信息: {err}");
         p.shutdown();
     }
+
+    /// stdin 写入超时：插件不读 stdin（挂死），管道缓冲写满后
+    /// 写入不得无限阻塞——应超时返回错误并终止进程。
+    #[test]
+    fn stdin_write_timeout_kills_hung_plugin() {
+        let vault = std::env::temp_dir();
+        let mut p = ProcessPlugin::spawn(
+            "hung",
+            "python",
+            &[
+                "-u".to_string(),
+                "-c".to_string(),
+                "import time; time.sleep(60)".to_string(),
+            ],
+            &vault,
+            &vault,
+            vec![],
+        )
+        .expect("应能启动 python");
+        // 大载荷（远超管道缓冲）写入无人消费的 stdin → 写线程阻塞
+        let big = json!({ "payload": "x".repeat(256 * 1024) });
+        let t0 = Instant::now();
+        let err = p
+            .send_timeout(
+                &Message::request(1, "call", big),
+                Duration::from_millis(800),
+            )
+            .unwrap_err();
+        let elapsed = t0.elapsed();
+        assert!(
+            err.contains("超时") || err.contains("stdin") || err.contains("挂死"),
+            "错误信息: {err}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "写入不应无限阻塞，实际 {elapsed:?}"
+        );
+        // kill 是异步的：轮询等待进程被系统回收
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut exited = false;
+        while Instant::now() < deadline {
+            if p.has_exited() {
+                exited = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(exited, "挂死插件应被终止");
+        p.shutdown();
+    }
 }

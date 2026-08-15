@@ -37,9 +37,21 @@ pub enum Incoming {
     Eof,
 }
 
+/// 写线程请求：把一条消息写入插件 stdin 并回执结果。
+/// stdin 由写线程独占——主线程若直接 `write_all`，插件不读 stdin 时
+/// 管道缓冲写满会**无限阻塞**；走线程 + 通道才能带超时回收。
+enum WriteReq {
+    Send {
+        bytes: Vec<u8>,
+        ack: Sender<Result<(), String>>,
+    },
+    Shutdown,
+}
+
 pub struct ProcessPlugin {
     child: Child,
-    stdin: ChildStdin,
+    /// 写线程通道：所有出站消息经它写入 stdin
+    write_tx: Sender<WriteReq>,
     /// mpsc Receiver 非 Sync，包一层 Mutex 以满足 tauri 状态要求
     rx: Mutex<Receiver<Incoming>>,
     next_id: u64,
@@ -71,9 +83,10 @@ impl ProcessPlugin {
         let stdout = child.stdout.take().ok_or("无法获取插件 stdout")?;
         let (tx, rx) = channel();
         thread::spawn(move || read_loop(stdout, tx));
+        let write_tx = spawn_write_thread(stdin);
         Ok(Self {
             child,
-            stdin,
+            write_tx,
             rx: Mutex::new(rx),
             next_id: 0,
             vault: vault.to_path_buf(),
@@ -119,7 +132,9 @@ impl ProcessPlugin {
     ) -> Result<Value, String> {
         self.next_id += 1;
         let id = self.next_id;
-        self.send(&Message::request(id, method, params))?;
+        // 出站写入也受同一超时预算约束：插件不读 stdin 导致写阻塞时，
+        // send_timeout 会终止进程并返回错误，而不是无限卡死
+        self.send_timeout(&Message::request(id, method, params), timeout)?;
         let deadline = Instant::now() + timeout;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -177,7 +192,7 @@ impl ProcessPlugin {
             if !self.permissions.iter().any(|p| p == perm) {
                 let err = format!("缺少权限 {perm}（请在 plugin.json 的 permissions 中声明）");
                 let msg = Message::response_err(id, -32001, err);
-                return self.send(&msg);
+                return self.send_timeout(&msg, Duration::from_secs(2));
             }
         }
         let result = self.execute_core_api(method, &params);
@@ -185,7 +200,7 @@ impl ProcessPlugin {
             Ok(v) => Message::response_ok(id, v),
             Err(e) => Message::response_err(id, -32001, e),
         };
-        self.send(&msg)
+        self.send_timeout(&msg, Duration::from_secs(2))
     }
 
     fn execute_core_api(&self, method: &str, params: &Value) -> Result<Value, String> {
@@ -233,29 +248,76 @@ impl ProcessPlugin {
         }
     }
 
-    /// 停止：发 shutdown 通知并回收进程。
+    /// 写一条消息到插件 stdin，带超时兜底：
+    /// 插件不消费 stdin（挂死）时，管道缓冲写满会让 `write_all` 无限阻塞，
+    /// 这里通过写线程 + ack 通道在超时后**终止进程**解除阻塞并报错。
+    /// `pub(crate)`：供测试直接验证挂死回收路径。
+    pub(crate) fn send_timeout(&mut self, msg: &Message, timeout: Duration) -> Result<(), String> {
+        let line = rpc::encode(msg)?;
+        let (ack_tx, ack_rx) = channel();
+        self.write_tx
+            .send(WriteReq::Send {
+                bytes: line.into_bytes(),
+                ack: ack_tx,
+            })
+            .map_err(|_| "插件写通道已关闭".to_string())?;
+        match ack_rx.recv_timeout(timeout) {
+            Ok(r) => r,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // 写线程还阻塞在 write_all 上；杀掉进程让管道对端关闭，
+                // 写线程随即收到 BrokenPipe 退出，不会残留阻塞线程
+                let _ = self.child.kill();
+                Err(format!(
+                    "写入插件 stdin 超时({timeout:?})，插件已挂死，进程已终止"
+                ))
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err("插件写线程已退出".to_string())
+            }
+        }
+    }
+
+    /// 关闭：发 shutdown 通知（带短超时）并回收进程。
     pub fn shutdown(mut self) {
         self.shutdown_inner();
     }
 
     fn shutdown_inner(&mut self) {
-        let _ = self.send(&Message::notification("shutdown", None));
+        let _ = self.send_timeout(
+            &Message::notification("shutdown", None),
+            Duration::from_millis(500),
+        );
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
 
-    fn send(&mut self, msg: &Message) -> Result<(), String> {
-        let line = rpc::encode(msg)?;
-        self.stdin
-            .write_all(line.as_bytes())
-            .map_err(|e| format!("写入插件 stdin 失败: {e}"))
-    }
+/// 常驻写线程：独占 ChildStdin 执行阻塞写，主线程只通过通道等 ack。
+/// 线程退出时 stdin drop → 管道关闭。
+fn spawn_write_thread(mut stdin: ChildStdin) -> Sender<WriteReq> {
+    let (tx, rx) = channel();
+    thread::spawn(move || {
+        while let Ok(req) = rx.recv() {
+            match req {
+                WriteReq::Send { bytes, ack } => {
+                    let r = stdin
+                        .write_all(&bytes)
+                        .map_err(|e| format!("写入插件 stdin 失败: {e}"));
+                    let _ = ack.send(r);
+                }
+                WriteReq::Shutdown => break,
+            }
+        }
+    });
+    tx
 }
 
 /// Drop 兜底：任何路径下（init 失败/调用方未显式 shutdown）回收子进程，
-/// 防止孤儿 Python 进程与读线程泄漏。
+/// 防止孤儿 Python 进程、写线程与读线程泄漏。
 impl Drop for ProcessPlugin {
     fn drop(&mut self) {
+        // 关闭写通道 → 写线程 recv 返回 Err 退出 → stdin drop 关闭管道
+        let _ = self.write_tx.send(WriteReq::Shutdown);
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
