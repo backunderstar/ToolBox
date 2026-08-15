@@ -144,6 +144,8 @@ export function FloatApp() {
         <button
           className={`float-lock${locked ? " on" : ""}`}
           title={locked ? "已锁定位置 —— 点击解锁（可拖拽/调整大小）" : "锁定位置（防误拖）"}
+          aria-label={locked ? "解锁位置" : "锁定位置"}
+          aria-pressed={locked}
           onClick={toggleLock}
         >
           <IconLock width={11} height={11} />
@@ -172,7 +174,7 @@ export function FloatApp() {
       </div>
 
       {/* 待办列表 */}
-      <div className="float-list">
+      <div className="float-list" aria-live="polite">
         {!ready ? (
           <div className="float-empty">加载中…</div>
         ) : vaultMissing ? (
@@ -185,6 +187,7 @@ export function FloatApp() {
               <button
                 className={`float-check${it.done ? " on" : ""}`}
                 title={it.done ? "标记未完成" : "标记完成"}
+                aria-label={it.done ? `标记未完成：${it.text}` : `标记完成：${it.text}`}
                 onClick={() => void toggle(it.id)}
               >
                 {it.done && (
@@ -194,7 +197,12 @@ export function FloatApp() {
                 )}
               </button>
               <span className="float-item-text">{it.text}</span>
-              <button className="float-del" title="删除" onClick={() => void remove(it.id)}>
+              <button
+                className="float-del"
+                title="删除"
+                aria-label={`删除待办：${it.text}`}
+                onClick={() => void remove(it.id)}
+              >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                   <path d="M6 6l12 12M18 6L6 18" />
                 </svg>

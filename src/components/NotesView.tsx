@@ -92,12 +92,18 @@ export function NotesView({
               <span className="files-title" title={path}>
                 {vaultName}
               </span>
-              <button className="icon-btn sm" title="新建笔记" onClick={newNote}>
+              <button
+                className="icon-btn sm"
+                title="新建笔记"
+                aria-label="新建笔记"
+                onClick={newNote}
+              >
                 <IconPlus width={14} height={14} />
               </button>
               <button
                 className="icon-btn sm"
                 title="收起文件面板"
+                aria-label="收起文件面板"
                 onClick={onToggleFiles}
               >
                 <IconChevronLeft width={14} height={14} />
@@ -138,6 +144,7 @@ export function NotesView({
                 className="icon-btn sm"
                 onClick={onToggleFocus}
                 title={focusMode ? "退出专注模式" : "专注模式（隐藏侧栏，全屏书写）"}
+                aria-label={focusMode ? "退出专注模式" : "专注模式"}
               >
                 {focusMode ? (
                   <IconShrink width={14} height={14} />
@@ -152,7 +159,7 @@ export function NotesView({
             <Backlinks activePath={activePath} />
             <div className="editor-body">
               <Editor
-                key={`${activePath}|${dark}`}
+                key={activePath}
                 doc={content}
                 onChange={updateContent}
                 onSave={() => save(true)}
@@ -191,7 +198,7 @@ function SearchResults({
 }) {
   const count = results?.length ?? 0;
   return (
-    <div className="search-results">
+    <div className="search-results" aria-live="polite">
       <div className="search-results-header">
         <span>
           搜索「{query}」{searching ? "…" : ` · ${count} 个结果`}

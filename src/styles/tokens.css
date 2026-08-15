@@ -46,7 +46,8 @@
 
   --fg: #201f1c; /* 墨色，不用纯黑 */
   --fg-muted: #787774;
-  --fg-faint: #a8a49e;
+  /* faint 用于信息性元数据（日期/状态/文件数），加深到约 4.5:1 */
+  --fg-faint: #8f8b84;
 
   --border: #e7e4dd;
   --border-strong: #d6d2c8;
@@ -80,8 +81,8 @@
 
   --fg: #e9e6df;
   --fg-muted: #9d9990;
-  --fg-faint: #6e6b63;
-
+  /* faint 用于信息性元数据，暗色下加深（提亮）到 ~4.5:1 */
+  --fg-faint: #7d7970;
   --border: #302e28;
   --border-strong: #3d3a33;
 

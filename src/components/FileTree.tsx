@@ -67,6 +67,27 @@ export function FileTree({ files, activePath, onOpen, onRemove, onRename }: File
       return next;
     });
 
+  /* 扁平可见行（展开的目录含子级）——供键盘上下移动焦点 */
+  const visiblePaths = useMemo(() => {
+    const out: string[] = [];
+    const walk = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        out.push(n.path);
+        if (n.isDir && expanded.has(n.path)) walk(n.children);
+      }
+    };
+    walk(tree);
+    return out;
+  }, [tree, expanded]);
+
+  /** 按 path 聚焦某一行（键盘导航用） */
+  const focusRow = (path: string) => {
+    const el = document.querySelector<HTMLElement>(
+      `.tree-row[data-path="${CSS.escape(path)}"]`
+    );
+    el?.focus();
+  };
+
   if (tree.length === 0) {
     return (
       <div className="tree-empty">
@@ -89,6 +110,8 @@ export function FileTree({ files, activePath, onOpen, onRemove, onRename }: File
           onOpen={onOpen}
           onRemove={onRemove}
           onRename={onRename}
+          visiblePaths={visiblePaths}
+          focusRow={focusRow}
         />
       ))}
     </div>
@@ -104,6 +127,8 @@ interface RowProps {
   onOpen: (rel: string) => void;
   onRemove: (rel: string) => void;
   onRename: (from: string, to: string) => void;
+  visiblePaths: string[];
+  focusRow: (path: string) => void;
 }
 
 function TreeNodeRow({
@@ -115,6 +140,8 @@ function TreeNodeRow({
   onOpen,
   onRemove,
   onRename,
+  visiblePaths,
+  focusRow,
 }: RowProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(node.name);
@@ -167,13 +194,41 @@ function TreeNodeRow({
     confirmTimer.current = setTimeout(() => setConfirming(false), 3000);
   };
 
+  /* 键盘导航：↑↓ 在可见行间移动焦点；→ 展开 / ← 收起目录；Enter/Space 打开 */
+  const onRowKeyDown = (e: React.KeyboardEvent) => {
+    if (editing) return; // 输入框有自己的按键处理
+    const idx = visiblePaths.indexOf(node.path);
+    if (e.key === "ArrowDown" && idx >= 0 && idx < visiblePaths.length - 1) {
+      e.preventDefault();
+      focusRow(visiblePaths[idx + 1]);
+    } else if (e.key === "ArrowUp" && idx > 0) {
+      e.preventDefault();
+      focusRow(visiblePaths[idx - 1]);
+    } else if (e.key === "ArrowRight" && node.isDir && !isOpen) {
+      e.preventDefault();
+      onToggle(node.path);
+    } else if (e.key === "ArrowLeft" && node.isDir && isOpen) {
+      e.preventDefault();
+      onToggle(node.path);
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (node.isDir) onToggle(node.path);
+      else onOpen(node.path);
+    }
+  };
+
   return (
     <div>
       <div
         className={`tree-row${isActive ? " active" : ""}`}
         style={indent}
         role="treeitem"
+        aria-selected={isActive}
+        aria-expanded={node.isDir ? isOpen : undefined}
+        tabIndex={0}
+        data-path={node.path}
         onClick={() => (node.isDir ? onToggle(node.path) : onOpen(node.path))}
+        onKeyDown={onRowKeyDown}
       >
         <span className="tree-chevron">
           {node.isDir ? (
@@ -221,6 +276,7 @@ function TreeNodeRow({
             <button
               className={`tree-action${confirming ? " danger" : ""}`}
               title={confirming ? "再次点击确认删除" : "删除"}
+              aria-label={confirming ? "确认删除" : `删除 ${node.name}`}
               onClick={askDelete}
             >
               {confirming ? "确认?" : <IconTrash width={12} height={12} />}
@@ -241,6 +297,8 @@ function TreeNodeRow({
               onOpen={onOpen}
               onRemove={onRemove}
               onRename={onRename}
+              visiblePaths={visiblePaths}
+              focusRow={focusRow}
             />
           ))}
         </div>

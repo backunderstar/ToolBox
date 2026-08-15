@@ -45,7 +45,7 @@ export function PluginsView() {
   };
 
   return (
-    <div className="plugins-view scroll-area">
+    <div className="plugins-view">
       <header className="view-header">
         <div>
           <h1>插件</h1>
@@ -62,7 +62,7 @@ export function PluginsView() {
       {!vault.path ? (
         <div className="empty-state">
           <IconGear width={28} height={28} />
-          <p>请先在上方选择一个工作区，再管理插件</p>
+          <p>请先在顶栏选择一个工作区，再管理插件</p>
         </div>
       ) : plugins.length === 0 && !loading ? (
         <div className="empty-state">

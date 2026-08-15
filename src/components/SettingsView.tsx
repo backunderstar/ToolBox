@@ -15,6 +15,8 @@ import { AISettings } from "./AISettings";
 import { BackupSettings } from "./BackupSettings";
 import { NavSettings } from "./NavSettings";
 import { IconFolder, IconPlus, IconTrash } from "./icons";
+import { APP_TAG } from "../core/version";
+import { onRowKeyDown } from "../core/keyboard";
 
 interface SettingsViewProps {
   themeId: string;
@@ -75,7 +77,7 @@ export function SettingsView({
   };
 
   return (
-    <div className="settings-view scroll-area">
+    <div className="settings-view">
       <header className="view-header">
         <div>
           <h1>设置</h1>
@@ -133,7 +135,11 @@ export function SettingsView({
                   <div
                     key={t.id}
                     className={`theme-card${themeId === t.id ? " active" : ""}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-current={themeId === t.id ? "true" : undefined}
                     onClick={() => onSetThemeId(t.id)}
+                    onKeyDown={(e) => onRowKeyDown(e, () => onSetThemeId(t.id))}
                     title={t.description}
                   >
                     <div className="theme-swatches">
@@ -201,7 +207,7 @@ export function SettingsView({
           <h2 className="settings-title">关于</h2>
           <div className="settings-row">
             <span className="settings-label">ToolBox</span>
-            <span className="settings-value">v0.1.0 · M1–M8 + 备份</span>
+            <span className="settings-value">{APP_TAG}</span>
           </div>
           <div className="settings-row">
             <span className="settings-label">核心版本</span>

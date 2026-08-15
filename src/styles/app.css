@@ -52,6 +52,11 @@
   background: var(--bg);
   color: var(--fg-faint);
   font-size: var(--text-sm);
+  /* 输入框本身 outline:none：聚焦指示落在容器上（含 Ctrl+K 聚焦） */
+  transition: border-color var(--dur) var(--ease);
+}
+.search:focus-within {
+  border-color: var(--accent);
 }
 .search input {
   border: none;
@@ -89,6 +94,16 @@
 }
 .icon-btn:active {
   transform: scale(0.96);
+}
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
+.icon-btn:disabled:hover {
+  background: transparent;
+  color: var(--fg-muted);
+  border-color: transparent;
 }
 
 /* ---------- 侧栏 ---------- */
@@ -371,6 +386,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 状态栏各信息段（flex 子项）都要可收缩截断：长工作区路径不再挤出右侧 */
+.statusbar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-path {
+  max-width: 300px;
+}
 
 /* ============ 按钮体系 ============ */
 .btn-primary {
@@ -569,7 +594,9 @@
   opacity: 0;
   transition: opacity var(--dur) var(--ease);
 }
-.tree-row:hover .tree-actions {
+.tree-row:hover .tree-actions,
+.tree-row:focus .tree-actions,
+.tree-row:focus-within .tree-actions {
   opacity: 1;
 }
 .tree-action {
@@ -1587,7 +1614,7 @@
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border);
 }
 .theme-card-name {
   font-size: var(--text-sm);
@@ -1614,7 +1641,9 @@
   transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease),
     background var(--dur) var(--ease);
 }
-.theme-card:hover .theme-delete {
+.theme-card:hover .theme-delete,
+.theme-card:focus .theme-delete,
+.theme-card:focus-within .theme-delete {
   opacity: 1;
 }
 .theme-delete:hover {
@@ -2165,7 +2194,9 @@
   opacity: 0;
   transition: opacity var(--dur) var(--ease);
 }
-.checklist-row:hover .checklist-row-actions {
+.checklist-row:hover .checklist-row-actions,
+.checklist-row:focus .checklist-row-actions,
+.checklist-row:focus-within .checklist-row-actions {
   opacity: 1;
 }
 
@@ -2223,7 +2254,7 @@
   height: 100%;
   background: var(--accent);
   border-radius: 9999px;
-  transition: width 300ms var(--ease);
+  transition: width var(--dur) var(--ease);
 }
 .checklist-progress-text {
   font-family: var(--font-mono);
@@ -2417,7 +2448,7 @@
   border-radius: 9999px;
   border: 1px solid var(--border);
   color: var(--fg-muted);
-  transition: all var(--dur) var(--ease);
+  transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .record-tag-chip:hover {
   border-color: var(--border-strong);
@@ -2473,7 +2504,9 @@
   opacity: 0;
   transition: opacity var(--dur) var(--ease);
 }
-.record-row:hover .record-row-actions {
+.record-row:hover .record-row-actions,
+.record-row:focus .record-row-actions,
+.record-row:focus-within .record-row-actions {
   opacity: 1;
 }
 
@@ -2583,7 +2616,7 @@
   border-radius: 9999px;
   font-size: var(--text-xs);
   color: var(--fg-muted);
-  transition: all var(--dur) var(--ease);
+  transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .backlink-item:hover {
   border-color: var(--accent);
@@ -2893,7 +2926,7 @@
   inset: 0;
   border-radius: 999px;
   background: var(--border);
-  transition: background 0.15s;
+  transition: background var(--dur) var(--ease);
 }
 .switch-track::after {
   content: "";
@@ -2905,7 +2938,7 @@
   border-radius: 50%;
   background: var(--bg-elevated);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: transform 0.15s;
+  transition: transform var(--dur) var(--ease);
 }
 .switch input:checked + .switch-track {
   background: var(--accent);
@@ -2919,4 +2952,32 @@
 }
 .switch.disabled input {
   cursor: not-allowed;
+}
+
+.tool-result.empty .project-empty-open {
+  margin-left: var(--space-2);
+}
+
+/* AI 设置：API Key 已配置状态徽章 */
+.ai-key-state {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: 4px;
+  color: var(--pastel-green-fg);
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+
+/* 系统减弱动效偏好：关闭入场/位移动画 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

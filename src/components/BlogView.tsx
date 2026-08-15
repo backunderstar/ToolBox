@@ -13,6 +13,7 @@ import {
   type PostMeta,
 } from "../core/api";
 import { setStatus } from "../core/blogfm";
+import { onRowKeyDown } from "../core/keyboard";
 import { IconFolder, IconGlobe, IconSparkle } from "./icons";
 
 /**
@@ -160,7 +161,11 @@ export function BlogView() {
             <div
               key={p.path}
               className={`blog-row${selected?.path === p.path ? " active" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-current={selected?.path === p.path ? "true" : undefined}
               onClick={() => setSelected(p)}
+              onKeyDown={(e) => onRowKeyDown(e, () => setSelected(p))}
             >
               <div className="blog-row-title">{p.title}</div>
               <div className="blog-row-meta">
@@ -175,7 +180,7 @@ export function BlogView() {
       </aside>
 
       {/* ---- 右：文章详情 ---- */}
-      <main className="blog-main">
+      <section className="blog-main" aria-label="文章详情">
         {!selected ? (
           <div className="empty-state">
             <div className="empty-icon">
@@ -224,7 +229,7 @@ export function BlogView() {
             </div>
           </div>
         )}
-      </main>
+      </section>
     </div>
   );
 }

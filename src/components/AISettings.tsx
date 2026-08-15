@@ -97,13 +97,16 @@ export function AISettings() {
             />
           </div>
           <div className="settings-row">
-            <span className="settings-label">API Key</span>
+            <span className="settings-label">
+              API Key
+              {hasKey && <span className="ai-key-state">已配置</span>}
+            </span>
             <input
               className="ai-input"
               type="password"
               value={keyInput}
               onChange={(e) => setKeyInput(e.target.value)}
-              placeholder={hasKey ? "已配置（输入可修改）" : "sk-…"}
+              placeholder="sk-…"
               spellCheck={false}
             />
           </div>

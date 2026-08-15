@@ -95,6 +95,13 @@ export function NavSettings({ prefs, onChange }: NavSettingsProps) {
                         type="checkbox"
                         checked={!hidden}
                         disabled={isSettings}
+                        aria-label={
+                          isSettings
+                            ? "设置固定显示"
+                            : hidden
+                              ? `显示「${item.label}」`
+                              : `隐藏「${item.label}」`
+                        }
                         onChange={() => toggleHidden(item.id)}
                       />
                       <span className="switch-track" />

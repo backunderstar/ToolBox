@@ -168,7 +168,7 @@ export function AIChatView() {
       </header>
 
       <div className="ai-body">
-        <div className="ai-chat">
+        <div className="ai-chat" aria-live="polite">
           {entries.length === 0 ? (
             <div className="ai-empty">
               <IconSparkle width={26} height={26} />

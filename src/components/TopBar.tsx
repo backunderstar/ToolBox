@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { IconFloat, IconFolder, IconMoon, IconPanelLeft, IconSun } from "./icons";
 import type { ThemeMode } from "../themes/themes";
+import { APP_TAG } from "../core/version";
 
 interface TopBarProps {
   theme: ThemeMode;
@@ -53,7 +54,7 @@ export function TopBar({
 
       <div className="topbar-brand">
         <span className="topbar-title">ToolBox</span>
-        <span className="topbar-tag">v0.1.0 · M7</span>
+        <span className="topbar-tag">{APP_TAG}</span>
       </div>
 
       <button

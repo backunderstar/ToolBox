@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRecords } from "../core/records";
 import type { RecordData } from "../core/records";
 import { useNav } from "../core/navigation";
+import { onRowKeyDown } from "../core/keyboard";
 import { IconFileText, IconPlus, IconTrash } from "./icons";
 
 /**
@@ -202,7 +203,11 @@ export function RecordsView() {
             <div
               key={r.id}
               className={`record-row${currentId === r.id ? " active" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-current={currentId === r.id ? "true" : undefined}
               onClick={() => openRecord(r.id)}
+              onKeyDown={(e) => onRowKeyDown(e, () => openRecord(r.id))}
             >
               <div className="record-row-date">{r.date}</div>
               <div className="record-row-title">{r.title}</div>
@@ -224,7 +229,7 @@ export function RecordsView() {
       </aside>
 
       {/* ---- 右：编辑器 ---- */}
-      <main className="records-main">
+      <section className="records-main" aria-label="记录编辑器">
         {!draft ? (
           <div className="empty-state">
             <h2>工作记录</h2>
@@ -281,7 +286,7 @@ export function RecordsView() {
             )}
           </div>
         )}
-      </main>
+      </section>
     </div>
   );
 }

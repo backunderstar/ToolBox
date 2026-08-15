@@ -3,8 +3,10 @@ import type { PingInfo } from "../core/ipc";
 import {
   IconCheckSquare,
   IconFileText,
+  IconFolder,
   IconGlobe,
   IconNotebook,
+  IconPuzzle,
   IconSliders,
   IconSparkle,
 } from "./icons";
@@ -20,10 +22,17 @@ interface Module {
 const MODULES: Module[] = [
   {
     name: "笔记",
-    desc: "Markdown 编辑、文件树与全文搜索，以普通文件落地，可 git 版本化。",
+    desc: "Markdown 编辑、文件树与全文搜索（FTS5 索引），以普通文件落地，可 git 版本化。",
     milestone: "M1 已完成",
     done: true,
     icon: IconFileText,
+  },
+  {
+    name: "插件",
+    desc: "JS / Python 扩展命令，进程隔离 + 权限声明，webview 插件与命令试用台。",
+    milestone: "M2 已完成",
+    done: true,
+    icon: IconPuzzle,
   },
   {
     name: "数据工具",
@@ -48,7 +57,7 @@ const MODULES: Module[] = [
   },
   {
     name: "AI 整理",
-    desc: "选段摘要、笔记问答（RAG），提供商可配置，以插件接入。",
+    desc: "选段摘要、笔记问答（RAG），提供商可配置，API Key 存系统凭据管理器。",
     milestone: "M6 已完成",
     done: true,
     icon: IconSparkle,
@@ -59,6 +68,13 @@ const MODULES: Module[] = [
     milestone: "M7 已完成",
     done: true,
     icon: IconGlobe,
+  },
+  {
+    name: "项目文件",
+    desc: "项目目录管理：归档、浏览、默认应用打开，删除进回收站。",
+    milestone: "M8 已完成",
+    done: true,
+    icon: IconFolder,
   },
 ];
 
@@ -138,7 +154,7 @@ export function WelcomeView({ ping, themeName, onOpenNotes }: WelcomeViewProps) 
 
       <div className="hint fade-in">
         <kbd>Ctrl</kbd>+<kbd>K</kbd>
-        <span>命令面板将于 M2 插件系统落地后开放</span>
+        <span>在「笔记」视图聚焦搜索框，检索文件名与内容</span>
       </div>
     </div>
   );

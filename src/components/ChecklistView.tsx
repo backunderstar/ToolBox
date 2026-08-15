@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useChecklists } from "../core/checklists";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
+import { onRowKeyDown } from "../core/keyboard";
 import { IconFileText, IconPlus, IconTrash } from "./icons";
 
 /**
@@ -110,7 +111,11 @@ export function ChecklistView() {
             <div
               key={m.id}
               className={`checklist-row${current?.id === m.id ? " active" : ""}`}
+              role="button"
+              tabIndex={0}
+              aria-current={current?.id === m.id ? "true" : undefined}
               onClick={() => void open(m.id)}
+              onKeyDown={(e) => onRowKeyDown(e, () => void open(m.id))}
             >
               <div className="checklist-row-main">
                 <span className="checklist-row-title">{m.title}</span>
@@ -138,7 +143,7 @@ export function ChecklistView() {
       </aside>
 
       {/* ---- 右：清单编辑器 ---- */}
-      <main className="checklist-main">
+      <section className="checklist-main" aria-label="清单编辑器">
         {!current ? (
           <div className="empty-state">
             <h2>清单</h2>
@@ -208,6 +213,8 @@ export function ChecklistView() {
                         className="note-pick"
                         onClick={() => setPickingNote(pickingNote === item.id ? null : item.id)}
                         title="关联笔记"
+                        aria-label="关联笔记"
+                        aria-expanded={pickingNote === item.id}
                       >
                         <IconPlus width={11} height={11} />
                       </button>
@@ -269,7 +276,7 @@ export function ChecklistView() {
             </div>
           </div>
         )}
-      </main>
+      </section>
     </div>
   );
 }

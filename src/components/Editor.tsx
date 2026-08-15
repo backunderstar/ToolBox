@@ -54,10 +54,21 @@ const TOOLBAR = [
  */
 export function Editor({ doc, onChange, onSave, dark, placeholderText }: EditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const vdRef = useRef<Vditor | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   /* busy 状态用 ref 供挂载期闭包（toolbar click）读取，避免死代码防抖 */
   const aiBusyRef = useRef(false);
+
+  /* 主题切换不重建实例：直接调 Vditor setTheme，保留撤销栈/光标/滚动位置。
+     组件以 key（仅 activePath）重建，暗/亮切换只改主题而不丢编辑状态 */
+  useEffect(() => {
+    try {
+      vdRef.current?.setTheme(dark ? "dark" : "classic");
+    } catch {
+      /* 旧版 Vditor 无 setTheme：忽略，下次重建时生效 */
+    }
+  }, [dark]);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -140,11 +151,13 @@ export function Editor({ doc, onChange, onSave, dark, placeholderText }: EditorP
           });
           // 记录句柄以便卸载时取消
           (vd as unknown as { __raf?: number }).__raf = raf;
+          vdRef.current = vd;
         },
       });
 
       return () => {
         try {
+          vdRef.current = null;
           const raf = (vd as unknown as { __raf?: number }).__raf;
           if (raf) cancelAnimationFrame(raf);
           vd.destroy();

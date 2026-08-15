@@ -100,6 +100,7 @@ export function Sidebar({ activeView, onSelect, collapsed, prefs }: SidebarProps
                   key={item.id}
                   className={`nav-item${isActive ? " active" : ""}`}
                   disabled={!isClickable}
+                  aria-current={isActive ? "page" : undefined}
                   title={
                     item.milestone
                       ? `${item.label}（规划于 ${item.milestone} 里程碑）`
@@ -109,12 +110,9 @@ export function Sidebar({ activeView, onSelect, collapsed, prefs }: SidebarProps
                 >
                   <Icon width={16} height={16} />
                   {!collapsed && <span>{item.label}</span>}
-                  {!collapsed &&
-                    (item.now ? (
-                      <span className="nav-badge badge-now">就绪</span>
-                    ) : item.milestone ? (
-                      <span className="nav-badge badge-plan">{item.milestone}</span>
-                    ) : null)}
+                  {!collapsed && item.milestone ? (
+                    <span className="nav-badge badge-plan">{item.milestone}</span>
+                  ) : null}
                 </button>
               );
             })}

@@ -21,6 +21,11 @@ export function BackupSettings() {
   const [entries, setEntries] = useState<BackupEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgErr, setMsgErr] = useState(false);
+  const showMsg = (text: string, isErr = false) => {
+    setMsg(text);
+    setMsgErr(isErr);
+  };
 
   useEffect(() => {
     void backupConfigGet().then(setConfig).catch(() => setConfig(null));
@@ -43,9 +48,9 @@ export function BackupSettings() {
     setConfig(next);
     try {
       await backupConfigSet(next);
-      setMsg("备份设置已保存");
+      showMsg("备份设置已保存");
     } catch (e) {
-      setMsg(String(e));
+      showMsg(String(e), true);
     }
   };
 
@@ -55,12 +60,12 @@ export function BackupSettings() {
     setMsg(null);
     try {
       const info = await backupNow(vault.path);
-      setMsg(
+      showMsg(
         `备份完成：${info.fileCount} 个文件，${formatSize(info.sizeBytes)}（保留最近 ${config?.keep ?? 10} 份）`
       );
       await loadList();
     } catch (e) {
-      setMsg(String(e));
+      showMsg(String(e), true);
     } finally {
       setBusy(false);
     }
@@ -71,7 +76,7 @@ export function BackupSettings() {
     try {
       await openInExplorer(`${vault.path}\\.toolbox\\backups`);
     } catch (e) {
-      setMsg(String(e));
+      showMsg(String(e), true);
     }
   };
 
@@ -155,7 +160,9 @@ export function BackupSettings() {
         </div>
       </div>
 
-      {msg && <div className="settings-hint">{msg}</div>}
+      {msg && (
+        <div className={`settings-message ${msgErr ? "err" : "ok"}`}>{msg}</div>
+      )}
 
       {entries.length > 0 && (
         <div className="backup-list">

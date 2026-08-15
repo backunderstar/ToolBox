@@ -26,7 +26,7 @@ export function ProjectsView() {
   const p = useProjects();
 
   return (
-    <div className="projects-view scroll-area">
+    <div className="projects-view">
       <header className="view-header">
         <div>
           <h1>项目</h1>
@@ -45,7 +45,7 @@ export function ProjectsView() {
       {!vault.path ? (
         <div className="empty-state">
           <IconFolder width={28} height={28} />
-          <p>请先在上方选择一个工作区，再管理项目</p>
+          <p>请先在顶栏选择一个工作区，再管理项目</p>
         </div>
       ) : p.current === null ? (
         <ProjectList />
@@ -230,7 +230,10 @@ function ProjectDetail() {
       ) : p.files.length === 0 ? (
         <div className="tool-result empty">
           项目文件夹是空的 —— 可在资源管理器中添加文件
-          <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => void p.openFolder("")}>
+          <button
+            className="btn btn-sm project-empty-open"
+            onClick={() => void p.openFolder("")}
+          >
             打开文件夹
           </button>
         </div>

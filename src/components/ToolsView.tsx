@@ -23,7 +23,7 @@ export function ToolsView() {
     .filter((x) => x.commands.length > 0);
 
   return (
-    <div className="tools-view scroll-area">
+    <div className="tools-view">
       <header className="view-header">
         <div>
           <h1>数据工具</h1>

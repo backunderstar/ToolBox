@@ -67,6 +67,8 @@ export function CommandTry({ pluginId, command, name, invoke }: CommandTryProps)
           className="command-try"
           onClick={toggle}
           title={`${open ? "收起" : "调用"} ${command}`}
+          aria-label={`${open ? "收起" : "调用"} ${command}`}
+          aria-expanded={open}
         >
           <IconPlus width={11} height={11} />
           {open ? "收起" : "试用"}
