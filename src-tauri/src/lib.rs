@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{ai, backup, blog, notes, projects, vault};
+use core::{ai, backup, blog, notes, projects, todos, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -63,6 +63,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         // 插件命令签名要求 Mutex<PluginManager>（见 plugins/mod.rs 的 State 参数）
         .manage(Mutex::new(PluginManager::default()))
         .manage(blog::PreviewState::default())
@@ -105,12 +106,79 @@ pub fn run() {
             backup::backup_config_get,
             backup::backup_config_set,
             backup::backup_list,
+            todos::todos_list,
+            todos::todos_add,
+            todos::todos_toggle,
+            todos::todos_delete,
+            todos::todos_clear_done,
+            float_toggle,
         ])
         .setup(|app| {
+            use tauri::Manager;
             // 后台自动备份线程（随应用常驻，读取配置按间隔执行）
             backup::spawn_auto(app.handle().clone());
+            // 桌面半透明浮窗（快速待办）
+            create_float_window(app.handle())?;
+            // 健壮性：若主窗口位于屏幕外（显示器变更等 Windows 残留），移到屏幕中心
+            if let Some(main) = app.get_webview_window("main") {
+                if let Ok(pos) = main.outer_position() {
+                    if pos.x < -10_000 || pos.y < -10_000 || pos.x > 100_000 || pos.y > 100_000 {
+                        eprintln!("[main] 窗口位于屏幕外 ({},{})，已移回中心", pos.x, pos.y);
+                        main.center().ok();
+                    }
+                }
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// 浮窗窗口标签。
+pub const FLOAT_WINDOW: &str = "float";
+
+/// 创建桌面浮窗：无边框、透明、置顶、不进任务栏；位置/大小由 window-state 插件记忆。
+fn create_float_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let win = tauri::WebviewWindowBuilder::new(
+        app,
+        FLOAT_WINDOW,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("ToolBox 快速待办")
+    .inner_size(280.0, 420.0)
+    .min_inner_size(240.0, 300.0)
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(true)
+    .build();
+    match &win {
+        Ok(w) => {
+            eprintln!("[float] 浮窗已创建 label={}", w.label());
+            // 透明窗口在 Windows 上可能保持隐藏（等待 WebView 初始化），显式显示
+            if let Err(e) = w.show() {
+                eprintln!("[float] show 失败: {e}");
+            }
+        }
+        Err(e) => eprintln!("[float] 浮窗创建失败: {e}"),
+    }
+    win.map(|_| ())
+}
+
+/// 显示 / 隐藏浮窗（主窗口顶栏按钮调用）。返回操作后的可见状态。
+#[tauri::command]
+fn float_toggle(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+    let Some(win) = app.get_webview_window(FLOAT_WINDOW) else {
+        return Err("浮窗未创建".to_string());
+    };
+    if win.is_visible().unwrap_or(true) {
+        win.hide().map_err(|e| format!("隐藏浮窗失败: {e}"))?;
+        Ok(false)
+    } else {
+        win.show().map_err(|e| format!("显示浮窗失败: {e}"))?;
+        win.set_focus().ok();
+        Ok(true)
+    }
 }

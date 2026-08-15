@@ -6,6 +6,7 @@
     "core:default",
     "core:window:allow-set-theme",
     "dialog:default",
-    "opener:default"
+    "opener:default",
+    "window-state:default"
   ]
 }

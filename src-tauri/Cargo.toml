@@ -25,6 +25,8 @@ tiny_http = "0.12"
 pulldown-cmark = "0.12"
 # M8 项目文件管理：删除项目进系统回收站
 trash = "5"
+# 浮窗清单：记忆窗口位置/大小
+tauri-plugin-window-state = "2"
 
 # Windows 上链接 WebView2 需要，Tauri 2 默认启用
 [target.'cfg(windows)'.dependencies]

@@ -1,0 +1,210 @@
+/* ============ 桌面浮窗（快速待办）============
+   独立窗口样式：深色半透明卡片，不跟随主应用主题。
+   窗口本身 transparent，body 背景须透明才能露出圆角外区域。 */
+
+body.float-mode {
+  background: transparent;
+  overflow: hidden;
+}
+
+.float-window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+  background: rgba(26, 25, 23, 0.85);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  backdrop-filter: blur(16px) saturate(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  color: #ecebe7;
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+/* ---- 标题栏（拖拽区） ---- */
+.float-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0 10px 0 14px;
+  user-select: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+}
+.float-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(236, 235, 231, 0.92);
+}
+.float-count {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 10px;
+  color: rgba(236, 235, 231, 0.45);
+}
+.float-hide {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: rgba(236, 235, 231, 0.55);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.float-hide:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* ---- 输入行 ---- */
+.float-input-row {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
+}
+.float-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ecebe7;
+  font-size: 13px;
+  outline: none;
+}
+.float-input::placeholder {
+  color: rgba(236, 235, 231, 0.4);
+}
+.float-input:focus {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.09);
+}
+.float-input:disabled {
+  opacity: 0.5;
+}
+.float-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ecebe7;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+.float-add:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+}
+.float-add:disabled {
+  opacity: 0.35;
+}
+
+/* ---- 列表 ---- */
+.float-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 8px;
+}
+.float-list::-webkit-scrollbar {
+  width: 6px;
+}
+.float-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+.float-empty {
+  padding: 20px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(236, 235, 231, 0.4);
+}
+.float-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 4px;
+  border-radius: 8px;
+  transition: background 0.12s ease;
+}
+.float-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.float-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(236, 235, 231, 0.35);
+  border-radius: 5px;
+  color: #1a1917;
+  transition: all 0.15s ease;
+}
+.float-check.on {
+  background: #7fb069;
+  border-color: #7fb069;
+}
+.float-item-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(236, 235, 231, 0.92);
+  overflow-wrap: anywhere;
+  transition: color 0.15s ease;
+}
+.float-item.done .float-item-text {
+  color: rgba(236, 235, 231, 0.35);
+  text-decoration: line-through;
+}
+.float-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: rgba(236, 235, 231, 0.35);
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.float-item:hover .float-del {
+  opacity: 1;
+}
+.float-del:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ff8a80;
+}
+
+/* ---- 底部 ---- */
+.float-foot {
+  flex-shrink: 0;
+  padding: 6px 12px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.float-clear {
+  width: 100%;
+  padding: 5px 0;
+  border-radius: 7px;
+  font-size: 11px;
+  color: rgba(236, 235, 231, 0.5);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.float-clear:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ecebe7;
+}
+.float-clear:disabled {
+  opacity: 0.4;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { IconFolder, IconMoon, IconPanelLeft, IconSun } from "./icons";
+import { IconFloat, IconFolder, IconMoon, IconPanelLeft, IconSun } from "./icons";
 import type { ThemeMode } from "../themes/themes";
 
 interface TopBarProps {
@@ -12,6 +12,8 @@ interface TopBarProps {
   onPickVault: () => void;
   navCollapsed: boolean;
   onToggleNav: () => void;
+  /** 显示 / 隐藏桌面浮窗（快速待办） */
+  onToggleFloat: () => void;
   /** Ctrl+K 快捷键聚焦信号（App 层自增触发） */
   focusSignal?: number;
 }
@@ -26,6 +28,7 @@ export function TopBar({
   onPickVault,
   navCollapsed,
   onToggleNav,
+  onToggleFloat,
   focusSignal,
 }: TopBarProps) {
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -94,6 +97,15 @@ export function TopBar({
       </div>
 
       <div className="spacer" />
+
+      <button
+        className="icon-btn"
+        onClick={onToggleFloat}
+        title="显示 / 隐藏桌面浮窗（快速待办）"
+        aria-label="切换浮窗"
+      >
+        <IconFloat width={15} height={15} />
+      </button>
 
       <button
         className="icon-btn"

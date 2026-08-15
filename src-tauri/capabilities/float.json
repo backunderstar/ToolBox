@@ -1,0 +1,13 @@
+{
+  "identifier": "float",
+  "description": "浮窗（快速待办）能力：基础 IPC + 窗口显隐 + 位置记忆",
+  "windows": ["float"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "window-state:default"
+  ]
+}

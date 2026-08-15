@@ -190,7 +190,7 @@ Vault（用户自选的工作区目录）
 
 | 优先级 | 事项 | 说明 |
 |---|---|---|
-| 后置（最后做） | **桌面半透明浮窗清单** | 方案已出：`docs/浮窗清单方案.md`；Tauri 多窗口 + 透明/置顶/位置记忆 + `data/todos.json` 纯文件真源；含 M-A~M-D 四阶段 |
+| ✅ 已完成 | **桌面半透明浮窗清单** | 独立窗口（透明/无边框/置顶/位置记忆）+ `data/todos.json` 纯文件真源 + 事件双窗同步；顶栏按钮显隐 |
 | 待排期 | API Key 安全加固 | AI 配置的 API Key 由明文 JSON 迁移到 Windows 凭据管理器（Credential Manager） |
 | 待排期 | 打包版 CSP 配置 | 生产构建配置 Content-Security-Policy，需回归防功能破坏 |
 | ✅ 已完成 | 自动备份 | vault 定时备份到 `.toolbox/backups/`（保留最近 N 份，可配置；设置页管理） |

@@ -276,3 +276,12 @@ export const IconArchive = (p: SVGProps<SVGSVGElement>) => (
     <path d="M10 13h4" />
   </svg>
 );
+
+/** 浮窗（桌面小组件） */
+export const IconFloat = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M3 10h18" />
+    <path d="M7 8h.01M10 8h.01" />
+  </svg>
+);

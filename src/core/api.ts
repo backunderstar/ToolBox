@@ -206,3 +206,20 @@ export const backupConfigSet = (config: BackupConfig) =>
   invoke<void>("backup_config_set", { config });
 export const backupNow = (vault: string) => invoke<BackupInfo>("backup_now_cmd", { vault });
 export const backupList = (vault: string) => invoke<BackupEntry[]>("backup_list", { vault });
+
+/* ---- 浮窗快速待办 ---- */
+
+export interface TodosItem {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: string;
+}
+
+export const todosList = () => invoke<TodosItem[]>("todos_list");
+export const todosAdd = (text: string) => invoke<TodosItem[]>("todos_add", { text });
+export const todosToggle = (id: string) => invoke<TodosItem[]>("todos_toggle", { id });
+export const todosDelete = (id: string) => invoke<TodosItem[]>("todos_delete", { id });
+export const todosClearDone = () => invoke<TodosItem[]>("todos_clear_done");
+/** 显示 / 隐藏浮窗（返回操作后可见状态） */
+export const floatToggle = () => invoke<boolean>("float_toggle");

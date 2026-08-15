@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
 import { PluginProvider } from "./core/plugins";
@@ -8,6 +9,7 @@ import { ProjectsProvider } from "./core/projects";
 import { NavProvider } from "./core/navigation";
 import type { ViewParams } from "./core/navigation";
 import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
+import { floatToggle } from "./core/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, getInitialTheme, toggleTheme, getThemeBase, findTheme } from "./themes/themes";
 import { TopBar } from "./components/TopBar";
@@ -23,11 +25,25 @@ import { ProjectsView } from "./components/ProjectsView";
 import { AIChatView } from "./components/AIChatView";
 import { BlogView } from "./components/BlogView";
 import { SettingsView } from "./components/SettingsView";
+import { FloatApp } from "./components/FloatApp";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/app.css";
 
+/** 是否为浮窗窗口（加载同一前端入口，按窗口 label 分流） */
+function isFloatWindow(): boolean {
+  try {
+    return getCurrentWindow().label === "float";
+  } catch {
+    return false; // 浏览器 mock 环境无 Tauri
+  }
+}
+
 export default function App() {
+  const [isFloat] = useState(isFloatWindow);
+  if (isFloat) {
+    return <FloatApp />;
+  }
   return (
     <ErrorBoundary>
       <VaultProvider>
@@ -155,6 +171,7 @@ function AppInner() {
           onPickVault={vault.pickVault}
           navCollapsed={navCollapsed}
           onToggleNav={() => setNavCollapsed((c) => !c)}
+          onToggleFloat={() => void floatToggle()}
           focusSignal={focusTick}
         />
         <div className="body">
