@@ -245,7 +245,7 @@ ToolBox/
    - [x] 一个 Rust 命令（如 `fs::ping` 返回版本号）从前端调通
    - [x] 设置页骨架
 
-> 进度：M0 ✓ → M1 ✓（笔记+设置）→ M2 ✓（插件系统，53da90d）→ M3 ✓（数据工具，e6d864f）→ M4 ✓（清单与记录，双向链接，4ba3ecc）。
+> 进度：M0 ✓ → M1 ✓（笔记+设置）→ M2 ✓（插件系统，53da90d）→ M3 ✓（数据工具，e6d864f）→ M4 ✓（清单与记录，4ba3ecc）→ M5 ✓（主题系统：主题包+切换器+编辑器，3 内置主题）。
 >
 > 真实运行验证方法：临时在 `src-tauri/tauri.conf.json` 的 windows[0] 加
 > `"additionalBrowserArgs": "--remote-debugging-port=9226"`，`pnpm tauri dev` 后

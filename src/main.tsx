@@ -1,7 +1,7 @@
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
-import { applyTheme, getInitialTheme } from "./themes/theme";
+import { applyTheme, getInitialTheme } from "./themes/themes";
 
 // 渲染前应用初始主题（含原生标题栏同步），避免首帧闪烁
 applyTheme(getInitialTheme());

@@ -8,7 +8,7 @@ import { NavProvider } from "./core/navigation";
 import type { ViewParams } from "./core/navigation";
 import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { applyTheme, getInitialTheme, type ThemeMode } from "./themes/theme";
+import { applyTheme, getInitialTheme, toggleTheme, getThemeBase, findTheme } from "./themes/themes";
 import { TopBar } from "./components/TopBar";
 import { Sidebar, type ViewId } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
@@ -45,7 +45,7 @@ function AppInner() {
     new URLSearchParams(window.location.search).has("mock") ? "notes" : "overview"
   );
   const [viewParams, setViewParams] = useState<ViewParams>({});
-  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+  const [themeId, setThemeId] = useState<string>(getInitialTheme);
   const [pingInfo, setPingInfo] = useState<PingInfo | null>(null);
 
   /* 布局偏好：导航折叠 / 文件面板折叠 / 专注模式（持久化） */
@@ -64,8 +64,8 @@ function AppInner() {
   }, [navCollapsed, filesCollapsed, focusMode]);
 
   useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    applyTheme(themeId);
+  }, [themeId]);
 
   useEffect(() => {
     ping()
@@ -79,8 +79,11 @@ function AppInner() {
       );
   }, []);
 
-  const toggleTheme = () =>
-    setTheme((t) => (t === "light" ? "dark" : "light"));
+  const toggleThemeMode = () =>
+    setThemeId((t) => toggleTheme(t));
+
+  const themeMode = getThemeBase(themeId);
+  const themeName = findTheme(themeId)?.name ?? themeId;
 
   const vaultName = vault.path
     ? (vault.path.split(/[\\/]/).pop() ?? vault.path)
@@ -119,8 +122,8 @@ function AppInner() {
     <NavProvider value={navValue}>
       <div className="app">
         <TopBar
-          theme={theme}
-          onToggleTheme={toggleTheme}
+          theme={themeMode}
+          onToggleTheme={toggleThemeMode}
           query={vault.query}
           onQueryChange={vault.setQuery}
           searchEnabled={view === "notes" && !!vault.path}
@@ -144,7 +147,8 @@ function AppInner() {
             {view === "overview" ? (
               <WelcomeView
                 ping={pingInfo}
-                theme={theme}
+                theme={themeMode}
+                themeName={themeName}
                 onOpenNotes={() => setView("notes")}
               />
             ) : view === "plugins" ? (
@@ -157,13 +161,13 @@ function AppInner() {
               <RecordsView />
             ) : view === "settings" ? (
               <SettingsView
-                theme={theme}
-                onSetTheme={setTheme}
+                themeId={themeId}
+                onSetThemeId={setThemeId}
                 ping={pingInfo}
               />
             ) : (
               <NotesView
-                dark={theme === "dark"}
+                dark={themeMode === "dark"}
                 filesCollapsed={filesCollapsed}
                 focusMode={focusMode}
                 onToggleFiles={() => setFilesCollapsed((c) => !c)}
@@ -174,7 +178,7 @@ function AppInner() {
         </div>
         <StatusBar
           ping={pingInfo}
-          theme={theme}
+          theme={themeMode}
           vaultName={vaultName}
           status={vault.status}
         />

@@ -1,5 +1,5 @@
 import { IconFolder, IconMoon, IconPanelLeft, IconSun } from "./icons";
-import type { ThemeMode } from "../themes/theme";
+import type { ThemeMode } from "../themes/themes";
 
 interface TopBarProps {
   theme: ThemeMode;
@@ -37,7 +37,7 @@ export function TopBar({
 
       <div className="topbar-brand">
         <span className="topbar-title">ToolBox</span>
-        <span className="topbar-tag">v0.1.0 · M4</span>
+        <span className="topbar-tag">v0.1.0 · M5</span>
       </div>
 
       <button

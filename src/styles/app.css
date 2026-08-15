@@ -1540,6 +1540,154 @@
   flex-basis: 100%;
 }
 
+/* ============ M5 主题选择器与编辑器 ============ */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.theme-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.theme-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-1);
+}
+.theme-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.theme-swatches {
+  display: flex;
+  gap: 4px;
+}
+.theme-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+.theme-card-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg);
+}
+.theme-card-desc {
+  font-size: 10px;
+  color: var(--fg-faint);
+  line-height: 1.5;
+}
+.theme-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--fg-faint);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.theme-card:hover .theme-delete {
+  opacity: 1;
+}
+.theme-delete:hover {
+  color: var(--pastel-red-fg);
+  background: var(--pastel-red-bg);
+}
+.theme-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.theme-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.theme-editor-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.theme-editor-name {
+  flex: 1;
+  min-width: 160px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  padding: 6px 12px;
+}
+.theme-editor-name:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.theme-editor-tokens {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 2px var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+}
+.theme-token-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 0;
+}
+.theme-token-label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.theme-token-key {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--fg-faint);
+}
+.theme-token-input {
+  width: 30px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+.theme-token-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-muted);
+}
+.theme-editor-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 /* ============ M4 清单视图 ============ */
 .checklist-view,
 .records-view {

@@ -1,5 +1,5 @@
 import type { PingInfo } from "../core/ipc";
-import type { ThemeMode } from "../themes/theme";
+import type { ThemeMode } from "../themes/themes";
 
 interface StatusBarProps {
   ping: PingInfo | null;

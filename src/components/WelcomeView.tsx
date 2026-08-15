@@ -1,6 +1,6 @@
 import type { CSSProperties, ComponentType, SVGProps } from "react";
 import type { PingInfo } from "../core/ipc";
-import type { ThemeMode } from "../themes/theme";
+import type { ThemeMode } from "../themes/themes";
 import {
   IconCheckSquare,
   IconFileText,
@@ -66,10 +66,11 @@ const MODULES: Module[] = [
 interface WelcomeViewProps {
   ping: PingInfo | null;
   theme: ThemeMode;
+  themeName: string;
   onOpenNotes: () => void;
 }
 
-export function WelcomeView({ ping, theme, onOpenNotes }: WelcomeViewProps) {
+export function WelcomeView({ ping, theme, themeName, onOpenNotes }: WelcomeViewProps) {
   const ok = ping?.message === "pong";
 
   return (
@@ -106,7 +107,7 @@ export function WelcomeView({ ping, theme, onOpenNotes }: WelcomeViewProps) {
         <div className="env-item">
           <span className="env-key">主题</span>
           <span className="env-value">
-            {theme === "light" ? "亮色" : "暗色"}（右上角可切换）
+            {themeName}（设置页可选 / 顶栏切换亮暗）
           </span>
         </div>
       </section>
