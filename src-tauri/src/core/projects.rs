@@ -65,7 +65,11 @@ fn project_path(vault: &str, name: &str, archived: bool) -> Result<PathBuf, Stri
 }
 
 /// 在 active / archive 中查找项目（前者优先），返回存在的绝对路径。
+/// 与 `project_path` 一致，入口先过名校验：`find_project` 同时被
+/// delete/files/open 使用，缺校验时 `name="../notes"` 可解析到 vault
+/// 内任意目录（`projects_delete` 会物理删除它）。
 fn find_project(vault: &str, name: &str) -> Result<PathBuf, String> {
+    validate_project_name(name)?;
     let root = projects_root(vault);
     for archived in [false, true] {
         let dir = if archived {
@@ -343,6 +347,29 @@ mod tests {
             ));
             assert!(r.is_err(), "应拒绝 rel: {bad:?}");
         }
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    /// 项目名注入：find_project（delete/files/open 共用）必须拒绝 `..`/路径分隔，
+    /// 防止 `projects_delete("../../notes")` 物理删除 vault 内任意目录。
+    #[test]
+    fn find_project_rejects_name_escape() {
+        let v = tmp_vault("find-escape");
+        let vault = v.to_string_lossy().to_string();
+        tauri::async_runtime::block_on(projects_create(vault.clone(), "P".into())).unwrap();
+        // 造一个 vault 内的"诱饵"目录：若校验缺失，delete 会把它删掉
+        std::fs::create_dir_all(v.join("notes")).unwrap();
+        std::fs::write(v.join("notes/重要.md"), "# 数据").unwrap();
+
+        for bad in ["..", "../notes", "./x", "a\\b", "P/../notes"] {
+            let r = find_project(&vault, bad);
+            assert!(r.is_err(), "find_project 应拒绝: {bad:?}");
+        }
+        // 正常项目仍可找到
+        assert!(find_project(&vault, "P").is_ok());
+        // 笔记目录完好
+        assert!(v.join("notes/重要.md").exists());
+
         std::fs::remove_dir_all(&v).ok();
     }
 

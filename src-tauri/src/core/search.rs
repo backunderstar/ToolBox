@@ -71,6 +71,9 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
     let mut files = Vec::new();
     collect_md(notes, notes, NOTES_DIR, &mut files);
 
+    // 整个同步包在一个事务里：中途失败（磁盘满等）不会留下
+    // notes_idx 与 notes_fts 不一致的中间态（否则该文件后续永不重建）
+    let tx = conn.transaction().map_err(|e| format!("开启事务失败: {e}"))?;
     let mut seen: HashSet<String> = HashSet::new();
     for (rel, abs) in files {
         let meta = std::fs::metadata(&abs).map_err(|e| format!("读取元数据失败: {e}"))?;
@@ -81,7 +84,7 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
             .map(|d| d.as_nanos() as i64)
             .unwrap_or(0);
         let size = meta.len() as i64;
-        let old: Option<(i64, i64, i64)> = conn
+        let old: Option<(i64, i64, i64)> = tx
             .query_row(
                 "SELECT mtime_ns, size, fts_rowid FROM notes_idx WHERE path = ?1",
                 [&rel],
@@ -97,19 +100,21 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
             }
         }
 
-        // 内容变化或新文件：重建 FTS 条目
-        let content = read_index_content(&abs)?;
+        // 内容变化或新文件：重建 FTS 条目；读取失败（权限等）跳过该文件
+        let Some(content) = read_index_content(&abs) else {
+            continue;
+        };
         if let Some((_, _, rowid)) = old {
-            conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", [rowid])
+            tx.execute("DELETE FROM notes_fts WHERE rowid = ?1", [rowid])
                 .map_err(|e| format!("清理旧索引失败: {e}"))?;
         }
-        conn.execute(
+        tx.execute(
             "INSERT INTO notes_fts(path, content) VALUES(?1, ?2)",
             params![rel, content],
         )
         .map_err(|e| format!("写入索引失败: {e}"))?;
-        let new_rowid = conn.last_insert_rowid();
-        conn.execute(
+        let new_rowid = tx.last_insert_rowid();
+        tx.execute(
             "INSERT INTO notes_idx(path, mtime_ns, size, fts_rowid)
              VALUES(?1, ?2, ?3, ?4)
              ON CONFLICT(path) DO UPDATE SET
@@ -122,7 +127,7 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
 
     // 清理：索引里存在但磁盘上已删除的
     let stale: Vec<(String, i64)> = {
-        let mut stmt = conn
+        let mut stmt = tx
             .prepare("SELECT path, fts_rowid FROM notes_idx")
             .map_err(|e| format!("准备清理查询失败: {e}"))?;
         let rows = stmt
@@ -132,22 +137,26 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
     };
     for (path, rowid) in stale {
         if !seen.contains(&path) {
-            conn.execute("DELETE FROM notes_fts WHERE rowid = ?1", [rowid])
+            tx.execute("DELETE FROM notes_fts WHERE rowid = ?1", [rowid])
                 .map_err(|e| format!("清理索引失败: {e}"))?;
-            conn.execute("DELETE FROM notes_idx WHERE path = ?1", [path])
+            tx.execute("DELETE FROM notes_idx WHERE path = ?1", [path])
                 .map_err(|e| format!("清理索引登记失败: {e}"))?;
         }
     }
+    tx.commit().map_err(|e| format!("提交索引失败: {e}"))?;
     Ok(())
 }
 
 /// 读取文件内容用于索引（截断超大文件）。
-fn read_index_content(abs: &Path) -> Result<String, String> {
+/// None = 读取失败（权限等）：调用方跳过该文件，不索引空内容。
+fn read_index_content(abs: &Path) -> Option<String> {
     use std::io::Read;
-    let f = std::fs::File::open(abs).map_err(|e| format!("打开失败: {e}"))?;
+    let mut f = std::fs::File::open(abs).ok()?;
     let mut buf = Vec::new();
-    let _ = f.take(INDEX_READ_LIMIT).read_to_end(&mut buf);
-    Ok(String::from_utf8_lossy(&buf).into_owned())
+    if f.take(INDEX_READ_LIMIT).read_to_end(&mut buf).is_err() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
 /// 按首次命中位置切 snippet（复用旧搜索的切法）。
@@ -233,7 +242,7 @@ pub fn search(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
                     hits.push(SearchHit {
                         path,
                         filename,
-                        snippet: make_snippet(&content, q),
+                        snippet: make_snippet(&content, &q.to_lowercase()),
                     });
                 }
             }

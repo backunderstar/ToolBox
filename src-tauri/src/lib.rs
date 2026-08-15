@@ -46,6 +46,12 @@ fn log_console(msg: String) {
 fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        // 只允许打开真实存在的目录；explorer 会把 http:// / shell: 前缀转发
+        // 给浏览器/特殊文件夹，不能把任意字符串交给它
+        let p = std::path::PathBuf::from(&path);
+        if !p.is_dir() {
+            return Err(format!("路径不存在或不是目录: {path}"));
+        }
         // explorer 是 GUI 程序：spawn 后不等待，避免阻塞主线程
         std::process::Command::new("explorer.exe")
             .arg(&path)
@@ -178,8 +184,7 @@ fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "tray-quit", "退出 ToolBox", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show_main, &toggle_float, &quit])?;
 
-    TrayIconBuilder::with_id("main-tray")
-        .icon(app.default_window_icon().expect("缺少应用图标").clone())
+    let mut tray = TrayIconBuilder::with_id("main-tray")
         .tooltip("ToolBox")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -219,8 +224,12 @@ fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                     }
                 }
             }
-        })
-        .build(app)?;
+        });
+    // 图标缺失时不 panic（如调试构建无图标）：托盘降级为无图标
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
     Ok(())
 }
 

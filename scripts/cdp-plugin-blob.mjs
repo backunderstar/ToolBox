@@ -54,9 +54,12 @@ console.log("[2] 启用:", enabled);
 await new Promise((r) => setTimeout(r, 500));
 await dump("[3] 启用后:");
 
-// 3. 验证 Blob 执行路径痕迹：全局句柄已清理
-const cleaned = await ev(`typeof window.__TB_PLUGIN_API__`);
-console.log("[4] __TB_PLUGIN_API__ 已清理:", cleaned === "undefined" ? "OK(undefined)" : "泄漏:" + cleaned);
+// 3. 验证 Blob 执行路径痕迹：按插件独立的全局句柄已清理（无并发串台残留）
+const cleaned = await ev(`(() => {
+  const keys = Object.keys(window).filter(k => k.startsWith('__TB_PLUGIN_API_'));
+  return keys.length === 0 ? 'OK(clean)' : 'LEAK:' + keys.join(',');
+})()`);
+console.log("[4] 插件 api 句柄已清理:", cleaned);
 
 // 4. 试用 analyze 命令
 await ev(`(() => { const b = document.querySelector('.command-try'); if (b) b.click(); return !!b; })()`);

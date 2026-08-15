@@ -246,16 +246,19 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh, vault.path]);
 
-  const value: RecordsContextValue = {
-    records,
-    loading,
-    refresh,
-    create,
-    save,
-    remove,
-    backlinks,
-    extractLinks,
-  };
+  const value: RecordsContextValue = useMemo(
+    () => ({
+      records,
+      loading,
+      refresh,
+      create,
+      save,
+      remove,
+      backlinks,
+      extractLinks,
+    }),
+    [records, loading, refresh, create, save, remove, backlinks, extractLinks]
+  );
 
   return (
     <RecordsContext.Provider value={value}>{children}</RecordsContext.Provider>

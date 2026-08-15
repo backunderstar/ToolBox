@@ -123,17 +123,20 @@ pub fn fs_read(vault: String, rel: String) -> Result<String, String> {
     std::fs::read_to_string(&p).map_err(|e| format!("读取失败: {e}"))
 }
 
-/// 写入笔记内容（自动创建父目录）。
+/// 写入笔记内容（自动创建父目录）。原子写：临时文件 + rename，
+/// 避免崩溃/断电留下截断文件、备份拷到写了一半的内容。
 #[tauri::command]
 pub fn fs_write(vault: String, rel: String, content: String) -> Result<(), String> {
     let p = resolve_safe(&vault, &rel)?;
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
     }
-    std::fs::write(&p, content).map_err(|e| format!("写入失败: {e}"))
+    let tmp = p.with_extension("md.tmp");
+    std::fs::write(&tmp, content).map_err(|e| format!("写入失败: {e}"))?;
+    std::fs::rename(&tmp, &p).map_err(|e| format!("写入失败: {e}"))
 }
 
-/// 新建空笔记。
+/// 新建空笔记。原子写同 fs_write。
 #[tauri::command]
 pub fn fs_create(vault: String, rel: String) -> Result<(), String> {
     let p = resolve_safe(&vault, &rel)?;
@@ -143,13 +146,20 @@ pub fn fs_create(vault: String, rel: String) -> Result<(), String> {
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
     }
-    std::fs::write(&p, "").map_err(|e| format!("创建失败: {e}"))
+    let tmp = p.with_extension("md.tmp");
+    std::fs::write(&tmp, "").map_err(|e| format!("创建失败: {e}"))?;
+    std::fs::rename(&tmp, &p).map_err(|e| format!("创建失败: {e}"))
 }
 
-/// 删除文件或目录。
+/// 删除文件或目录。只允许删除 notes/ 目录**内部**的内容，
+/// 防止 `fs_delete("notes")` 之类调用把整个笔记目录删掉。
 #[tauri::command]
 pub fn fs_delete(vault: String, rel: String) -> Result<(), String> {
     let p = resolve_safe(&vault, &rel)?;
+    let notes = PathBuf::from(&vault).join(NOTES_DIR);
+    if p == notes || !p.starts_with(&notes) {
+        return Err(format!("只能删除笔记目录内的文件: {rel}"));
+    }
     if p.is_dir() {
         std::fs::remove_dir_all(&p).map_err(|e| format!("删除目录失败: {e}"))
     } else {
@@ -157,11 +167,14 @@ pub fn fs_delete(vault: String, rel: String) -> Result<(), String> {
     }
 }
 
-/// 重命名 / 移动。
+/// 重命名 / 移动。目标已存在时拒绝（Windows rename 会静默覆盖，内容不可恢复）。
 #[tauri::command]
 pub fn fs_rename(vault: String, from: String, to: String) -> Result<(), String> {
     let a = resolve_safe(&vault, &from)?;
     let b = resolve_safe(&vault, &to)?;
+    if b.exists() {
+        return Err(format!("目标已存在: {to}"));
+    }
     std::fs::rename(&a, &b).map_err(|e| format!("重命名失败: {e}"))
 }
 

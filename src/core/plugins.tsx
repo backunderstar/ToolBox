@@ -169,8 +169,12 @@ export function PluginProvider({ children }: { children: ReactNode }) {
         // 用 Blob URL <script> 注入执行，而非 new Function：
         // 打包版 CSP（script-src 'self' blob:）会拦截 eval / Function 构造器。
         // 保持原 api 参数契约：包一层 IIFE 传入全局句柄，运行期异常回写全局标记。
+        //
+        // api 句柄用**按插件独立**的全局键（Promise.all 并发加载时不会串台：
+        // 共享同一个键会被后加载者覆盖 / 被先完成者 delete，导致注册错插件或崩溃）。
         const w = window as unknown as Record<string, unknown>;
-        w.__TB_PLUGIN_API__ = buildApi(plugin.id);
+        const apiKey = `__TB_PLUGIN_API_${plugin.id}__`;
+        w[apiKey] = buildApi(plugin.id);
         const wrapped = [
           "(function (api) {",
           "  try {",
@@ -178,26 +182,31 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           "  } catch (e) {",
           "    window.__TB_PLUGIN_ERROR__ = String((e && e.stack) || e);",
           "  }",
-          "})(window.__TB_PLUGIN_API__);",
+          `})(window[${JSON.stringify(apiKey)}]);`,
         ].join("\n");
         const url = URL.createObjectURL(
           new Blob([wrapped], { type: "text/javascript" })
         );
-        await new Promise<void>((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src = url;
-          script.onload = () => {
-            const err = w.__TB_PLUGIN_ERROR__;
-            delete w.__TB_PLUGIN_ERROR__;
-            if (typeof err === "string") reject(new Error(err));
-            else resolve();
-          };
-          script.onerror = () =>
-            reject(new Error("插件脚本加载失败（可能被 CSP 拦截）"));
-          document.head.appendChild(script);
-        });
-        delete w.__TB_PLUGIN_API__;
-        URL.revokeObjectURL(url);
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = url;
+            script.onload = () => {
+              const err = w.__TB_PLUGIN_ERROR__;
+              delete w.__TB_PLUGIN_ERROR__;
+              if (typeof err === "string") reject(new Error(err));
+              else resolve();
+            };
+            script.onerror = () =>
+              reject(new Error("插件脚本加载失败（可能被 CSP 拦截）"));
+            document.head.appendChild(script);
+          });
+        } finally {
+          // 无论成功/失败（含 onerror reject）都清理句柄与 Blob URL，防泄漏
+          delete w[apiKey];
+          delete w.__TB_PLUGIN_ERROR__;
+          URL.revokeObjectURL(url);
+        }
         setRuntimeErrors((prev) => {
           const next = { ...prev };
           delete next[plugin.id];
@@ -375,16 +384,19 @@ export function PluginProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh, vault.path]);
 
-  const value: PluginContextValue = {
-    plugins,
-    loading,
-    runtimeErrors,
-    refresh,
-    setEnabled,
-    reload,
-    invoke,
-    commandsOf,
-  };
+  const value: PluginContextValue = useMemo(
+    () => ({
+      plugins,
+      loading,
+      runtimeErrors,
+      refresh,
+      setEnabled,
+      reload,
+      invoke,
+      commandsOf,
+    }),
+    [plugins, loading, runtimeErrors, refresh, setEnabled, reload, invoke, commandsOf]
+  );
 
   return <PluginContext.Provider value={value}>{children}</PluginContext.Provider>;
 }

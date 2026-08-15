@@ -24,6 +24,9 @@ export function AIChatView() {
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // 防并发守卫：`busy` 是渲染闭包快照，连按回车时第二次调用仍读到 false
+  // → 会并发发出重复请求、回复乱序。用 ref 做同步检查 + 立即置位。
+  const busyRef = useRef(false);
 
   /** 从输入框当前 DOM 值发送（避免 React 状态异步导致的旧值闭包） */
   const sendFromInput = () => {
@@ -39,7 +42,8 @@ export function AIChatView() {
     );
 
   const runChat = async (userText: string) => {
-    if (!userText.trim() || busy) return;
+    if (!userText.trim() || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setInput("");
     push({ role: "user", content: userText });
@@ -70,6 +74,7 @@ export function AIChatView() {
         error: true,
       });
     } finally {
+      busyRef.current = false;
       setBusy(false);
       scrollToBottom();
     }
@@ -100,11 +105,12 @@ export function AIChatView() {
   /* RAG：检索相关笔记片段作为上下文回答 */
   const askWithRag = async () => {
     const q = input.trim();
-    if (!q || busy) return;
+    if (!q || busyRef.current) return;
     if (!vault.path) {
       push({ role: "assistant", content: "请先选择工作区。", error: true });
       return;
     }
+    busyRef.current = true;
     setBusy(true);
     const question = q;
     setInput("");
@@ -139,6 +145,7 @@ export function AIChatView() {
     } catch (e) {
       push({ role: "assistant", content: String(e), error: true });
     } finally {
+      busyRef.current = false;
       setBusy(false);
       scrollToBottom();
     }

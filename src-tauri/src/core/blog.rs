@@ -406,9 +406,20 @@ pub async fn blog_preview_start(
                 Some(fp) => {
                     if let Ok(content) = std::fs::read(&fp) {
                         let mime = mime_of(&fp);
+                        let ctype = tiny_http::Header::from_bytes(&b"Content-Type"[..], mime.as_bytes())
+                            .unwrap_or_else(|_| {
+                                tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/octet-stream"[..])
+                                    .unwrap()
+                            });
+                        let nosniff = tiny_http::Header::from_bytes(
+                            &b"X-Content-Type-Options"[..],
+                            &b"nosniff"[..],
+                        )
+                        .unwrap();
                         let _ = request.respond(
                             tiny_http::Response::from_data(content)
-                                .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], mime.as_bytes()).unwrap()),
+                                .with_header(ctype)
+                                .with_header(nosniff),
                         );
                     } else {
                         let _ = request.respond(tiny_http::Response::from_string("404 Not Found").with_status_code(404));
@@ -440,6 +451,14 @@ fn resolve_static(root: &Path, url_path: &str) -> Option<PathBuf> {
     let raw = url_path.split('?').next().unwrap_or("/").trim_start_matches('/');
     let clean = percent_decode(raw);
     let rel = if clean.is_empty() { "index.html".to_string() } else { clean };
+    // 拒绝 `..` / `.` 组件：词法 `starts_with` 挡不住 "%2e%2e/x" 解码后
+    // 的 `root/../x`（词法上仍以 root 开头），会越界读到 vault 内任意文件
+    let parsed = Path::new(&rel);
+    if parsed.components().any(|c| {
+        matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir)
+    }) {
+        return None;
+    }
     let p = root.join(rel);
     if !p.starts_with(root) || p.is_dir() {
         return None;

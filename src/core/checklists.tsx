@@ -427,23 +427,29 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh, vault.path]);
 
-  const value: ChecklistContextValue = {
-    metas,
-    current,
-    loading,
-    refresh,
-    open,
-    create,
-    remove,
-    rename,
-    save,
-    addItem,
-    toggleItem,
-    removeItem,
-    updateItem,
-    setItemNote,
-    backlinks,
-  };
+  const value: ChecklistContextValue = useMemo(
+    () => ({
+      metas,
+      current,
+      loading,
+      refresh,
+      open,
+      create,
+      remove,
+      rename,
+      save,
+      addItem,
+      toggleItem,
+      removeItem,
+      updateItem,
+      setItemNote,
+      backlinks,
+    }),
+    [
+      metas, current, loading, refresh, open, create, remove, rename, save,
+      addItem, toggleItem, removeItem, updateItem, setItemNote, backlinks,
+    ]
+  );
 
   return (
     <ChecklistContext.Provider value={value}>

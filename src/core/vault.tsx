@@ -127,8 +127,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       const p = stateRef.current.path;
       if (!p) return;
       if (dirtyRef.current) await save(false);
+      // 快照打开前的内容：fsRead 是异步 IPC，若期间用户继续输入，
+      // 直接 setContent 会用旧内容覆盖新输入 → 静默丢字
+      const openingContent = stateRef.current.content;
       try {
         const text = await fsRead(p, rel);
+        if (stateRef.current.content !== openingContent) {
+          flash("读取期间有新的输入，已取消切换");
+          return;
+        }
         setActivePath(rel);
         setContent(text);
         dirtyRef.current = false;

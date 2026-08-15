@@ -191,7 +191,8 @@ pub async fn ai_chat(
         reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
-            .expect("创建 HTTP 客户端失败")
+            // 构建失败几乎不可能（仅 TLS 后端缺失等）；兜底默认客户端避免 panic
+            .unwrap_or_else(|_| reqwest::blocking::Client::new())
     });
 
     let resp = client

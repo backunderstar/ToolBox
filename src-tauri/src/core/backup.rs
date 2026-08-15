@@ -93,15 +93,17 @@ fn backups_root(vault: &str) -> PathBuf {
     PathBuf::from(vault).join(BACKUP_DIR)
 }
 
-/// 排除规则：site（博客生成物，可重建）、备份目录自身、FTS 搜索索引
-/// （派生数据，可从笔记重建）、临时文件
-fn is_skipped(parent: &Path, name: &str) -> bool {
-    if name == "site" {
+/// 排除规则：
+/// - `site`：仅排除 vault **根级**的博客生成物（可重建）；
+///   项目内同名目录（projects/x/site/）是用户数据，必须备份
+/// - 备份目录自身防递归；FTS 搜索索引及其 WAL/SHM 派生文件（派生数据，可从笔记重建）
+/// - 临时文件
+fn is_skipped(parent: &Path, name: &str, at_root: bool) -> bool {
+    if at_root && name == "site" {
         return true;
     }
     if parent.file_name().map(|n| n == ".toolbox").unwrap_or(false) {
-        // 备份目录自身防递归；FTS 索引是派生数据，笔记才是真源
-        if name == "backups" || name == "search-fts.sqlite" {
+        if name == "backups" || name.starts_with("search-fts.sqlite") {
             return true;
         }
     }
@@ -109,7 +111,8 @@ fn is_skipped(parent: &Path, name: &str) -> bool {
 }
 
 /// 递归复制目录，返回（字节数, 文件数）。
-fn copy_dir_all(src: &Path, dst: &Path) -> Result<(u64, usize), String> {
+/// `at_root` 标记当前目录是否为备份根（vault 本身）：只有根级 `site` 被排除。
+fn copy_dir_all(src: &Path, dst: &Path, at_root: bool) -> Result<(u64, usize), String> {
     std::fs::create_dir_all(dst).map_err(|e| format!("创建备份目录失败 {dst:?}: {e}"))?;
     let mut total = 0u64;
     let mut count = 0usize;
@@ -118,13 +121,13 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(u64, usize), String> {
     };
     for entry in read.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if is_skipped(src, &name) {
+        if is_skipped(src, &name, at_root) {
             continue;
         }
         let s = entry.path();
         let d = dst.join(&name);
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            let (sz, c) = copy_dir_all(&s, &d)?;
+            let (sz, c) = copy_dir_all(&s, &d, false)?;
             total += sz;
             count += c;
         } else {
@@ -204,7 +207,7 @@ pub fn backup_now(app: &tauri::AppHandle, vault: &str) -> Result<BackupInfo, Str
     std::fs::create_dir_all(&backups).map_err(|e| format!("创建备份目录失败: {e}"))?;
     let ts = unix_now();
     let dir = unique_backup_dir(&backups, ts);
-    let (size, count) = copy_dir_all(&root, &dir)?;
+    let (size, count) = copy_dir_all(&root, &dir, true)?;
     let keep = load_config(app).keep.max(1);
     prune(&backups, keep);
     Ok(BackupInfo {
@@ -311,16 +314,22 @@ mod tests {
         let v = tmp_vault("copy");
         std::fs::create_dir_all(v.join("notes/子")).unwrap();
         std::fs::create_dir_all(v.join("site")).unwrap();
+        std::fs::create_dir_all(v.join("projects/foo/site")).unwrap();
+        std::fs::create_dir_all(v.join(".toolbox")).unwrap();
         std::fs::write(v.join("notes/a.md"), "# a").unwrap();
         std::fs::write(v.join("notes/子/b.md"), "# b").unwrap();
-        std::fs::write(v.join("site/index.html"), "<html>").unwrap(); // 应排除
+        std::fs::write(v.join("site/index.html"), "<html>").unwrap(); // 根级 site 应排除
+        std::fs::write(v.join("projects/foo/site/data.txt"), "x").unwrap(); // 项目内 site 应保留
+        std::fs::write(v.join(".toolbox/search-fts.sqlite-wal"), "w").unwrap(); // 派生文件应排除
         std::fs::write(v.join("notes/x.tmp"), "tmp").unwrap(); // 应排除
         let dst = v.join(".toolbox/backups/b1");
-        let (size, count) = copy_dir_all(&v, &dst).unwrap();
-        assert_eq!(count, 2, "只复制 2 个 md，排除 site 与 tmp");
+        let (size, count) = copy_dir_all(&v, &dst, true).unwrap();
+        assert_eq!(count, 3, "复制 2 个 md + 项目内 site 文件，排除根 site/tmp/WAL");
         assert!(size > 0);
         assert!(dst.join("notes/a.md").exists());
-        assert!(!dst.join("site").exists());
+        assert!(!dst.join("site").exists(), "根级 site 应排除");
+        assert!(dst.join("projects/foo/site/data.txt").exists(), "项目内 site 应保留");
+        assert!(!dst.join(".toolbox/search-fts.sqlite-wal").exists(), "WAL 派生文件应排除");
         assert!(!dst.join("notes/x.tmp").exists());
         std::fs::remove_dir_all(&v).ok();
     }
@@ -358,12 +367,15 @@ mod tests {
 
     #[test]
     fn skip_rules() {
-        assert!(is_skipped(Path::new("vault"), "site"));
-        assert!(is_skipped(Path::new("vault/.toolbox"), "backups"));
-        assert!(is_skipped(Path::new("vault/.toolbox"), "search-fts.sqlite"), "FTS 索引不进备份（派生数据）");
-        assert!(!is_skipped(Path::new("vault"), ".toolbox"), ".toolbox 本身要复制（含 plugins.json）");
-        assert!(!is_skipped(Path::new("vault"), "search-fts.sqlite"), "根目录下的同名文件不该被误排除");
-        assert!(is_skipped(Path::new("vault"), "a.tmp"));
-        assert!(!is_skipped(Path::new("vault"), "notes"));
+        // 根级 site 排除，项目内 site 保留
+        assert!(is_skipped(Path::new("vault"), "site", true));
+        assert!(!is_skipped(Path::new("vault/projects/foo"), "site", false), "项目内 site 应备份");
+        assert!(is_skipped(Path::new("vault/.toolbox"), "backups", false));
+        assert!(is_skipped(Path::new("vault/.toolbox"), "search-fts.sqlite", false));
+        assert!(is_skipped(Path::new("vault/.toolbox"), "search-fts.sqlite-wal", false), "WAL 派生文件不进备份");
+        assert!(!is_skipped(Path::new("vault"), ".toolbox", true), ".toolbox 本身要复制（含 plugins.json）");
+        assert!(!is_skipped(Path::new("vault"), "search-fts.sqlite", true), "根目录下的同名文件不该被误排除");
+        assert!(is_skipped(Path::new("vault"), "a.tmp", true));
+        assert!(!is_skipped(Path::new("vault"), "notes", true));
     }
 }

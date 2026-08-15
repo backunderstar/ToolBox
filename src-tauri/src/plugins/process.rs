@@ -323,6 +323,9 @@ impl Drop for ProcessPlugin {
     }
 }
 
+/// 单行最大字节数：异常/恶意插件打印无换行大块数据时防止内存被撑爆。
+const MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
+
 fn read_loop(stdout: ChildStdout, tx: Sender<Incoming>) {
     let mut reader = BufReader::new(stdout);
     let mut buf: Vec<u8> = Vec::new();
@@ -335,6 +338,14 @@ fn read_loop(stdout: ChildStdout, tx: Sender<Incoming>) {
                 break;
             }
             Ok(_) => {
+                if buf.len() > MAX_LINE_BYTES {
+                    // 超长行：丢弃该行并记事件（不中断读循环）
+                    let _ = tx.send(Incoming::Event {
+                        event: "__line_too_long__".to_string(),
+                        data: json!({ "bytes": buf.len() }),
+                    });
+                    continue;
+                }
                 let line = String::from_utf8_lossy(&buf);
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
