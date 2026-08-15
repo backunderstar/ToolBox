@@ -179,7 +179,7 @@ pub async fn fs_search(vault: String, query: String) -> Result<Vec<SearchHit>, S
             });
             continue;
         }
-        let Ok(mut f) = std::fs::File::open(&abs) else {
+        let Ok(f) = std::fs::File::open(&abs) else {
             continue;
         };
         use std::io::Read;

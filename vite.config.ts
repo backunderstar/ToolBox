@@ -19,4 +19,16 @@ export default defineConfig({
       ],
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // 分包：vditor（体积大、更新频率低）与 react 单独成 chunk，
+        // 与应用代码分离，便于缓存与并行加载
+        manualChunks: {
+          vditor: ["vditor"],
+          react: ["react", "react-dom"],
+        },
+      },
+    },
+  },
 });
