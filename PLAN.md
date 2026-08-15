@@ -194,7 +194,7 @@ Vault（用户自选的工作区目录）
 | 待排期 | API Key 安全加固 | AI 配置的 API Key 由明文 JSON 迁移到 Windows 凭据管理器（Credential Manager） |
 | 待排期 | 打包版 CSP 配置 | 生产构建配置 Content-Security-Policy，需回归防功能破坏 |
 | ✅ 已完成 | 自动备份 | vault 定时备份到 `.toolbox/backups/`（保留最近 N 份，可配置；设置页管理） |
-| 待排期 | 系统托盘 | 关窗最小化到托盘、常驻后台（浮窗能力的前置依赖） |
+| ✅ 已完成 | 系统托盘 | 关窗最小化到托盘常驻；托盘菜单（显示主窗口/显示隐藏浮窗/退出）+ 单击切换 |
 | 待排期 | 插件 stdin 写入超时 | 极端挂死场景兜底（进程插件写 stdin 卡死时超时回收） |
 | 待排期 | 全文搜索性能 | 大 vault 下 SQLite FTS5 / tantivy 索引，工程量较大 |
 

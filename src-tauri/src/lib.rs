@@ -7,7 +7,12 @@ mod rpc;
 use core::{ai, backup, blog, notes, projects, todos, vault};
 use plugins::PluginManager;
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use tauri::Manager;
+
+/// 退出标志：托盘"退出"置位后，窗口关闭事件不再拦截（放行真正退出）。
+static EXITING: AtomicBool = AtomicBool::new(false);
 
 /// `ping` 命令的返回结构：用于验证前端 ↔ Rust 核心的 IPC 链路。
 #[derive(Serialize)]
@@ -64,9 +69,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        // 注意：托盘/菜单是 Tauri 2 核心能力（tauri::tray / tauri::menu），无需额外插件
         // 插件命令签名要求 Mutex<PluginManager>（见 plugins/mod.rs 的 State 参数）
         .manage(Mutex::new(PluginManager::default()))
         .manage(blog::PreviewState::default())
+        .on_window_event(|window, event| {
+            // 关窗最小化到托盘：主窗口关闭请求 → 阻止并隐藏（托盘"退出"时放行）
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && !EXITING.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             ping,
             log_console,
@@ -117,6 +132,8 @@ pub fn run() {
             use tauri::Manager;
             // 后台自动备份线程（随应用常驻，读取配置按间隔执行）
             backup::spawn_auto(app.handle().clone());
+            // 系统托盘（关窗常驻后台）
+            create_tray(app.handle())?;
             // 桌面半透明浮窗（快速待办）
             create_float_window(app.handle())?;
             // 健壮性：若主窗口位于屏幕外（显示器变更等 Windows 残留），移到屏幕中心
@@ -136,6 +153,62 @@ pub fn run() {
 
 /// 浮窗窗口标签。
 pub const FLOAT_WINDOW: &str = "float";
+
+/// 系统托盘：图标 + 菜单（显示主窗口 / 显示隐藏浮窗 / 退出）+ 单击切换主窗口。
+fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let show_main = MenuItem::with_id(app, "tray-show-main", "显示主窗口", true, None::<&str>)?;
+    let toggle_float = MenuItem::with_id(app, "tray-toggle-float", "显示/隐藏浮窗", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "tray-quit", "退出 ToolBox", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_main, &toggle_float, &quit])?;
+
+    TrayIconBuilder::with_id("main-tray")
+        .icon(app.default_window_icon().expect("缺少应用图标").clone())
+        .tooltip("ToolBox")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "tray-show-main" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.unminimize();
+                    let _ = w.set_focus();
+                }
+            }
+            "tray-toggle-float" => {
+                let _ = float_toggle(app.clone());
+            }
+            "tray-quit" => {
+                EXITING.store(true, Ordering::SeqCst);
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            // 单击左键：切换主窗口显示/隐藏
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(w) = app.get_webview_window("main") {
+                    if w.is_visible().unwrap_or(false) {
+                        let _ = w.hide();
+                    } else {
+                        let _ = w.show();
+                        let _ = w.unminimize();
+                        let _ = w.set_focus();
+                    }
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
 
 /// 创建桌面浮窗：无边框、透明、置顶、不进任务栏；位置/大小由 window-state 插件记忆。
 fn create_float_window(app: &tauri::AppHandle) -> tauri::Result<()> {
