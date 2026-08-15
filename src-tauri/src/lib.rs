@@ -67,11 +67,65 @@ fn open_in_explorer(path: String) -> Result<(), String> {
     }
 }
 
+/// 单实例保护：第二次启动时激活已有主窗口并退出。
+/// Windows 用命名 Mutex（CreateMutexW，零额外依赖）——数据是纯文件，
+/// 多进程并发写同一 vault 会丢更新；其他平台暂不限制。
+fn ensure_single_instance() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        unsafe fn focus_existing() {
+            let title: Vec<u16> = "ToolBox\0".encode_utf16().collect();
+            let h = FindWindowW(std::ptr::null(), title.as_ptr());
+            if !h.is_null() {
+                // 前台锁可能阻止 SetForegroundWindow，尽力而为即可
+                let _ = SetForegroundWindow(h);
+            }
+        }
+        let name: Vec<u16> = "Local\\com.toolbox.desktop.single\0".encode_utf16().collect();
+        let h = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+        if h.is_null() {
+            return true; // 创建失败不阻止（罕见）
+        }
+        // 句柄需要跨 run 存活：进程退出时系统自动释放
+        SINGLE_MUTEX.store(h as usize, std::sync::atomic::Ordering::SeqCst);
+        let already = unsafe { GetLastError() } == 183; // ERROR_ALREADY_EXISTS
+        if already {
+            unsafe { focus_existing() };
+        }
+        !already
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        true
+    }
+}
+
+#[cfg(target_os = "windows")]
+static SINGLE_MUTEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(target_os = "windows")]
+#[link(name = "kernel32")]
+extern "system" {
+    fn CreateMutexW(lpMutexAttributes: *const (), bInitialOwner: i32, lpName: *const u16) -> *mut ();
+    fn GetLastError() -> u32;
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+extern "system" {
+    fn FindWindowW(lpClassName: *const u16, lpWindowName: *const u16) -> *mut ();
+    fn SetForegroundWindow(hWnd: *mut ()) -> i32;
+}
+
 /// 启动应用。
 ///
 /// M1 已注册：`ping` + vault 工作区 + 笔记文件操作 + 文件夹选择对话框。
 /// 后续里程碑把 `plugins`（插件管理器）、`rpc`（协议类型）接进来。
 pub fn run() {
+    // 单实例：第二个实例直接退出（激活已有窗口由 ensure_single_instance 处理）
+    if !ensure_single_instance() {
+        return;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -106,6 +160,7 @@ pub fn run() {
             plugins::plugins_list,
             plugins::plugins_set_enabled,
             plugins::plugins_reload,
+            plugins::plugins_uninstall,
             plugins::plugins_invoke,
             ai::ai_config_get,
             ai::ai_config_set,

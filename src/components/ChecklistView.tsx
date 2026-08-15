@@ -201,9 +201,18 @@ export function ChecklistView() {
                   <span className="checklist-item-note">
                     {item.note ? (
                       <button
-                        className="note-link"
+                        className={`note-link${
+                          // 断链提示：目标笔记已不存在时标灰（点开会报错）
+                          vault.files.some((f) => f.path === item.note)
+                            ? ""
+                            : " broken"
+                        }`}
                         onClick={() => nav.openNote(item.note!)}
-                        title={`打开 ${item.note}`}
+                        title={
+                          vault.files.some((f) => f.path === item.note)
+                            ? `打开 ${item.note}`
+                            : `${item.note}（笔记不存在）`
+                        }
                       >
                         <IconFileText width={12} height={12} />
                         {item.note.split("/").pop()}

@@ -15,6 +15,7 @@ import {
   pluginsList,
   pluginsReload,
   pluginsSetEnabled,
+  pluginsUninstall,
 } from "./api";
 import type { PluginInfo } from "./api";
 import { useVault } from "./vault";
@@ -62,6 +63,8 @@ interface PluginContextValue {
   refresh: () => Promise<void>;
   setEnabled: (id: string, enabled: boolean) => Promise<void>;
   reload: (id: string) => Promise<void>;
+  /** 卸载插件：停进程 + 清启用状态 + 删除插件目录（回收站） */
+  uninstall: (id: string) => Promise<void>;
   /** 调用插件命令：webview 直跑注册表，process 走 IPC 桥 */
   invoke: (pluginId: string, command: string, args: unknown) => Promise<unknown>;
   /** 某插件的命令元数据（webview 来自注册表，process 来自清单） */
@@ -346,6 +349,16 @@ export function PluginProvider({ children }: { children: ReactNode }) {
     [isMock, refresh]
   );
 
+  const uninstall = useCallback(
+    async (id: string) => {
+      const p = vaultRef.current;
+      if (!p) return;
+      await pluginsUninstall(p, id); // 停进程 + 清状态 + 删目录（回收站）
+      await refresh();
+    },
+    [refresh]
+  );
+
   const invoke = useCallback(
     async (pluginId: string, command: string, args: unknown) => {
       const plugin = plugins.find((pl) => pl.id === pluginId);
@@ -392,10 +405,11 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       refresh,
       setEnabled,
       reload,
+      uninstall,
       invoke,
       commandsOf,
     }),
-    [plugins, loading, runtimeErrors, refresh, setEnabled, reload, invoke, commandsOf]
+    [plugins, loading, runtimeErrors, refresh, setEnabled, reload, uninstall, invoke, commandsOf]
   );
 
   return <PluginContext.Provider value={value}>{children}</PluginContext.Provider>;

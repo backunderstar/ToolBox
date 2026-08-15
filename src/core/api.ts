@@ -73,6 +73,8 @@ export const pluginsSetEnabled = (vault: string, id: string, enabled: boolean) =
   invoke<void>("plugins_set_enabled", { vault, id, enabled });
 export const pluginsReload = (vault: string, id: string) =>
   invoke<void>("plugins_reload", { vault, id });
+export const pluginsUninstall = (vault: string, id: string) =>
+  invoke<void>("plugins_uninstall", { vault, id });
 export const pluginsInvoke = (
   vault: string,
   id: string,

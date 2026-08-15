@@ -50,6 +50,9 @@ pub struct PluginManager {
     pub vault: Option<PathBuf>,
     pub records: Vec<PluginRecord>,
     pub enabled: HashSet<String>,
+    /// 最近一次扫描的 plugins 目录快照（目录名 + 有清单），
+    /// 用于检测"目录增删但 vault 路径未变"的情况
+    pub last_snapshot: Option<Vec<String>>,
 }
 
 impl Default for PluginManager {
@@ -58,8 +61,25 @@ impl Default for PluginManager {
             vault: None,
             records: Vec::new(),
             enabled: HashSet::new(),
+            last_snapshot: None,
         }
     }
+}
+
+/// plugins/ 目录内容快照：有 plugin.json 的目录名（排序），
+/// 目录增删/清单增删都会改变快照，从而触发重新发现。
+fn plugins_snapshot(dir: &Path) -> Vec<String> {
+    let mut out: Vec<String> = std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.flatten()
+                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                .filter(|e| e.path().join("plugin.json").is_file())
+                .filter_map(|e| e.file_name().to_string_lossy().into_owned().into())
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
 }
 
 /* ---------------- 启用状态持久化（%APPDATA%，按 vault 记录） ----------------
@@ -314,6 +334,24 @@ impl PluginManager {
         Ok(())
     }
 
+    /// 卸载：停进程 + 清启用状态 + 删除插件目录（进回收站）。
+    pub fn uninstall(&mut self, app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+        let idx = self
+            .records
+            .iter()
+            .position(|r| r.manifest.id == id)
+            .ok_or("插件不存在")?;
+        let dir = self.records[idx].dir.clone();
+        self.stop_record(idx);
+        self.records.remove(idx);
+        self.enabled.remove(id);
+        if let Some(v) = &self.vault {
+            save_enabled(app, v, &self.enabled)?;
+        }
+        trash::delete(&dir).map_err(|e| format!("删除插件目录失败: {e}"))?;
+        Ok(())
+    }
+
     /// 热重载：stop + start（process）；webview 插件由前端重新加载入口。
     pub fn reload(&mut self, id: &str) -> Result<(), String> {
         let idx = self
@@ -445,12 +483,16 @@ impl PluginManager {
 
 fn ensure_refreshed(m: &mut PluginManager, app: &tauri::AppHandle, vault: &str) -> Result<(), String> {
     let v = PathBuf::from(vault);
-    let changed = match &m.vault {
+    let changed_vault = match &m.vault {
         Some(cur) => !paths_equal(cur, &v),
         None => true,
     };
-    if changed {
+    // 插件目录增删但 vault 路径未变：靠快照检测（否则前端"刷新"发现不了新插件）
+    let snapshot = plugins_snapshot(&v.join("plugins"));
+    let changed_plugins = m.last_snapshot.as_ref() != Some(&snapshot);
+    if changed_vault || changed_plugins {
         m.refresh(app, &v)?;
+        m.last_snapshot = Some(snapshot);
     }
     Ok(())
 }
@@ -488,6 +530,19 @@ pub async fn plugins_set_enabled(
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
     m.set_enabled(&app, &id, enabled)
+}
+
+/// 卸载插件：停进程 + 清启用状态 + 删除插件目录（进回收站）。
+#[tauri::command]
+pub async fn plugins_uninstall(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<PluginManager>>,
+    vault: String,
+    id: String,
+) -> Result<(), String> {
+    let mut m = state.lock().map_err(|e| e.to_string())?;
+    ensure_refreshed(&mut m, &app, &vault)?;
+    m.uninstall(&app, &id)
 }
 
 #[tauri::command]

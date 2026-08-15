@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRecords } from "../core/records";
 import type { RecordData } from "../core/records";
+import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
 import { onRowKeyDown } from "../core/keyboard";
 import { IconFileText, IconPlus, IconTrash } from "./icons";
@@ -12,6 +13,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
  */
 export function RecordsView() {
   const nav = useNav();
+  const vault = useVault();
   const { records, loading, create, save, remove, extractLinks } =
     useRecords();
 
@@ -274,17 +276,23 @@ export function RecordsView() {
             {links.length > 0 && (
               <div className="record-links">
                 <span className="record-links-label">关联笔记</span>
-                {links.map((l) => (
-                  <button
-                    key={l}
-                    className="note-link"
-                    onClick={() => nav.openNote(l)}
-                    title={`打开 ${l}`}
-                  >
-                    <IconFileText width={12} height={12} />
-                    {l.split("/").pop()}
-                  </button>
-                ))}
+                {links.map((l) => {
+                  // 断链提示：目标笔记已不存在时标灰（点开会报错）
+                  const broken = !vault.files.some(
+                    (f) => f.path === `notes/${l.replace(/^notes\//, "")}`
+                  );
+                  return (
+                    <button
+                      key={l}
+                      className={`note-link${broken ? " broken" : ""}`}
+                      onClick={() => nav.openNote(l)}
+                      title={broken ? `${l}（笔记不存在）` : `打开 ${l}`}
+                    >
+                      <IconFileText width={12} height={12} />
+                      {l.split("/").pop()}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

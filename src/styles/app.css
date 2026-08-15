@@ -2340,6 +2340,18 @@
   background: var(--accent);
   color: var(--on-accent);
 }
+/* 断链提示：目标笔记已删除/改名 */
+.note-link.broken {
+  color: var(--fg-faint);
+  border-color: var(--border);
+  background: transparent;
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+.note-link.broken:hover {
+  background: var(--bg-soft);
+  color: var(--fg-faint);
+}
 .note-pick {
   display: inline-flex;
   align-items: center;

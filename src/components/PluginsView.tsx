@@ -2,7 +2,8 @@ import { useState } from "react";
 import { usePlugins } from "../core/plugins";
 import { useVault } from "../core/vault";
 import { CommandTry } from "./CommandTry";
-import { IconGear, IconRefresh } from "./icons";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { IconGear, IconRefresh, IconTrash } from "./icons";
 
 const RUNTIME_LABEL: Record<string, string> = {
   webview: "JS",
@@ -17,10 +18,31 @@ const STATUS_TEXT: Record<string, string> = {
 
 export function PluginsView() {
   const vault = useVault();
-  const { plugins, loading, runtimeErrors, refresh, setEnabled, reload, invoke, commandsOf } =
-    usePlugins();
+  const {
+    plugins,
+    loading,
+    runtimeErrors,
+    refresh,
+    setEnabled,
+    reload,
+    uninstall,
+    invoke,
+    commandsOf,
+  } = usePlugins();
 
   const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+
+  const doUninstall = async (id: string) => {
+    setBusy((b) => ({ ...b, [id]: true }));
+    try {
+      await uninstall(id);
+    } catch (e) {
+      console.error("[plugins] 卸载失败", e);
+    } finally {
+      setBusy((b) => ({ ...b, [id]: false }));
+    }
+  };
 
   const toggle = async (id: string, enabled: boolean) => {
     setBusy((b) => ({ ...b, [id]: true }));
@@ -103,6 +125,16 @@ export function PluginsView() {
                     >
                       重新加载
                     </button>
+                    <button
+                      className="btn btn-sm danger"
+                      title="卸载：删除插件目录（进回收站）"
+                      aria-label={`卸载插件 ${p.name}`}
+                      onClick={() => setConfirmDel(p.id)}
+                      disabled={busy[p.id]}
+                    >
+                      <IconTrash width={12} height={12} />
+                      卸载
+                    </button>
                   </div>
                 </div>
 
@@ -134,6 +166,22 @@ export function PluginsView() {
           })}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmDel !== null}
+        title="卸载插件"
+        message={
+          confirmDel
+            ? `确定卸载插件「${confirmDel}」？插件目录将移入系统回收站，启用状态一并清除。`
+            : ""
+        }
+        confirmText="卸载"
+        danger
+        onCancel={() => setConfirmDel(null)}
+        onConfirm={() => {
+          if (confirmDel) void doUninstall(confirmDel);
+          setConfirmDel(null);
+        }}
+      />
     </div>
   );
 }
