@@ -5,6 +5,7 @@ mod plugins;
 mod rpc;
 
 use core::{notes, vault};
+use plugins::PluginManager;
 use serde::Serialize;
 
 /// `ping` 命令的返回结构：用于验证前端 ↔ Rust 核心的 IPC 链路。
@@ -40,6 +41,7 @@ fn log_console(msg: String) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(PluginManager::default())
         .invoke_handler(tauri::generate_handler![
             ping,
             log_console,
@@ -52,6 +54,10 @@ pub fn run() {
             notes::fs_delete,
             notes::fs_rename,
             notes::fs_search,
+            plugins::plugins_list,
+            plugins::plugins_set_enabled,
+            plugins::plugins_reload,
+            plugins::plugins_invoke,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

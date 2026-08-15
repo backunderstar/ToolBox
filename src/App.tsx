@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
+import { PluginProvider } from "./core/plugins";
 import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, getInitialTheme, type ThemeMode } from "./themes/theme";
@@ -9,6 +10,7 @@ import { Sidebar, type ViewId } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { WelcomeView } from "./components/WelcomeView";
 import { NotesView } from "./components/NotesView";
+import { PluginsView } from "./components/PluginsView";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/app.css";
@@ -17,7 +19,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <VaultProvider>
-        <AppInner />
+        <PluginProvider>
+          <AppInner />
+        </PluginProvider>
       </VaultProvider>
     </ErrorBoundary>
   );
@@ -100,6 +104,8 @@ function AppInner() {
               theme={theme}
               onOpenNotes={() => setView("notes")}
             />
+          ) : view === "plugins" ? (
+            <PluginsView />
           ) : (
             <NotesView
               dark={theme === "dark"}

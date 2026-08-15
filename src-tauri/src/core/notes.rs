@@ -1,10 +1,11 @@
 //! 笔记文件操作：列表 / 读写 / 新建 / 删除 / 重命名 / 搜索。
 //!
 //! 所有路径均为 vault 相对路径（UI 统一用 `/` 分隔），
-//! `resolve_safe` 严格拒绝绝对路径、`..` 与盘符前缀，防止越出工作区。
+//! 由 `core::path::resolve_safe` 严格校验，防止越出工作区。
 
+use crate::core::path::resolve_safe;
 use serde::Serialize;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 const IGNORED_DIRS: &[&str] = &[".git", ".toolbox", "node_modules", "target"];
 
@@ -22,22 +23,6 @@ pub struct SearchHit {
     pub path: String,
     pub filename: String,
     pub snippet: String,
-}
-
-fn resolve_safe(vault: &str, rel: &str) -> Result<PathBuf, String> {
-    let rel = rel.replace('\\', "/");
-    let rel_path = Path::new(&rel);
-    if rel_path.is_absolute()
-        || rel_path.components().any(|c| {
-            matches!(
-                c,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        })
-    {
-        return Err(format!("非法路径: {rel}"));
-    }
-    Ok(PathBuf::from(vault).join(rel_path))
 }
 
 /// 递归列出 vault 内所有目录与 .md 文件（忽略隐藏/无关目录），目录优先、按名排序。

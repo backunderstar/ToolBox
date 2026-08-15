@@ -1,0 +1,10 @@
+{
+  "id": "text-stats",
+  "name": "文本统计",
+  "version": "0.1.0",
+  "description": "统计文本的字数、词数、行数与段落数（webview JS 插件示例）",
+  "runtime": "webview",
+  "entry": "main.js",
+  "permissions": [],
+  "config": {}
+}

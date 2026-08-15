@@ -147,3 +147,17 @@ export const IconTrash = (p: SVGProps<SVGSVGElement>) => (
     <path d="M10 11v6M14 11v6" />
   </svg>
 );
+
+export const IconRefresh = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+    <path d="M20 4v4h-4" />
+  </svg>
+);
+
+export const IconPuzzle = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M9 4h6v3.2a1.6 1.6 0 0 0 3.2 0V4h2v5.2a1.6 1.6 0 0 0 3.2 0V4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v2.2h1.6A1.6 1.6 0 0 1 9 7.8Z" />
+    <path d="M7 6H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3h-2.2a1.6 1.6 0 0 1 0-3.2H20v-2" />
+  </svg>
+);
