@@ -127,6 +127,7 @@ pub fn run() {
             todos::todos_delete,
             todos::todos_clear_done,
             float_toggle,
+            float_set_locked,
         ])
         .setup(|app| {
             use tauri::Manager;
@@ -136,15 +137,14 @@ pub fn run() {
             create_tray(app.handle())?;
             // 桌面半透明浮窗（快速待办）
             create_float_window(app.handle())?;
-            // 健壮性：若主窗口位于屏幕外（显示器变更等 Windows 残留），移到屏幕中心
-            if let Some(main) = app.get_webview_window("main") {
-                if let Ok(pos) = main.outer_position() {
-                    if pos.x < -10_000 || pos.y < -10_000 || pos.x > 100_000 || pos.y > 100_000 {
-                        eprintln!("[main] 窗口位于屏幕外 ({},{})，已移回中心", pos.x, pos.y);
-                        main.center().ok();
-                    }
-                }
-            }
+            // 主窗口屏幕外自愈：立即检测 + 延迟复检（window-state 插件在 setup 后
+            // 才恢复窗口状态，可能把窗口放到屏幕外/异常尺寸）
+            ensure_main_visible(app.handle());
+            let h = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+                ensure_main_visible(&h);
+            });
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -153,6 +153,21 @@ pub fn run() {
 
 /// 浮窗窗口标签。
 pub const FLOAT_WINDOW: &str = "float";
+
+/// 主窗口屏幕外自愈：若窗口位于明显屏幕外（显示器变更/window-state 残留），移到屏幕中心。
+fn ensure_main_visible(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(main) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Ok(pos) = main.outer_position() {
+        if pos.x < -10_000 || pos.y < -10_000 || pos.x > 100_000 || pos.y > 100_000 {
+            eprintln!("[main] 窗口位于屏幕外 ({},{})，已移回中心", pos.x, pos.y);
+            main.center().ok();
+            main.set_focus().ok();
+        }
+    }
+}
 
 /// 系统托盘：图标 + 菜单（显示主窗口 / 显示隐藏浮窗 / 退出）+ 单击切换主窗口。
 fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -343,4 +358,15 @@ fn float_toggle(app: tauri::AppHandle) -> Result<bool, String> {
         win.set_focus().ok();
         Ok(true)
     }
+}
+
+/// 锁定 / 解锁浮窗位置：锁定时禁止调整大小（拖拽由前端去掉 drag-region 禁用）。
+#[tauri::command]
+fn float_set_locked(app: tauri::AppHandle, locked: bool) -> Result<(), String> {
+    use tauri::Manager;
+    let Some(win) = app.get_webview_window(FLOAT_WINDOW) else {
+        return Err("浮窗未创建".to_string());
+    };
+    win.set_resizable(!locked)
+        .map_err(|e| format!("设置浮窗锁定失败: {e}"))
 }

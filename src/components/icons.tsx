@@ -285,3 +285,11 @@ export const IconFloat = (p: SVGProps<SVGSVGElement>) => (
     <path d="M7 8h.01M10 8h.01" />
   </svg>
 );
+
+/** 锁定 / 解锁（浮窗位置锁定） */
+export const IconLock = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="5" y="11" width="14" height="9" rx="2" />
+    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </svg>
+);

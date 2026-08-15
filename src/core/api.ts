@@ -223,3 +223,6 @@ export const todosDelete = (id: string) => invoke<TodosItem[]>("todos_delete", {
 export const todosClearDone = () => invoke<TodosItem[]>("todos_clear_done");
 /** 显示 / 隐藏浮窗（返回操作后可见状态） */
 export const floatToggle = () => invoke<boolean>("float_toggle");
+/** 锁定 / 解锁浮窗位置（锁定时禁用拖拽与改大小） */
+export const floatSetLocked = (locked: boolean) =>
+  invoke<void>("float_set_locked", { locked });
