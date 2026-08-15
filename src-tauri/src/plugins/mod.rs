@@ -287,6 +287,10 @@ impl PluginManager {
         if self.records[idx].process.is_none() {
             self.start_record(idx)?;
         }
+        // 只允许调用 init 握手时声明的命令（权限面收紧）
+        if !self.records[idx].commands.iter().any(|c| c == command) {
+            return Err(format!("插件未声明命令: {command}"));
+        }
         let first = self.records[idx]
             .process
             .as_mut()
@@ -300,7 +304,9 @@ impl PluginManager {
                     .as_mut()
                     .map(|p| p.has_exited())
                     .unwrap_or(false);
-                if exited && self.may_restart(idx) {
+                // 进程退出（崩溃）或连续超时（挂死）都触发重启（限次）
+                let timed_out = e.contains("超时");
+                if (exited || timed_out) && self.may_restart(idx) {
                     self.stop_record(idx);
                     if let Err(se) = self.start_record(idx) {
                         self.records[idx].error = Some(se.clone());
@@ -315,6 +321,8 @@ impl PluginManager {
                 }
                 if exited {
                     self.records[idx].error = Some("崩溃自动重启次数超限".into());
+                } else if timed_out {
+                    self.records[idx].error = Some("连续超时，已停止自动重启".into());
                 }
                 Err(e)
             }
@@ -322,9 +330,13 @@ impl PluginManager {
     }
 
     fn start_record(&mut self, idx: usize) -> Result<(), String> {
-        let (id, cmd) = {
+        let (id, cmd, perms) = {
             let rec = &self.records[idx];
-            (rec.manifest.id.clone(), rec.manifest.command.clone())
+            (
+                rec.manifest.id.clone(),
+                rec.manifest.command.clone(),
+                rec.manifest.permissions.clone(),
+            )
         };
         let cmd = cmd.ok_or("process 插件缺少 command")?;
         if cmd.is_empty() {
@@ -332,7 +344,8 @@ impl PluginManager {
         }
         let dir = self.records[idx].dir.clone();
         let vault = self.vault.clone().ok_or("vault 未设置")?;
-        let mut plugin = ProcessPlugin::spawn(&id, &cmd[0], &cmd[1..], &dir, &vault)?;
+        let mut plugin =
+            ProcessPlugin::spawn(&id, &cmd[0], &cmd[1..], &dir, &vault, perms)?;
         let commands = plugin.init(API_TIMEOUT)?;
         self.records[idx].commands = commands;
         self.records[idx].process = Some(plugin);
@@ -368,14 +381,29 @@ impl PluginManager {
 
 fn ensure_refreshed(m: &mut PluginManager, vault: &str) -> Result<(), String> {
     let v = PathBuf::from(vault);
-    if m.vault.as_deref() != Some(v.as_path()) {
+    let changed = match &m.vault {
+        Some(cur) => !paths_equal(cur, &v),
+        None => true,
+    };
+    if changed {
         m.refresh(&v)?;
     }
     Ok(())
 }
 
+/// 路径比较：Windows 下大小写不敏感（避免用户传 C:/A 与 c:/a 导致反复刷新重启插件）。
+#[cfg(target_os = "windows")]
+fn paths_equal(a: &Path, b: &Path) -> bool {
+    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn paths_equal(a: &Path, b: &Path) -> bool {
+    a == b
+}
+
 #[tauri::command]
-pub fn plugins_list(
+pub async fn plugins_list(
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
 ) -> Result<Vec<PluginInfo>, String> {
@@ -385,7 +413,7 @@ pub fn plugins_list(
 }
 
 #[tauri::command]
-pub fn plugins_set_enabled(
+pub async fn plugins_set_enabled(
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
     id: String,
@@ -397,7 +425,7 @@ pub fn plugins_set_enabled(
 }
 
 #[tauri::command]
-pub fn plugins_reload(
+pub async fn plugins_reload(
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
     id: String,
@@ -408,7 +436,7 @@ pub fn plugins_reload(
 }
 
 #[tauri::command]
-pub fn plugins_invoke(
+pub async fn plugins_invoke(
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
     id: String,
@@ -486,8 +514,10 @@ mod tests {
         let m: PluginManifest = serde_json::from_str(&manifest_raw).unwrap();
         let cmd = m.command.clone().unwrap();
         let vault = std::env::temp_dir();
-        let mut p = ProcessPlugin::spawn(&m.id, &cmd[0], &cmd[1..], &plugin_dir, &vault)
-            .expect("应能启动 python 进程");
+        let perms = m.permissions.clone();
+        let mut p =
+            ProcessPlugin::spawn(&m.id, &cmd[0], &cmd[1..], &plugin_dir, &vault, perms)
+                .expect("应能启动 python 进程");
         let commands = p.init(Duration::from_secs(15)).unwrap();
         assert!(
             commands.contains(&"csv.convert".to_string()),
@@ -525,7 +555,9 @@ mod tests {
         let m: PluginManifest = serde_json::from_str(&manifest_raw).unwrap();
         let cmd = m.command.clone().unwrap();
         let vault = std::env::temp_dir();
-        let mut p = ProcessPlugin::spawn(&m.id, &cmd[0], &cmd[1..], &plugin_dir, &vault).unwrap();
+        let perms = m.permissions.clone();
+        let mut p =
+            ProcessPlugin::spawn(&m.id, &cmd[0], &cmd[1..], &plugin_dir, &vault, perms).unwrap();
         p.init(Duration::from_secs(15)).unwrap();
         let err = p
             .call(
@@ -548,6 +580,7 @@ mod tests {
             &["-c".to_string(), "import time; time.sleep(5)".to_string()],
             &vault,
             &vault,
+            vec![],
         )
         .expect("应能启动 python");
         let err = p.init(Duration::from_millis(800)).unwrap_err();

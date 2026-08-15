@@ -7,7 +7,9 @@ use crate::core::path::resolve_safe;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-const IGNORED_DIRS: &[&str] = &[".git", ".toolbox", "node_modules", "target"];
+const IGNORED_DIRS: &[&str] = &[".git", ".toolbox", "node_modules", "target", "site"];
+/// 全文搜索每文件最多读取的字节数（防止大文件拖垮搜索）
+const SEARCH_READ_LIMIT: u64 = 256 * 1024;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -27,7 +29,7 @@ pub struct SearchHit {
 
 /// 递归列出 vault 内所有目录与 .md 文件（忽略隐藏/无关目录），目录优先、按名排序。
 #[tauri::command]
-pub fn fs_list(vault: String) -> Result<Vec<FileEntry>, String> {
+pub async fn fs_list(vault: String) -> Result<Vec<FileEntry>, String> {
     let root = PathBuf::from(&vault);
     if !root.is_dir() {
         return Err(format!("工作区不存在: {vault}"));
@@ -67,7 +69,7 @@ fn walk(root: &Path, dir: &Path, base: &str, out: &mut Vec<FileEntry>) {
 /// 列出 vault 内指定目录下的全部条目（不过滤扩展名）。
 /// 供清单/记录等 JSON 数据枚举（fs_list 仅返回 .md 文件，专用于笔记文件树）。
 #[tauri::command]
-pub fn fs_list_dir(vault: String, dir: String) -> Result<Vec<FileEntry>, String> {
+pub async fn fs_list_dir(vault: String, dir: String) -> Result<Vec<FileEntry>, String> {
     let root = PathBuf::from(&vault);
     if !root.is_dir() {
         return Err(format!("工作区不存在: {vault}"));
@@ -150,7 +152,7 @@ pub fn fs_rename(vault: String, from: String, to: String) -> Result<(), String> 
 
 /// 搜索：文件名包含匹配优先，其次全文包含匹配（大小写不敏感），返回带片段的结果。
 #[tauri::command]
-pub fn fs_search(vault: String, query: String) -> Result<Vec<SearchHit>, String> {
+pub async fn fs_search(vault: String, query: String) -> Result<Vec<SearchHit>, String> {
     let root = PathBuf::from(&vault);
     if !root.is_dir() {
         return Ok(Vec::new());
@@ -177,9 +179,13 @@ pub fn fs_search(vault: String, query: String) -> Result<Vec<SearchHit>, String>
             });
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&abs) else {
+        let Ok(mut f) = std::fs::File::open(&abs) else {
             continue;
         };
+        use std::io::Read;
+        let mut buf = Vec::new();
+        let _ = f.take(SEARCH_READ_LIMIT).read_to_end(&mut buf);
+        let content = String::from_utf8_lossy(&buf);
         let lower = content.to_lowercase();
         let Some(idx) = lower.find(&q) else {
             continue;

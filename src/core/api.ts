@@ -86,6 +86,16 @@ export const pluginsInvoke = (
 export const openInExplorer = (path: string) =>
   invoke<void>("open_in_explorer", { path });
 
+/** 用系统默认应用打开 URL（Tauri 环境经 opener 插件；浏览器环境回退 window.open） */
+export const openUrl = (url: string) => {
+  const w = window as Window & { __TAURI_INTERNALS__?: unknown };
+  if (w.__TAURI_INTERNALS__) {
+    return import("@tauri-apps/plugin-opener").then((m) => m.openUrl(url));
+  }
+  window.open(url, "_blank");
+  return Promise.resolve();
+};
+
 /* ---- M6 AI ---- */
 
 export interface AiConfig {

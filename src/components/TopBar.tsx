@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { IconFolder, IconMoon, IconPanelLeft, IconSun } from "./icons";
 import type { ThemeMode } from "../themes/themes";
 
@@ -11,6 +12,8 @@ interface TopBarProps {
   onPickVault: () => void;
   navCollapsed: boolean;
   onToggleNav: () => void;
+  /** Ctrl+K 快捷键聚焦信号（App 层自增触发） */
+  focusSignal?: number;
 }
 
 export function TopBar({
@@ -23,7 +26,17 @@ export function TopBar({
   onPickVault,
   navCollapsed,
   onToggleNav,
+  focusSignal,
 }: TopBarProps) {
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  /* Ctrl+K：聚焦搜索框 */
+  useEffect(() => {
+    if (focusSignal && focusSignal > 0 && searchRef.current) {
+      searchRef.current.focus();
+      searchRef.current.select();
+    }
+  }, [focusSignal]);
   return (
     <header className="topbar">
       <button
@@ -70,6 +83,7 @@ export function TopBar({
           <path d="M20 20l-3.5-3.5" />
         </svg>
         <input
+          ref={searchRef}
           type="text"
           placeholder="搜索笔记（文件名 + 内容）"
           value={query}

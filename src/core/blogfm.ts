@@ -30,7 +30,7 @@ export function parseFrontmatter(content: string): FmResult {
       fm[t.slice(0, idx).trim()] = t.slice(idx + 1).trim();
     }
   }
-  return { fm, body: restBody.replace(/^\n+/, ""), hasFm: true };
+  return { fm, body: restBody.replace(/^\r?\n+/, ""), hasFm: true };
 }
 
 /** 设置 status 并返回新内容（无 frontmatter 时在顶部插入） */

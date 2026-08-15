@@ -223,35 +223,69 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
     [isMock, mockLoad]
   );
 
-  const save = useCallback(async () => {
-    const cur = currentRef.current;
-    if (!cur) return;
-    const updated = { ...cur, updatedAt: new Date().toISOString() };
-    try {
-      await persist(updated);
-      setCurrent(updated);
-      await refresh();
-    } catch (e) {
-      console.error("[checklists] 保存失败", e);
-    }
-  }, [persist, refresh]);
+  /* 待保存快照：调度时捕获，避免切换清单/工作区后写错对象 */
+  const pendingRef = useRef<Checklist | null>(null);
 
-  const scheduleSave = useCallback(() => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => void save(), AUTOSAVE);
+  const save = useCallback(
+    async (list?: Checklist) => {
+      const snapshot = list ?? pendingRef.current ?? currentRef.current;
+      if (!snapshot) return;
+      pendingRef.current = null;
+      const updated = { ...snapshot, updatedAt: new Date().toISOString() };
+      try {
+        await persist(updated);
+        // 仅当当前仍显示该清单时同步 UI（其余场景由后续刷新兜底）
+        setCurrent((prev) =>
+          prev && prev.id === updated.id ? { ...updated } : prev
+        );
+        await refresh();
+      } catch (e) {
+        console.error("[checklists] 保存失败", e);
+        // 保留待保存快照，供重试
+        pendingRef.current = snapshot;
+      }
+    },
+    [persist, refresh]
+  );
+
+  const flush = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const s = pendingRef.current;
+    if (s) void save(s);
   }, [save]);
 
-  const mutate = useCallback((fn: (c: Checklist) => Checklist) => {
-    setCurrent((prev) => {
-      if (!prev) return prev;
-      const next = fn(prev);
-      scheduleSave();
-      return next;
-    });
-  }, [scheduleSave]);
+  const scheduleSave = useCallback(
+    (snapshot: Checklist) => {
+      pendingRef.current = snapshot;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        const s = pendingRef.current;
+        pendingRef.current = null;
+        if (s) void save(s);
+      }, AUTOSAVE);
+    },
+    [save]
+  );
+
+  /* 变更：在 updater 外基于最新已提交状态计算 next，副作用（调度保存）移出 updater */
+  const mutate = useCallback(
+    (fn: (c: Checklist) => Checklist) => {
+      const cur = currentRef.current;
+      if (!cur) return;
+      const next = fn(cur);
+      setCurrent(next);
+      scheduleSave(next);
+    },
+    [scheduleSave]
+  );
 
   const open = useCallback(
     async (id: string) => {
+      // 切换前冲洗当前清单的待保存编辑，避免定时器触发时写错对象
+      flush();
       if (isMock) {
         const all = mockLoad();
         const c = all.find((x) => x.id === id) ?? null;
@@ -267,7 +301,7 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
         console.error(`[checklists] 打开失败 ${id}`, e);
       }
     },
-    [isMock, mockLoad]
+    [isMock, mockLoad, flush]
   );
 
   const create = useCallback(
@@ -275,11 +309,17 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
       const t = title.trim();
       if (!t) return;
       const now = new Date().toISOString();
-      const id = t
+      let id = t
         .toLowerCase()
         .replace(/[^\p{L}\p{N}]+/gu, "-")
         .replace(/^-+|-+$/g, "")
         .slice(0, 40) || `list-${Date.now().toString(36)}`;
+      // 同名标题冲突：追加序号，避免覆盖已有清单文件
+      let n = 2;
+      const base = id;
+      while (metas.some((m) => m.id === id)) {
+        id = `${base}-${n++}`;
+      }
       const list: Checklist = {
         id,
         title: t,
@@ -291,7 +331,7 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
       await refresh();
       await open(id);
     },
-    [persist, refresh, open]
+    [persist, refresh, open, metas]
   );
 
   const remove = useCallback(

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useChecklists } from "../core/checklists";
 import { useRecords } from "../core/records";
 import { useNav } from "../core/navigation";
@@ -18,22 +18,42 @@ export function Backlinks({ activePath }: { activePath: string }) {
     const base = activePath.replace(/^\/+/, "");
     const baseName = activePath.split("/").pop() ?? activePath;
     const out: { type: "清单" | "记录"; title: string; id: string }[] = [];
+    // 精确路径匹配优先；仅当无精确匹配时回退 basename（避免同名笔记误报）
+    const collect = (kind: "清单" | "记录", id: string, title: string) => {
+      out.push({ type: kind, title, id });
+    };
+    let exact = 0;
     for (const [path, entries] of checklists.backlinks) {
-      if (path === base || path.split("/").pop() === baseName) {
-        for (const e of entries) {
-          out.push({ type: "清单", title: e.title, id: e.checklistId });
-        }
+      if (path === base) {
+        for (const e of entries) collect("清单", e.checklistId, e.title);
+        exact += entries.length;
       }
     }
     for (const [path, entries] of records.backlinks) {
-      if (path === base || path.split("/").pop() === baseName) {
-        for (const e of entries) {
-          out.push({ type: "记录", title: e.title, id: e.recordId });
+      if (path === base) {
+        for (const e of entries) collect("记录", e.recordId, e.title);
+        exact += entries.length;
+      }
+    }
+    if (exact === 0) {
+      for (const [path, entries] of checklists.backlinks) {
+        if (path.split("/").pop() === baseName) {
+          for (const e of entries) collect("清单", e.checklistId, e.title);
+        }
+      }
+      for (const [path, entries] of records.backlinks) {
+        if (path.split("/").pop() === baseName) {
+          for (const e of entries) collect("记录", e.recordId, e.title);
         }
       }
     }
     return out;
   }, [activePath, checklists.backlinks, records.backlinks]);
+
+  /* 切换笔记时重置展开状态 */
+  useEffect(() => {
+    setOpen(false);
+  }, [activePath]);
 
   if (matches.length === 0) return null;
 

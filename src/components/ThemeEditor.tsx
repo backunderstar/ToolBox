@@ -114,8 +114,16 @@ export function ThemeEditor({
   );
 }
 
-/** color input 需要 #rrggbb；令牌可能是 rgb()/变量，无法解析时给 #000000 */
-function normalizeHex(value: string): string {
-  const m = /^#[0-9a-fA-F]{6}$/.exec(value.trim());
-  return m ? value.trim() : "#000000";
+/** 把 css 颜色（#rgb/#rrggbb/rgb()/rgba()）统一转成 #rrggbb；无法解析时返回 fallback */
+function normalizeHex(value: string, fallback = "#000000"): string {
+  const v = value.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    return `#${[...v.slice(1)].map((c) => c + c).join("")}`;
+  }
+  const m = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(v);
+  if (m) {
+    return `#${[m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("")}`;
+  }
+  return fallback;
 }

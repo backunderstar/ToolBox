@@ -139,9 +139,9 @@ export function NotesView({
             searching={searching}
             results={results}
             query={query}
-            onOpen={(rel) => {
-              openFile(rel);
-              setQuery("");
+            onOpen={async (rel) => {
+              await openFile(rel);
+              setQuery(""); // 等文件真正打开后再退出搜索态，避免旧内容闪现
             }}
           />
         ) : activePath ? (

@@ -9,6 +9,7 @@ import {
   blogOpenFolder,
   fsRead,
   fsWrite,
+  openUrl,
   type PostMeta,
 } from "../core/api";
 import { setStatus } from "../core/blogfm";
@@ -24,6 +25,7 @@ export function BlogView() {
   const [selected, setSelected] = useState<PostMeta | null>(null);
   const [siteTitle, setSiteTitle] = useState("ToolBox 博客");
   const [busy, setBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
     null
@@ -83,13 +85,16 @@ export function BlogView() {
   };
 
   const preview = async () => {
-    if (!vault.path) return;
+    if (!vault.path || previewBusy) return;
+    setPreviewBusy(true);
     try {
       const url = await blogPreviewStart(vault.path);
       setPreviewUrl(url);
-      window.open(url, "_blank");
+      await openUrl(url);
     } catch (e) {
       setMessage({ ok: false, text: String(e) });
+    } finally {
+      setPreviewBusy(false);
     }
   };
 
@@ -125,8 +130,8 @@ export function BlogView() {
             <button className="btn btn-sm" onClick={() => void generate()} disabled={busy || !vault.path}>
               {busy ? "处理中…" : "生成站点"}
             </button>
-            <button className="btn btn-sm" onClick={() => void preview()} disabled={!vault.path}>
-              预览
+            <button className="btn btn-sm" onClick={() => void preview()} disabled={!vault.path || previewBusy}>
+              {previewBusy ? "启动中…" : "预览"}
             </button>
             {previewUrl && (
               <button className="btn btn-sm" onClick={() => void stopPreview()}>

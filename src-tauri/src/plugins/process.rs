@@ -44,6 +44,8 @@ pub struct ProcessPlugin {
     rx: Mutex<Receiver<Incoming>>,
     next_id: u64,
     vault: PathBuf,
+    /// 插件声明的权限（execute_core_api 据此放行核心 API）
+    permissions: Vec<String>,
     pub plugin_id: String,
 }
 
@@ -55,6 +57,7 @@ impl ProcessPlugin {
         args: &[String],
         plugin_dir: &Path,
         vault: &Path,
+        permissions: Vec<String>,
     ) -> Result<Self, String> {
         let mut child = Command::new(program)
             .args(args)
@@ -74,6 +77,7 @@ impl ProcessPlugin {
             rx: Mutex::new(rx),
             next_id: 0,
             vault: vault.to_path_buf(),
+            permissions,
             plugin_id: plugin_id.to_string(),
         })
     }
@@ -160,8 +164,22 @@ impl ProcessPlugin {
         }
     }
 
-    /// 插件 → 核心 API（v1：受限的 fs 读写 + 日志）。
+    /// 插件 → 核心 API（v1：受限的 fs 读写 + 日志；按插件声明权限放行）。
     fn handle_core_request(&mut self, id: u64, method: &str, params: Value) -> Result<(), String> {
+        // 权限校验：方法 → 所需权限
+        let need = match method {
+            "fs.readText" => Some("fs:read:vault"),
+            "fs.writeText" => Some("fs:write:vault"),
+            "log" => Some("log"),
+            _ => None, // 未知方法统一在 execute_core_api 拒绝
+        };
+        if let Some(perm) = need {
+            if !self.permissions.iter().any(|p| p == perm) {
+                let err = format!("缺少权限 {perm}（请在 plugin.json 的 permissions 中声明）");
+                let msg = Message::response_err(id, -32001, err);
+                return self.send(&msg);
+            }
+        }
         let result = self.execute_core_api(method, &params);
         let msg = match result {
             Ok(v) => Message::response_ok(id, v),
@@ -177,7 +195,7 @@ impl ProcessPlugin {
                     .get("path")
                     .and_then(|v| v.as_str())
                     .ok_or("缺少 path 参数")?;
-                let p = resolve_safe(self.vault.to_str().unwrap_or(""), rel)?;
+                let p = resolve_safe(&self.vault.to_string_lossy(), rel)?;
                 let text = std::fs::read_to_string(&p)
                     .map_err(|e| format!("读取失败: {e}"))?;
                 Ok(json!(text))
@@ -191,7 +209,7 @@ impl ProcessPlugin {
                     .get("content")
                     .and_then(|v| v.as_str())
                     .ok_or("缺少 content 参数")?;
-                let p = resolve_safe(self.vault.to_str().unwrap_or(""), rel)?;
+                let p = resolve_safe(&self.vault.to_string_lossy(), rel)?;
                 if let Some(parent) = p.parent() {
                     std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
                 }
@@ -217,6 +235,10 @@ impl ProcessPlugin {
 
     /// 停止：发 shutdown 通知并回收进程。
     pub fn shutdown(mut self) {
+        self.shutdown_inner();
+    }
+
+    fn shutdown_inner(&mut self) {
         let _ = self.send(&Message::notification("shutdown", None));
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -227,6 +249,15 @@ impl ProcessPlugin {
         self.stdin
             .write_all(line.as_bytes())
             .map_err(|e| format!("写入插件 stdin 失败: {e}"))
+    }
+}
+
+/// Drop 兜底：任何路径下（init 失败/调用方未显式 shutdown）回收子进程，
+/// 防止孤儿 Python 进程与读线程泄漏。
+impl Drop for ProcessPlugin {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 

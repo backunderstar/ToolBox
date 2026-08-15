@@ -65,11 +65,9 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
 
   const [records, setRecords] = useState<RecordData[]>([]);
   const [loading, setLoading] = useState(false);
-  const [backlinks, setBacklinks] = useState<
-    Map<string, { recordId: string; title: string }[]>
-  >(new Map());
-  const recordsRef = useRef<RecordData[]>([]);
-  recordsRef.current = records;
+
+  /* 反链索引由 records 派生（useMemo），从根上避免手工维护导致的过期问题 */
+  const backlinks = useMemo(() => buildIndex(records), [records]);
 
   const mockKey = "toolbox.mock.records";
   const mockLoad = useCallback((): RecordData[] => {
@@ -146,37 +144,20 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const buildBacklinks = useCallback((arr: RecordData[]) => {
-    const map = new Map<string, { recordId: string; title: string }[]>();
-    for (const r of arr) {
-      for (const link of extractLinksFrom(r.content)) {
-        const key = link.replace(/^\/+/, "");
-        const list = map.get(key) ?? [];
-        list.push({ recordId: r.id, title: r.title });
-        map.set(key, list);
-      }
-    }
-    setBacklinks(map);
-  }, []);
-
   const refresh = useCallback(async () => {
     if (isMock) {
-      const all = mockLoad();
-      setRecords(sortRecords(all));
-      buildBacklinks(all);
+      setRecords(sortRecords(mockLoad()));
       return;
     }
     setLoading(true);
     try {
-      const all = await loadReal();
-      setRecords(sortRecords(all));
-      buildBacklinks(all);
+      setRecords(sortRecords(await loadReal()));
     } catch (e) {
       console.error("[records] 刷新失败", e);
     } finally {
       setLoading(false);
     }
-  }, [isMock, mockLoad, sortRecords, buildBacklinks, loadReal]);
+  }, [isMock, mockLoad, sortRecords, loadReal]);
 
   const persist = useCallback(
     async (record: RecordData) => {
@@ -200,13 +181,13 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       const updated = { ...record, updatedAt: new Date().toISOString() };
       try {
         await persist(updated);
+        // 基于最新快照同步更新（反链由 useMemo 从 records 派生，无需手工维护）
         setRecords((prev) => sortRecords(prev.map((r) => (r.id === updated.id ? updated : r))));
-        buildBacklinks(recordsRef.current);
       } catch (e) {
         console.error("[records] 保存失败", e);
       }
     },
-    [persist, sortRecords, buildBacklinks]
+    [persist, sortRecords]
   );
 
   const create = useCallback(
@@ -281,7 +262,23 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** 供 buildBacklinks 使用的内部实现（同 extractLinks 逻辑） */
+/** 反链索引：笔记路径 → 引用它的记录（纯函数，由 records 派生） */
+export function buildIndex(
+  arr: RecordData[]
+): Map<string, { recordId: string; title: string }[]> {
+  const map = new Map<string, { recordId: string; title: string }[]>();
+  for (const r of arr) {
+    for (const link of extractLinksFrom(r.content)) {
+      const key = link.replace(/^\/+/, "");
+      const list = map.get(key) ?? [];
+      list.push({ recordId: r.id, title: r.title });
+      map.set(key, list);
+    }
+  }
+  return map;
+}
+
+/** [[笔记]] 链接提取（供 buildIndex 与外部使用） */
 function extractLinksFrom(content: string): string[] {
   const out: string[] = [];
   const re = /\[\[([^\]]+)\]\]/g;

@@ -160,7 +160,10 @@ export function PluginProvider({ children }: { children: ReactNode }) {
     async (plugin: PluginInfo) => {
       const vaultPath = vaultRef.current;
       if (plugin.runtime !== "webview" || !plugin.entry || !vaultPath) return;
-      getRuntime(plugin.id).commands.clear();
+      const rt = getRuntime(plugin.id);
+      // 重载时清空命令与事件监听，避免旧回调残留/重复注册
+      rt.commands.clear();
+      rt.listeners.clear();
       try {
         const code = await fsRead(vaultPath, `plugins/${plugin.id}/${plugin.entry}`);
         // eslint-disable-next-line no-new-func

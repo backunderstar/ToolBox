@@ -24,7 +24,7 @@ export function RecordsView() {
 
   /* 打开记录：先把未保存的草稿刷掉，再加载目标 */
   const openRecord = (id: string) => {
-    flush();
+    void flush();
     const r = records.find((x) => x.id === id);
     if (r) {
       setCurrentId(id);
@@ -33,16 +33,18 @@ export function RecordsView() {
     }
   };
 
-  const flush = () => {
+  /** 立即排空待保存草稿（返回完成 promise，供删除等需要先落盘的场景） */
+  const flush = (): Promise<void> => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
     const d = draftRef.current;
     if (d) {
-      void save(d);
       draftRef.current = null;
+      return save(d);
     }
+    return Promise.resolve();
   };
 
   const scheduleSave = (record: RecordData) => {
@@ -51,37 +53,36 @@ export function RecordsView() {
     saveTimer.current = setTimeout(() => {
       const d = draftRef.current;
       if (d) {
-        void save(d);
         draftRef.current = null;
+        void save(d);
       }
     }, 800);
   };
 
+  /** 在 updater 外基于最新草稿计算 next（副作用调度移出 updater） */
   const update = (patch: Partial<RecordData>) => {
-    setDraft((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev, ...patch };
-      scheduleSave(next);
-      return next;
-    });
+    const cur = draftRef.current;
+    if (!cur) return;
+    const next = { ...cur, ...patch };
+    setDraft(next);
+    scheduleSave(next);
   };
 
-  /* 从导航参数打开指定记录 */
+  /* 从导航参数打开指定记录：数据未就绪时保留参数，等 records 加载后重试 */
   useEffect(() => {
-    if (nav.params.openRecordId) {
-      const id = nav.params.openRecordId;
-      const r = records.find((x) => x.id === id);
-      if (r) {
-        setCurrentId(id);
-        setDraft({ ...r });
-        setTagText(r.tags.join(", "));
-      }
-      nav.go("records");
-    }
-  }, [nav.params.openRecordId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const id = nav.params.openRecordId;
+    if (!id) return;
+    const r = records.find((x) => x.id === id);
+    if (!r) return; // 尚未加载完成，等待重试
+    setCurrentId(id);
+    setDraft({ ...r });
+    setTagText(r.tags.join(", "));
+    nav.go("records"); // 成功打开后才清空参数
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nav.params.openRecordId, records]);
 
   const newRecord = async () => {
-    flush();
+    await flush();
     const r = await create();
     if (r) {
       setCurrentId(r.id);
@@ -93,7 +94,7 @@ export function RecordsView() {
   const deleteRecord = async (id: string, title: string) => {
     if (!window.confirm(`删除记录「${title}」？`)) return;
     if (currentId === id) {
-      flush();
+      await flush(); // 先落盘待保存内容，避免被删除文件被写回
       setCurrentId(null);
       setDraft(null);
     }

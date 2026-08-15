@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
 import { PluginProvider } from "./core/plugins";
@@ -49,6 +49,8 @@ function AppInner() {
   const [viewParams, setViewParams] = useState<ViewParams>({});
   const [themeId, setThemeId] = useState<string>(getInitialTheme);
   const [pingInfo, setPingInfo] = useState<PingInfo | null>(null);
+  /* Ctrl+K 聚焦信号（自增触发 TopBar 聚焦） */
+  const [focusTick, setFocusTick] = useState(0);
 
   /* 布局偏好：导航折叠 / 文件面板折叠 / 专注模式（持久化） */
   const [navCollapsed, setNavCollapsed] = useState(
@@ -84,6 +86,19 @@ function AppInner() {
   const toggleThemeMode = () =>
     setThemeId((t) => toggleTheme(t));
 
+  /* Ctrl+K：切到笔记视图并聚焦搜索框（快捷键提示的真实实现） */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setView((v) => (v === "notes" ? v : "notes"));
+        setFocusTick((t) => t + 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const themeMode = getThemeBase(themeId);
   const themeName = findTheme(themeId)?.name ?? themeId;
 
@@ -94,7 +109,10 @@ function AppInner() {
   /* 专注模式：导航与文件面板全部隐藏，编辑器占满 */
   const navHidden = focusMode;
 
-  /* 跨视图导航（供双向链接跳转） */
+  /* 跨视图导航（供双向链接跳转）。
+     openFile 来自 vault（每次渲染新对象），但 openNote 只需稳定引用：用 ref 包住 */
+  const openFileRef = useRef(vault.openFile);
+  openFileRef.current = vault.openFile;
   const navValue = useMemo(
     () => ({
       view,
@@ -106,7 +124,7 @@ function AppInner() {
       openNote: (rel: string) => {
         setView("notes");
         setViewParams({});
-        void vault.openFile(rel);
+        void openFileRef.current(rel);
       },
       openChecklist: (id: string) => {
         setView("checklist");
@@ -117,7 +135,7 @@ function AppInner() {
         setViewParams({ openRecordId: id });
       },
     }),
-    [view, viewParams, vault]
+    [view, viewParams]
   );
 
   return (
@@ -133,6 +151,7 @@ function AppInner() {
           onPickVault={vault.pickVault}
           navCollapsed={navCollapsed}
           onToggleNav={() => setNavCollapsed((c) => !c)}
+          focusSignal={focusTick}
         />
         <div className="body">
           {!navHidden && (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useChecklists } from "../core/checklists";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
@@ -30,7 +30,6 @@ export function ChecklistView() {
   const [newItem, setNewItem] = useState("");
   const [pickingNote, setPickingNote] = useState<string | null>(null);
   const [noteQuery, setNoteQuery] = useState("");
-  const pickerRef = useRef<HTMLDivElement | null>(null);
 
   /* 从导航参数打开指定清单 */
   useEffect(() => {
@@ -60,10 +59,11 @@ export function ChecklistView() {
     setNoteQuery("");
   };
 
-  /* 点击外部关闭笔记选择器 */
+  /* 点击外部关闭笔记选择器（检查任意打开的 .note-picker，避免循环 ref 失效） */
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+      const t = e.target as Node | null;
+      if (t && !document.querySelector(".note-picker")?.contains(t)) {
         setPickingNote(null);
       }
     };
@@ -203,7 +203,7 @@ export function ChecklistView() {
                         {item.note.split("/").pop()}
                       </button>
                     ) : null}
-                    <span className="note-pick-wrap" ref={pickerRef}>
+                    <span className="note-pick-wrap">
                       <button
                         className="note-pick"
                         onClick={() => setPickingNote(pickingNote === item.id ? null : item.id)}

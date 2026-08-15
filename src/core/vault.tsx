@@ -115,9 +115,15 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       if (!p || !ap) return;
       try {
         await fsWrite(p, ap, c);
-        dirtyRef.current = false;
-        setDirty(false);
-        if (manual) flash(`已保存 ${ap}`);
+        // 写盘期间若有新输入（content 已变化），不清 dirty，交给新定时器保存
+        const { content: latest } = stateRef.current;
+        if (latest === c) {
+          dirtyRef.current = false;
+          setDirty(false);
+          if (manual) flash(`已保存 ${ap}`);
+        } else if (manual) {
+          flash("保存中检测到新输入，稍后自动保存");
+        }
       } catch (e) {
         flash(String(e));
       }
@@ -292,7 +298,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     };
   }, [refresh, flash, isMock]);
 
-  /* 搜索：防抖调用 Rust 全文搜索 */
+  /* 搜索：防抖调用 Rust 全文搜索；请求序号丢弃过期响应（快速输入时旧结果不覆盖新结果） */
+  const searchSeq = useRef(0);
   useEffect(() => {
     if (!path || !query.trim()) {
       setResults(null);
@@ -301,14 +308,17 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
     setSearching(true);
     if (searchTimer.current) clearTimeout(searchTimer.current);
+    const seq = ++searchSeq.current;
     searchTimer.current = setTimeout(async () => {
       try {
         const r = await fsSearch(path, query);
+        if (seq !== searchSeq.current) return; // 过期响应
         setResults(r);
       } catch {
+        if (seq !== searchSeq.current) return;
         setResults([]);
       } finally {
-        setSearching(false);
+        if (seq === searchSeq.current) setSearching(false);
       }
     }, SEARCH_DELAY);
     return () => {
@@ -316,27 +326,50 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     };
   }, [query, path]);
 
-  const value: VaultContextValue = {
-    path,
-    files,
-    activePath,
-    content,
-    dirty,
-    recent,
-    query,
-    results,
-    searching,
-    status,
-    pickVault,
-    refresh,
-    openFile,
-    save,
-    newNote,
-    removeFile,
-    renameFile,
-    setQuery,
-    updateContent,
-  };
+  const value = useMemo<VaultContextValue>(
+    () => ({
+      path,
+      files,
+      activePath,
+      content,
+      dirty,
+      recent,
+      query,
+      results,
+      searching,
+      status,
+      pickVault,
+      refresh,
+      openFile,
+      save,
+      newNote,
+      removeFile,
+      renameFile,
+      setQuery,
+      updateContent,
+    }),
+    [
+      path,
+      files,
+      activePath,
+      content,
+      dirty,
+      recent,
+      query,
+      results,
+      searching,
+      status,
+      pickVault,
+      refresh,
+      openFile,
+      save,
+      newNote,
+      removeFile,
+      renameFile,
+      setQuery,
+      updateContent,
+    ]
+  );
 
   return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;
 }

@@ -51,8 +51,10 @@ export function AIChatView() {
           content:
             "你是 ToolBox 的个人工作助理。回答简洁、准确，使用中文。涉及用户笔记时基于提供的内容作答。",
         },
+        // 只带最近 10 条对话历史，避免长会话触发上下文超限
         ...entries
           .filter((e) => !e.error)
+          .slice(-10)
           .map((e): ChatMessage => ({ role: e.role, content: e.content })),
         { role: "user", content: userText },
       ];

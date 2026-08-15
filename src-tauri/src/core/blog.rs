@@ -35,7 +35,6 @@ pub struct BlogListResult {
 pub struct BlogGenerateResult {
     pub site_dir: String,
     pub posts: usize,
-    pub index_url: String,
 }
 
 /* ---------------- frontmatter ---------------- */
@@ -139,17 +138,24 @@ fn scan_posts(vault: &str) -> Vec<PostMeta> {
 /* ---------------- 命令 ---------------- */
 
 #[tauri::command]
-pub fn blog_list(vault: String) -> BlogListResult {
+pub async fn blog_list(vault: String) -> BlogListResult {
     BlogListResult { posts: scan_posts(&vault) }
 }
 
 /// 生成站点到 vault/site/（Zola 兼容 content/ + 渲染后的 public/）。
 #[tauri::command]
-pub fn blog_generate(vault: String, site_title: String) -> Result<BlogGenerateResult, String> {
+pub async fn blog_generate(vault: String, site_title: String) -> Result<BlogGenerateResult, String> {
     let site_dir = PathBuf::from(&vault).join("site");
     let content_dir = site_dir.join("content");
     let public_dir = site_dir.join("public");
     let public_posts = public_dir.join("posts");
+
+    // 重新生成前清理旧输出（content/ 与 public/ 全量重建，保证与当前发布集合一致）
+    for dir in [&content_dir, &public_dir] {
+        if dir.exists() {
+            std::fs::remove_dir_all(dir).map_err(|e| format!("清理旧输出失败: {e}"))?;
+        }
+    }
     std::fs::create_dir_all(&content_dir)
         .and_then(|_| std::fs::create_dir_all(&public_posts))
         .map_err(|e| format!("创建站点目录失败: {e}"))?;
@@ -176,11 +182,12 @@ pub fn blog_generate(vault: String, site_title: String) -> Result<BlogGenerateRe
         site_title.trim().to_string()
     };
 
-    // config.toml（Zola 兼容）
+    // config.toml（Zola 兼容；title 转义双引号与反斜杠）
+    let esc_title = title.replace('\\', "\\\\").replace('"', "\\\"");
     std::fs::write(
         site_dir.join("config.toml"),
         format!(
-            "# 由 ToolBox 生成（Zola 兼容）\ntitle = \"{title}\"\nbase_url = \"/\"\n"
+            "# 由 ToolBox 生成（Zola 兼容）\ntitle = \"{esc_title}\"\nbase_url = \"/\"\n"
         ),
     )
     .map_err(|e| format!("写 config 失败: {e}"))?;
@@ -191,25 +198,33 @@ pub fn blog_generate(vault: String, site_title: String) -> Result<BlogGenerateRe
 
     // 文章页 + content 源
     let mut cards = String::new();
+    let mut slug_used: std::collections::HashSet<String> = std::collections::HashSet::new();
     for p in &published {
         let abs = resolve_safe(&vault, &p.path)?;
         let raw = std::fs::read_to_string(&abs)
             .map_err(|e| format!("读 {} 失败: {e}", p.path))?;
         let (_, body) = parse_frontmatter(&raw);
-        let slug = slugify(&p.title);
-        let date = if p.date.is_empty() { "无日期" } else { &p.date };
+        // slug 去重：同标题文章追加序号
+        let mut slug = slugify(&p.title);
+        let mut n = 2;
+        while !slug_used.insert(slug.clone()) {
+            slug = format!("{}-{n}", slugify(&p.title));
+            n += 1;
+        }
+        let date = if p.date.is_empty() {
+            "无日期".to_string()
+        } else {
+            escape(&p.date)
+        };
         let tags_html = p
             .tags
             .iter()
-            .map(|t| format!("<span class=\"tag\">{t}</span>"))
+            .map(|t| format!("<span class=\"tag\">{}</span>", escape(t)))
             .collect::<String>();
 
-        // content/ 源（保留 frontmatter + 正文）
-        std::fs::write(
-            content_dir.join(format!("{slug}.md")),
-            format!("{}\n---\n{body}", raw.trim()),
-        )
-        .map_err(|e| format!("写 content 失败: {e}"))?;
+        // content/ 源：直接写原始文件（frontmatter + 正文完整保留，避免拼接损坏）
+        std::fs::write(content_dir.join(format!("{slug}.md")), &raw)
+            .map_err(|e| format!("写 content 失败: {e}"))?;
 
         // public/posts/<slug>.html
         let html = render_md(&body);
@@ -257,10 +272,6 @@ pub fn blog_generate(vault: String, site_title: String) -> Result<BlogGenerateRe
     Ok(BlogGenerateResult {
         site_dir: site_dir.to_string_lossy().to_string(),
         posts: published.len(),
-        index_url: format!(
-            "http://127.0.0.1:{}/",
-            PREVIEW_PORT.load(std::sync::atomic::Ordering::Relaxed)
-        ),
     })
 }
 
@@ -336,26 +347,40 @@ static PREVIEW_PORT: AtomicU16 = AtomicU16::new(0);
 
 pub struct PreviewState {
     pub server: Mutex<Option<Arc<tiny_http::Server>>>,
+    pub vault: Mutex<Option<PathBuf>>,
 }
 
 impl Default for PreviewState {
     fn default() -> Self {
         Self {
             server: Mutex::new(None),
+            vault: Mutex::new(None),
         }
     }
 }
 
 #[tauri::command]
-pub fn blog_preview_start(
+pub async fn blog_preview_start(
     state: State<'_, PreviewState>,
     vault: String,
 ) -> Result<String, String> {
     let port_of = |s: &tiny_http::Server| -> u16 {
         s.server_addr().to_ip().map(|a| a.port()).unwrap_or(0)
     };
+    // 已在运行：仅当属于同一 vault 时复用，否则先停掉再按当前 vault 重启
+    let same_vault = {
+        let cur = state.vault.lock().map_err(|e| e.to_string())?;
+        cur.as_ref().map(|p| p == Path::new(&vault)).unwrap_or(false)
+    };
     if let Some(s) = state.server.lock().map_err(|e| e.to_string())?.as_ref() {
-        return Ok(format!("http://127.0.0.1:{}/", port_of(s)));
+        if same_vault {
+            return Ok(format!("http://127.0.0.1:{}/", port_of(s)));
+        }
+        // 不同 vault：停掉旧服务
+        if let Some(old) = state.server.lock().map_err(|e| e.to_string())?.take() {
+            old.unblock();
+        }
+        PREVIEW_PORT.store(0, Ordering::Relaxed);
     }
     let public_dir = PathBuf::from(&vault).join("site").join("public");
     if !public_dir.join("index.html").exists() {
@@ -392,14 +417,17 @@ pub fn blog_preview_start(
     });
 
     *state.server.lock().map_err(|e| e.to_string())? = Some(server);
+    *state.vault.lock().map_err(|e| e.to_string())? = Some(PathBuf::from(&vault));
     Ok(format!("http://127.0.0.1:{port}/"))
 }
 
 #[tauri::command]
-pub fn blog_preview_stop(state: State<'_, PreviewState>) -> Result<(), String> {
+pub async fn blog_preview_stop(state: State<'_, PreviewState>) -> Result<(), String> {
     if let Some(s) = state.server.lock().map_err(|e| e.to_string())?.take() {
         s.unblock();
     }
+    *state.vault.lock().map_err(|e| e.to_string())? = None;
+    PREVIEW_PORT.store(0, Ordering::Relaxed);
     Ok(())
 }
 
@@ -456,7 +484,7 @@ fn mime_of(p: &Path) -> String {
 /* ---------------- 打开站点目录 ---------------- */
 
 #[tauri::command]
-pub fn blog_open_folder(vault: String) -> Result<(), String> {
+pub async fn blog_open_folder(vault: String) -> Result<(), String> {
     let site = PathBuf::from(&vault).join("site");
     if !site.exists() {
         return Err("站点目录不存在 —— 请先生成站点".to_string());
@@ -504,5 +532,91 @@ mod tests {
     fn slug() {
         assert_eq!(slugify("你好 世界!!"), "你好-世界");
         assert_eq!(slugify("a--b---c"), "a-b-c");
+    }
+
+    /// 生成站点：content/ 源应与原文一致（不重复正文），public/ 正常渲染。
+    #[test]
+    fn generate_content_matches_source() {
+        let tmp = std::env::temp_dir().join(format!("toolbox-blog-test-{}", std::process::id()));
+        let notes = tmp.join("notes");
+        std::fs::create_dir_all(&notes).unwrap();
+        let note = "---\ntitle: 测试文章\nstatus: published\ntags: 测试\n---\n\n正文内容 **加粗**。\n";
+        std::fs::write(notes.join("a.md"), note).unwrap();
+
+        let res = tauri::async_runtime::block_on(blog_generate(
+            tmp.to_string_lossy().to_string(),
+            "测试站".into(),
+        ))
+        .unwrap();
+        assert_eq!(res.posts, 1);
+
+        let content_src =
+            std::fs::read_to_string(tmp.join("site/content/测试文章.md")).unwrap();
+        // 与原文一致：正文只出现一次，无多余 --- 分隔
+        assert_eq!(content_src, note);
+        assert_eq!(content_src.matches("正文内容").count(), 1);
+
+        let idx = std::fs::read_to_string(tmp.join("site/public/index.html")).unwrap();
+        assert!(idx.contains("测试文章"));
+
+        let post =
+            std::fs::read_to_string(tmp.join("site/public/posts/测试文章.html")).unwrap();
+        assert!(post.contains("<strong>加粗</strong>"), "markdown 渲染: {post}");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// 重新生成清理旧输出 + 同标题 slug 去重。
+    #[test]
+    fn regenerate_cleans_and_dedups_slug() {
+        let tmp = std::env::temp_dir().join(format!("toolbox-blog-test2-{}", std::process::id()));
+        let notes = tmp.join("notes");
+        std::fs::create_dir_all(&notes).unwrap();
+        let mk = |name: &str| {
+            std::fs::write(
+                notes.join(format!("{name}.md")),
+                format!(
+                    "---\ntitle: 同名\ndate: 2026-08-01\nstatus: published\n---\n\n正文 {name}\n"
+                ),
+            )
+            .unwrap();
+        };
+        mk("a");
+        mk("b");
+        let res1 = tauri::async_runtime::block_on(blog_generate(
+            tmp.to_string_lossy().to_string(),
+            "站".into(),
+        ))
+        .unwrap();
+        eprintln!("[dbg] posts count: {}", res1.posts);
+        // 两篇同名文章 → 两个不同 slug 文件
+        let posts_dir = tmp.join("site/public/posts");
+        let files: Vec<_> = std::fs::read_dir(&posts_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(files.len(), 2, "slug 去重失败: {files:?}");
+
+        // 重新生成（改一篇为草稿）→ 旧文章被清理
+        std::fs::write(
+            notes.join("a.md"),
+            "---\ntitle: 同名\nstatus: draft\n---\n\n正文 a\n",
+        )
+        .unwrap();
+        let res = tauri::async_runtime::block_on(blog_generate(
+            tmp.to_string_lossy().to_string(),
+            "站".into(),
+        ))
+        .unwrap();
+        assert_eq!(res.posts, 1);
+        let files2: Vec<_> = std::fs::read_dir(&posts_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(files2.len(), 1, "旧输出未清理: {files2:?}");
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }

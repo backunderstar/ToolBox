@@ -56,6 +56,8 @@ export function Editor({ doc, onChange, onSave, dark, placeholderText }: EditorP
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  /* busy 状态用 ref 供挂载期闭包（toolbar click）读取，避免死代码防抖 */
+  const aiBusyRef = useRef(false);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -64,12 +66,13 @@ export function Editor({ doc, onChange, onSave, dark, placeholderText }: EditorP
 
   /* M6：选中文本 → AI 摘要 → 以引用块替换选区 */
   const handleAiSummary = async (vd: VdLike) => {
-    if (aiBusy) return;
+    if (aiBusyRef.current) return;
     const sel = vd.getSelection();
     if (!sel?.trim()) {
       vd.tip("请先在编辑器中选中要摘要的文本", 2000);
       return;
     }
+    aiBusyRef.current = true;
     setAiBusy(true);
     try {
       const reply = await aiChat([
@@ -91,6 +94,7 @@ export function Editor({ doc, onChange, onSave, dark, placeholderText }: EditorP
         3000
       );
     } finally {
+      aiBusyRef.current = false;
       setAiBusy(false);
     }
   };
@@ -127,12 +131,22 @@ export function Editor({ doc, onChange, onSave, dark, placeholderText }: EditorP
         input: (value) => onChangeRef.current(value),
         blur: () => onSaveRef.current(),
         after: () => {
-          requestAnimationFrame(() => vd.focus());
+          const raf = requestAnimationFrame(() => {
+            try {
+              vd.focus();
+            } catch {
+              /* 编辑器可能已在下一帧前销毁 */
+            }
+          });
+          // 记录句柄以便卸载时取消
+          (vd as unknown as { __raf?: number }).__raf = raf;
         },
       });
 
       return () => {
         try {
+          const raf = (vd as unknown as { __raf?: number }).__raf;
+          if (raf) cancelAnimationFrame(raf);
           vd.destroy();
         } catch (e) {
           console.error("[vditor-destroy]", e);

@@ -144,6 +144,20 @@ function TreeNodeRow({
     onRename(node.path, to);
   };
 
+  /* Enter/Escape 与 onBlur 叠加：blur 在输入框卸载后也会触发，
+     用 ref 标记已处理，避免 Enter 后二次提交 / Escape 无法取消 */
+  const handledRef = useRef(false);
+
+  const commitOrCancel = (cancel: boolean) => {
+    if (handledRef.current) return;
+    handledRef.current = true;
+    if (cancel) {
+      setEditing(false);
+    } else {
+      commitRename();
+    }
+  };
+
   const askDelete = () => {
     if (confirming) {
       onRemove(node.path);
@@ -181,10 +195,10 @@ function TreeNodeRow({
             onChange={(e) => setEditValue(e.target.value)}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
-              if (e.key === "Enter") commitRename();
-              if (e.key === "Escape") setEditing(false);
+              if (e.key === "Enter") commitOrCancel(false);
+              if (e.key === "Escape") commitOrCancel(true);
             }}
-            onBlur={commitRename}
+            onBlur={() => commitOrCancel(handledRef.current)}
           />
         ) : (
           <span
@@ -193,6 +207,7 @@ function TreeNodeRow({
             onDoubleClick={(e) => {
               if (!node.isDir) {
                 e.stopPropagation();
+                handledRef.current = false;
                 setEditValue(node.name);
                 setEditing(true);
               }

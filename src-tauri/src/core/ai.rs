@@ -8,7 +8,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use tauri::Manager;
+
+/// 复用单一 HTTP 客户端（连接池 + TLS 会话）
+static HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", default)]
@@ -51,10 +55,15 @@ fn load_config(app: &tauri::AppHandle) -> AiConfig {
     if !p.exists() {
         return AiConfig::default();
     }
-    std::fs::read_to_string(&p)
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
+    match std::fs::read_to_string(&p).and_then(|raw| {
+        serde_json::from_str(&raw).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[ai] 配置读取失败（{p:?}），已回退默认值: {e}");
+            AiConfig::default()
+        }
+    }
 }
 
 #[tauri::command]
@@ -78,8 +87,9 @@ pub fn ai_config_clear_key(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 /// 对话：OpenAI 兼容 chat/completions（非流式）。
+/// async 命令：阻塞的 reqwest 调用在异步运行时线程执行，不冻结主线程/UI。
 #[tauri::command]
-pub fn ai_chat(
+pub async fn ai_chat(
     app: tauri::AppHandle,
     messages: Vec<ChatMessage>,
 ) -> Result<String, String> {
@@ -98,10 +108,12 @@ pub fn ai_chat(
         "stream": false
     });
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+    let client = HTTP_CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .expect("创建 HTTP 客户端失败")
+    });
 
     let resp = client
         .post(&url)
@@ -129,7 +141,7 @@ pub fn ai_chat(
 
 /// 连通性测试：发一个最小对话请求。
 #[tauri::command]
-pub fn ai_test(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn ai_test(app: tauri::AppHandle) -> Result<String, String> {
     let cfg = load_config(&app);
     if cfg.api_key.trim().is_empty() {
         return Err("未配置 API Key".to_string());
@@ -140,7 +152,8 @@ pub fn ai_test(app: tauri::AppHandle) -> Result<String, String> {
             role: "user".into(),
             content: "回复「连接成功」四个字".into(),
         }],
-    )?;
+    )
+    .await?;
     Ok(reply)
 }
 
