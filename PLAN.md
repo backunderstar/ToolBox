@@ -208,6 +208,7 @@ Vault（用户自选的工作区目录，纯数据）
 | ⏳ 进行中 | **核心插件 cdylib 化（阶段 1）** | 迁移 笔记（最大）+ 待办清单 + 项目 为原生核心插件；侧边栏/视图注册表完全动态化（禁用即消失） |
 | ✅ 已完成 | **核心插件 cdylib 化（阶段 1）** | 笔记/待办/清单/项目 全部迁移为原生核心插件（5 个 cdylib 插件：records/notes/todos/checklists/projects）；宿主 core/ 只余 ai/blog/backup/search/vault；核心插件**默认启用**（显式禁用记入 disabled 集合，旧格式兼容）；侧边栏/视图注册表完全动态化（入口由插件 nav 声明提供，按 group 归组，禁用即消失 + 守卫占位）；api.ts fs*/todos*/projects* 透明转发 plugin_call；E2E 9/9 |
 | ✅ 已完成 | **核心插件 cdylib 化（阶段 2）** | 博客/AI/搜索/备份 全部迁移为原生核心插件（共 **9 个 cdylib**：records/notes/todos/checklists/projects/blog/ai/search/backup）；宿主 core/ 只余 vault + path（**核心就留框架**）；博客预览服务器移入插件（tiny_http 进程内单例）；AI 插件内自建 tokio runtime + keyring 凭据 + SSE 流式（ai-chunk 经事件桥）；搜索插件（SQLite FTS5）+ search_all 聚合 providers；备份插件（自动备份线程移入插件）；manifest `system` 锁定（backup/search 不可禁用）；侧边栏彻底插件化（AI/博客入口由插件 nav 提供）；E2E 8/8 |
+| ✅ 已完成 | **打包分发（阶段 3）** | `build:core:release` 构建 release DLL → `src-tauri/resources/_core/` 打进安装包（bundle.resources）；宿主启动 `ensure_core_plugins` 从资源部署到 %APPDATA%（清空后整体复制，与应用版本一致，dev 无资源跳过）；build.rs 预创建资源目录；打包版 E2E 8/8（debug bundle + release DLL 加载/部署全链路） |
 
 ---
 
