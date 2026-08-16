@@ -117,7 +117,9 @@ function normalizeHex(value: string, fallback = "#000000"): string {
   const v = value.trim();
   if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
   if (/^#[0-9a-fA-F]{3}$/.test(v)) {
-    return `#${[...v.slice(1)].map((c) => c + c).join("")}`;
+    return `#${Array.from(v.slice(1))
+      .map((c) => c + c)
+      .join("")}`;
   }
   const m = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(v);
   if (m) {

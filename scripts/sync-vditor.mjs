@@ -1,6 +1,6 @@
 // 将 Vditor 运行时资源同步到 public/vditor/dist（离线可用）。
 // 升级 vditor 后执行: pnpm sync:vditor
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,20 +13,7 @@ if (!existsSync(src)) {
   process.exit(1);
 }
 
-// 按需加载、当前用不到的重型引擎不拷贝（mathjax/echarts 等）
-// 注意：lute 是 IR（即时渲染）模式的必需解析引擎，不能排除！
-const SKIP_JS_DIRS = new Set([
-  "abcjs",
-  "echarts",
-  "flowchart.js",
-  "graphviz",
-  "markmap",
-  "mathjax",
-  "plantuml",
-  "smiles-drawer",
-  "wavedrom",
-]);
-
+// 只拷贝固定目录；lute 是 IR（即时渲染）模式的必需解析引擎，不能排除
 mkdirSync(dst, { recursive: true });
 cpSync(join(src, "index.css"), join(dst, "index.css"));
 cpSync(join(src, "index.js"), join(dst, "index.js"));

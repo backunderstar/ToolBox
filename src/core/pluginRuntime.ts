@@ -129,7 +129,7 @@ export function buildBridgeApi(
         un?.();
       };
     },
-    context: { vault: vault(), ...(opts?.context ?? {}) },
+    context: { vault: vault(), ...opts?.context },
     ...(opts?.nav ? { nav: opts.nav } : {}),
     ...(opts?.host ? { host: opts.host } : {}),
   };

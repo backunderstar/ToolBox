@@ -104,7 +104,6 @@ await sleep(200);
 await clickText(".nav-settings-meta-editor button", "保存");
 await sleep(300);
 // 回到侧边栏验证
-(await clickText(".nav-item", "设置")) === false ? null : null; // 已在设置
 await ev(
   `(() => { const el = [...document.querySelectorAll('.sidebar .nav-item')].find(e => e.textContent.includes('设置')); el?.click(); return !!el; })()`,
 );
@@ -124,7 +123,6 @@ await ev(`(() => {
   sw?.click(); return !!sw;
 })()`);
 await sleep(300);
-(await clickText(".sidebar .nav-item", "设置")) === false ? null : null;
 await ev(
   `(() => { const el = [...document.querySelectorAll('.sidebar .nav-item')].find(e => e.textContent.includes('设置')); el?.click(); return !!el; })()`,
 );

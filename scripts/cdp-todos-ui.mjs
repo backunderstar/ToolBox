@@ -1,7 +1,6 @@
 // cdp-todos-ui.mjs — core-todos 插件自带前端 E2E：浮窗挂载插件 UI/添加/打卡/清除
 import { findMainPage, findFloatPage, connect, sleep } from "./cdp-lib.mjs";
 const PORT = process.argv[2] ?? "9226";
-const listTargets = () => fetch(`http://localhost:${PORT}/json`).then((r) => r.json());
 
 const waitFor = async (ev, expr, desc, timeoutMs = 30000, interval = 400) => {
   const deadline = Date.now() + timeoutMs;

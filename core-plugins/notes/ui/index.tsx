@@ -103,17 +103,8 @@ const IconLink = () =>
     </>,
     12,
   );
-const IconSparkle = () =>
-  svg(
-    <>
-      <path d="M12 3.5l1.9 5.6 5.6 1.9-5.6 1.9L12 18.5l-1.9-5.6L4.5 11l5.6-1.9z" />
-    </>,
-    14,
-    1.6,
-  );
 
 /* ---------------- 主组件 ---------------- */
-
 export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
   const vault = api.context.vault;
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -123,7 +114,8 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const [status, setStatus] = useState("就绪");
+  // 状态消息经 flash() 写入；值本身暂未被任何 UI 渲染，保留 setter 供 flash 使用
+  const [, setStatus] = useState("就绪");
   /* 布局偏好：文件面板折叠 / 专注模式（localStorage 持久化，宿主布局互不影响） */
   const [filesCollapsed, setFilesCollapsed] = useState(() =>
     loadPref("notes.filesCollapsed", false),
@@ -180,15 +172,6 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
     } catch (e) {
       flash(String(e));
     }
-  };
-
-  /** 立即排空待保存内容（返回完成 promise，供切换文件等需要先落盘的场景） */
-  const flush = async (): Promise<void> => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
-    if (dirtyRef.current) await save(false);
   };
 
   const openFile = async (rel: string) => {

@@ -10,7 +10,7 @@ if (!page) {
   process.exit(1);
 }
 const { ev } = await connect(page);
-const { waitFor, clickText, log } = helpers(ev);
+const { waitFor, log } = helpers(ev);
 
 await sleep(800);
 // 搜索词 = 文件名片段：FTS（文件名/内容）与 py-tools provider（文件名匹配）都能命中

@@ -72,9 +72,6 @@ const PLUGINS = [
 // 注：core-search / core-backup 已迁回宿主本体框架（core/search.rs + core/backup.rs，
 // 系统级横切能力不作为可装卸插件），不再在此构建部署。
 
-/** 插件 crate 名：core-blog → tb-blog */
-const crateName = (p) => `tb-${p.id.slice(5)}`;
-
 /** 构建插件自带前端（ui/index.tsx → 自包含 IIFE，React 打进产物） */
 async function buildPluginUi(p) {
   const uiDir = path.join(root, "core-plugins", p.id.slice(5), "ui");

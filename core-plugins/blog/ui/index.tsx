@@ -30,10 +30,6 @@ interface BlogListResult {
   staleCount: number;
 }
 
-function fmtTime(ts: number): string {
-  return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false });
-}
-
 export function BlogPluginUi({ api }: { api: PluginUiApi }) {
   const [result, setResult] = useState<BlogListResult | null>(null);
   const [title, setTitle] = useState("");
