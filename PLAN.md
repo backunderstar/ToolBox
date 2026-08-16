@@ -202,6 +202,7 @@ Vault（用户自选的工作区目录）
 | ✅ 已完成 | AI 流式输出 | 对话改 SSE 流式（`ai-chunk` 事件逐段推送，打字机效果）；SSE 解析含跨块半行/CRLF/[DONE]；本地 mock 服务器端到端测试 |
 | ✅ 已完成 | 审计遗留小项 | 超大文件读取保护（>8MB）、重命名前端校验（非法字符/重名）、博客站点过期提示 |
 | ✅ 已完成 | 插件事件桥 | 进程插件 Notification → 纯 mpsc 事件总线（ProcessPlugin 不接触 tauri 类型，规避 0xC0000139 加载崩溃路径）→ 前端 `plugin-event` → 插件页实时事件日志；csv-tool 增加 eventTest 演示命令 |
+| ✅ 已完成 | 插件全局化 | 插件从工作区 `vault/plugins` 迁到全局 `%APPDATA%/com.toolbox.desktop/plugins/`（插件是工具不属于数据）；启用状态全局统一；旧布局自动迁移（复制 + 工作区目录回收站清理）；webview 入口改由 `plugins_read_file` 限定目录读取 |
 
 ---
 

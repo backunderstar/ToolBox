@@ -116,6 +116,7 @@ pub fn run() {
             plugins::plugins_set_enabled,
             plugins::plugins_reload,
             plugins::plugins_uninstall,
+            plugins::plugins_read_file,
             plugins::plugins_invoke,
             ai::ai_config_get,
             ai::ai_config_set,

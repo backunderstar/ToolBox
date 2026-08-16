@@ -83,15 +83,24 @@ fn plugins_snapshot(dir: &Path) -> Vec<String> {
     out
 }
 
-/* ---------------- 启用状态持久化（%APPDATA%，按 vault 记录） ----------------
-   安全设计：启用状态**不**放在 vault 内。vault 可能是分享/下载来的，
-   若状态在其中，打开不可信 vault 会按预置的 plugins.json 自动拉起
-   插件进程（等于执行任意代码）。状态存应用配置目录，按 vault 路径分键；
-   旧版 vault 内状态首次读取时自动迁移并清除旧文件。 */
+/* ---------------- 全局插件目录与启用状态（%APPDATA%） ----------------
+   插件是"工具/程序"，不属于某个工作区数据：统一装在应用配置目录
+   （%APPDATA%/com.toolbox.desktop/plugins/），换工作区无需重装。
+   启用状态同样全局（plugins.json 顶层 {enabled:[...]}）。
+   兼容迁移：
+   - 旧状态格式（按 vault 分键的 map）首次读取时并集迁移
+   - 旧 vault/.toolbox/plugins.json 迁移进全局后删除
+   - 旧 vault/plugins 目录中的插件自动复制到全局后整体进回收站 */
 
-fn vault_key(vault: &Path) -> String {
-    // Windows 路径大小写不敏感：统一小写 + 正斜杠，避免大小写不同导致双状态
-    vault.to_string_lossy().replace('\\', "/").to_lowercase()
+/// 全局插件根目录（%APPDATA%/com.toolbox.desktop/plugins/）。
+fn global_plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?;
+    let p = dir.join("plugins");
+    std::fs::create_dir_all(&p).map_err(|e| format!("创建插件目录失败: {e}"))?;
+    Ok(p)
 }
 
 fn state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -120,50 +129,112 @@ fn save_state_map(app: &tauri::AppHandle, map: &serde_json::Map<String, Value>) 
     std::fs::write(&p, raw).map_err(|e| format!("保存启用状态失败: {e}"))
 }
 
-fn load_enabled(app: &tauri::AppHandle, vault: &Path) -> HashSet<String> {
-    let key = vault_key(vault);
-    let mut map = load_state_map(app);
-    // 旧版迁移：vault/.toolbox/plugins.json（{enabled:[...]}）→ 全局按 vault 记
-    let legacy = vault.join(".toolbox").join("plugins.json");
-    if map.is_empty() && legacy.exists() {
-        if let Ok(raw) = std::fs::read_to_string(&legacy) {
-            if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(&raw) {
-                if let Some(Value::Array(arr)) = obj.get("enabled") {
-                    map.insert(
-                        key.clone(),
-                        Value::Array(
-                            arr.iter()
-                                .filter_map(|x| x.as_str().map(|s| Value::String(s.to_string())))
-                                .collect(),
-                        ),
-                    );
-                }
-            }
-        }
-        let _ = std::fs::remove_file(&legacy); // 状态双源清除，防止旧文件再次生效
-        let _ = save_state_map(app, &map);
+/// 读取全局启用集合。新格式 `{"enabled": [...]}`；旧格式（按 vault 分键的
+/// map）首次读取时并集迁移并重写。
+fn load_enabled(app: &tauri::AppHandle) -> HashSet<String> {
+    let map = load_state_map(app);
+    if let Some(Value::Array(arr)) = map.get("enabled") {
+        return arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
     }
-    map.get(&key)
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
-        .unwrap_or_default()
+    // 旧格式：所有 vault 键的数组并集
+    let merged: HashSet<String> = map
+        .values()
+        .filter_map(|v| v.as_array())
+        .flat_map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)))
+        .collect();
+    if !merged.is_empty() {
+        let _ = save_enabled(app, &merged);
+    }
+    merged
 }
 
-fn save_enabled(app: &tauri::AppHandle, vault: &Path, enabled: &HashSet<String>) -> Result<(), String> {
-    let mut map = load_state_map(app);
+fn save_enabled(app: &tauri::AppHandle, enabled: &HashSet<String>) -> Result<(), String> {
     let mut arr: Vec<String> = enabled.iter().cloned().collect();
     arr.sort();
+    let mut map = serde_json::Map::new();
     map.insert(
-        vault_key(vault),
+        "enabled".to_string(),
         Value::Array(arr.into_iter().map(Value::String).collect()),
     );
     save_state_map(app, &map)
 }
 
+/// 旧版 vault/.toolbox/plugins.json（{enabled:[...]}）→ 全局并集迁移后删除。
+fn migrate_legacy_enabled(app: &tauri::AppHandle, vault: &Path) {
+    let legacy = vault.join(".toolbox").join("plugins.json");
+    if !legacy.exists() {
+        return;
+    }
+    if let Ok(raw) = std::fs::read_to_string(&legacy) {
+        if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(&raw) {
+            if let Some(Value::Array(arr)) = obj.get("enabled") {
+                let mut set = load_enabled(app);
+                for x in arr.iter().filter_map(|x| x.as_str()) {
+                    set.insert(x.to_string());
+                }
+                let _ = save_enabled(app, &set);
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&legacy);
+}
+
+/// 递归复制目录。
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| format!("创建目录失败 {dst:?}: {e}"))?;
+    let read = std::fs::read_dir(src).map_err(|e| format!("读取目录失败 {src:?}: {e}"))?;
+    for entry in read.flatten() {
+        let s = entry.path();
+        let d = dst.join(entry.file_name());
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            copy_dir_recursive(&s, &d)?;
+        } else {
+            std::fs::copy(&s, &d).map_err(|e| format!("复制失败 {s:?}: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// 迁移旧 vault/plugins/* → 全局目录；完成后 vault/plugins 整体进回收站。
+/// 幂等：vault/plugins 不存在或已空时无事可做。返回迁移的插件数。
+fn migrate_vault_plugins(vault: &Path, global: &Path) -> Result<usize, String> {
+    let src = vault.join("plugins");
+    if !src.is_dir() {
+        return Ok(0);
+    }
+    let read = std::fs::read_dir(&src).map_err(|e| format!("读取 {src:?} 失败: {e}"))?;
+    let mut migrated = 0usize;
+    let mut has_plugin = false;
+    for entry in read.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() || !dir.join("plugin.json").is_file() {
+            continue;
+        }
+        has_plugin = true;
+        let id = entry.file_name().to_string_lossy().to_string();
+        let dst = global.join(&id);
+        if dst.exists() {
+            migrated += 1; // 全局已有同 id：保留全局版本
+            continue;
+        }
+        copy_dir_recursive(&dir, &dst)?;
+        migrated += 1;
+    }
+    // 有插件（或空目录）→ 整体进回收站，vault 保持纯净
+    if has_plugin {
+        let _ = trash::delete(&src);
+    }
+    Ok(migrated)
+}
+
 /* ---------------- 管理器 ---------------- */
 
 impl PluginManager {
-    /// 重新发现 `<vault>/plugins/*` 中的插件。
+    /// 重新发现全局插件目录（%APPDATA%/com.toolbox.desktop/plugins/）中的插件；
+    /// 同时执行旧布局迁移（vault/plugins → 全局，启用状态 → 全局）。
     /// 已启用且为 process 的插件自动启动；错误逐条记录不阻断其他插件。
     pub fn refresh(&mut self, app: &tauri::AppHandle, vault: &Path) -> Result<(), String> {
         for rec in &mut self.records {
@@ -173,9 +244,17 @@ impl PluginManager {
         }
         self.records.clear();
         self.vault = Some(vault.to_path_buf());
-        self.enabled = load_enabled(app, vault);
+        // 旧版状态迁移（vault/.toolbox/plugins.json → 全局）后读全局启用集合
+        migrate_legacy_enabled(app, vault);
+        self.enabled = load_enabled(app);
 
-        let plugins_dir = vault.join("plugins");
+        // 旧布局迁移：vault/plugins/* → 全局目录（复制后回收站清理）
+        let global = global_plugins_dir(app)?;
+        if let Err(e) = migrate_vault_plugins(vault, &global) {
+            eprintln!("[plugin] vault 插件迁移失败: {e}");
+        }
+
+        let plugins_dir = global;
         if !plugins_dir.is_dir() {
             return Ok(());
         }
@@ -267,7 +346,7 @@ impl PluginManager {
             for id in stale {
                 self.enabled.remove(&id);
             }
-            save_enabled(app, vault, &self.enabled)?;
+            save_enabled(app, &self.enabled)?;
         }
         Ok(())
     }
@@ -329,9 +408,7 @@ impl PluginManager {
             self.stop_record(idx);
             self.records[idx].error = None;
         }
-        if let Some(v) = &self.vault {
-            save_enabled(app, v, &self.enabled)?;
-        }
+        save_enabled(app, &self.enabled)?;
         Ok(())
     }
 
@@ -346,9 +423,7 @@ impl PluginManager {
         self.stop_record(idx);
         self.records.remove(idx);
         self.enabled.remove(id);
-        if let Some(v) = &self.vault {
-            save_enabled(app, v, &self.enabled)?;
-        }
+        save_enabled(app, &self.enabled)?;
         trash::delete(&dir).map_err(|e| format!("删除插件目录失败: {e}"))?;
         Ok(())
     }
@@ -493,8 +568,9 @@ fn ensure_refreshed(m: &mut PluginManager, app: &tauri::AppHandle, vault: &str) 
         Some(cur) => !paths_equal(cur, &v),
         None => true,
     };
-    // 插件目录增删但 vault 路径未变：靠快照检测（否则前端"刷新"发现不了新插件）
-    let snapshot = plugins_snapshot(&v.join("plugins"));
+    // 插件目录增删但 vault 路径未变：靠全局目录快照检测（否则前端"刷新"发现不了新插件）
+    let global = global_plugins_dir(app)?;
+    let snapshot = plugins_snapshot(&global);
     let changed_plugins = m.last_snapshot.as_ref() != Some(&snapshot);
     if changed_vault || changed_plugins {
         m.refresh(app, &v)?;
@@ -563,6 +639,35 @@ pub async fn plugins_reload(
     m.reload(&id)
 }
 
+/// 读取全局插件目录内的文件（前端加载 webview 插件入口用）。
+/// 限定在插件目录内：拒绝绝对路径与 `..` 段。
+#[tauri::command]
+pub async fn plugins_read_file(
+    app: tauri::AppHandle,
+    id: String,
+    rel: String,
+) -> Result<String, String> {
+    let root = global_plugins_dir(&app)?.join(&id);
+    let rel_path = Path::new(&rel);
+    let bad = rel_path.is_absolute()
+        || rel_path.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        });
+    if bad {
+        return Err(format!("非法路径: {rel}"));
+    }
+    let p = root.join(rel_path);
+    if !p.starts_with(&root) {
+        return Err(format!("路径越界: {rel}"));
+    }
+    std::fs::read_to_string(&p).map_err(|e| format!("读取插件文件失败: {e}"))
+}
+
 #[tauri::command]
 pub async fn plugins_invoke(
     app: tauri::AppHandle,
@@ -585,6 +690,57 @@ mod tests {
     use crate::rpc::Message;
     use serde_json::json;
     use std::sync::mpsc::channel;
+
+    /// 旧布局迁移：vault/plugins/* → 全局目录（复制 + 整体回收站清理）。
+    #[test]
+    fn migrate_vault_plugins_copies_and_cleans() {
+        let base = std::env::temp_dir().join(format!("tb-plugin-migrate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let vault = base.join("vault");
+        let global = base.join("global-plugins");
+        std::fs::create_dir_all(vault.join("plugins/a-plugin")).unwrap();
+        std::fs::write(
+            vault.join("plugins/a-plugin/plugin.json"),
+            r#"{"id":"a-plugin","name":"A","version":"0.1.0","runtime":"process","command":["python","main.py"]}"#,
+        )
+        .unwrap();
+        std::fs::write(vault.join("plugins/a-plugin/main.py"), "print('hi')").unwrap();
+        // 无清单的目录不迁移
+        std::fs::create_dir_all(vault.join("plugins/not-a-plugin")).unwrap();
+        std::fs::write(vault.join("plugins/not-a-plugin/readme.txt"), "x").unwrap();
+
+        let n = migrate_vault_plugins(&vault, &global).unwrap();
+        assert_eq!(n, 1, "只迁移含清单的插件");
+        assert!(global.join("a-plugin/plugin.json").is_file(), "插件应复制到全局");
+        assert!(!vault.join("plugins").exists(), "vault/plugins 应整体进回收站");
+
+        // 幂等：vault/plugins 已不存在 → 无事可做
+        assert_eq!(migrate_vault_plugins(&vault, &global).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 全局已有同 id 时保留全局版本（vault 版本丢弃）。
+    #[test]
+    fn migrate_skips_existing_global_id() {
+        let base = std::env::temp_dir().join(format!("tb-plugin-migrate2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let vault = base.join("vault");
+        let global = base.join("global-plugins");
+        std::fs::create_dir_all(vault.join("plugins/dup")).unwrap();
+        std::fs::write(
+            vault.join("plugins/dup/plugin.json"),
+            r#"{"id":"dup","name":"旧","version":"0.0.1","runtime":"webview","entry":"main.js"}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(global.join("dup")).unwrap();
+        std::fs::write(global.join("dup/plugin.json"), "全局版本").unwrap();
+
+        let n = migrate_vault_plugins(&vault, &global).unwrap();
+        assert_eq!(n, 1);
+        let g = std::fs::read_to_string(global.join("dup/plugin.json")).unwrap();
+        assert_eq!(g, "全局版本", "不应覆盖已有全局插件");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn manifest_validation() {

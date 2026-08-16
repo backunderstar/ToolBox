@@ -13,6 +13,7 @@ import {
   fsWrite,
   pluginsInvoke,
   pluginsList,
+  pluginsReadFile,
   pluginsReload,
   pluginsSetEnabled,
   pluginsUninstall,
@@ -161,14 +162,15 @@ export function PluginProvider({ children }: { children: ReactNode }) {
   /** 加载并求值一个 webview 插件入口（注册其命令） */
   const loadWebviewPlugin = useCallback(
     async (plugin: PluginInfo) => {
-      const vaultPath = vaultRef.current;
-      if (plugin.runtime !== "webview" || !plugin.entry || !vaultPath) return;
+      if (plugin.runtime !== "webview" || !plugin.entry) return;
       const rt = getRuntime(plugin.id);
       // 重载时清空命令与事件监听，避免旧回调残留/重复注册
       rt.commands.clear();
       rt.listeners.clear();
       try {
-        const code = await fsRead(vaultPath, `plugins/${plugin.id}/${plugin.entry}`);
+        // 插件装在全局目录（%APPDATA%/com.toolbox.desktop/plugins/），
+        // 由 Rust 侧限定在插件目录内读取入口文件
+        const code = await pluginsReadFile(plugin.id, plugin.entry);
         // 用 Blob URL <script> 注入执行，而非 new Function：
         // 打包版 CSP（script-src 'self' blob:）会拦截 eval / Function 构造器。
         // 保持原 api 参数契约：包一层 IIFE 传入全局句柄，运行期异常回写全局标记。

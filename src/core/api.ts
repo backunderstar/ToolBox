@@ -77,6 +77,9 @@ export const pluginsReload = (vault: string, id: string) =>
   invoke<void>("plugins_reload", { vault, id });
 export const pluginsUninstall = (vault: string, id: string) =>
   invoke<void>("plugins_uninstall", { vault, id });
+/** 读取全局插件目录内的文件（webview 插件入口加载用，插件已不在 vault 内） */
+export const pluginsReadFile = (id: string, rel: string) =>
+  invoke<string>("plugins_read_file", { id, rel });
 export const pluginsInvoke = (
   vault: string,
   id: string,
