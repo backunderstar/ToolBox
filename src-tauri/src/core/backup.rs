@@ -88,7 +88,10 @@ fn save_config(config_dir: &str, cfg: &BackupConfig) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
     }
     let raw = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
-    std::fs::write(&p, raw).map_err(|e| format!("保存备份配置失败: {e}"))
+    // 原子写：临时文件 + rename（直接 fs::write 崩溃会留下损坏 JSON，配置丢失）
+    let tmp = p.with_extension("json.tmp");
+    std::fs::write(&tmp, &raw).map_err(|e| format!("保存备份配置失败: {e}"))?;
+    std::fs::rename(&tmp, &p).map_err(|e| format!("保存备份配置失败: {e}"))
 }
 
 /// 当前工作区：从配置目录的 vault.json 读（自动备份线程用）。
@@ -127,8 +130,27 @@ fn is_skipped(parent: &Path, name: &str, at_root: bool) -> bool {
     name.ends_with(".tmp") || name.ends_with('~') || name == "desktop.ini"
 }
 
+/// 递归最大深度：恶意/意外的万层嵌套目录会让纯递归栈溢出直接 abort 进程
+/// （Rust 栈溢出不可捕获）。超过上限：复制报错（备份中止），统计跳过。
+const MAX_DEPTH: usize = 64;
+
 /// 递归复制目录，返回（字节数, 文件数）。
 fn copy_dir_all(src: &Path, dst: &Path, at_root: bool) -> Result<(u64, usize), String> {
+    copy_dir_all_depth(src, dst, at_root, 0)
+}
+
+fn copy_dir_all_depth(
+    src: &Path,
+    dst: &Path,
+    at_root: bool,
+    depth: usize,
+) -> Result<(u64, usize), String> {
+    if depth > MAX_DEPTH {
+        return Err(format!(
+            "目录嵌套过深（>{MAX_DEPTH} 层），已中止复制: {}",
+            src.display()
+        ));
+    }
     std::fs::create_dir_all(dst).map_err(|e| format!("创建备份目录失败 {dst:?}: {e}"))?;
     let mut total = 0u64;
     let mut count = 0usize;
@@ -143,7 +165,7 @@ fn copy_dir_all(src: &Path, dst: &Path, at_root: bool) -> Result<(u64, usize), S
         let s = entry.path();
         let d = dst.join(&name);
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            let (sz, c) = copy_dir_all(&s, &d, false)?;
+            let (sz, c) = copy_dir_all_depth(&s, &d, false, depth + 1)?;
             total += sz;
             count += c;
         } else {
@@ -213,11 +235,19 @@ fn unix_now() -> i64 {
 }
 
 fn dir_size(dir: &Path) -> u64 {
+    dir_size_depth(dir, 0)
+}
+
+fn dir_size_depth(dir: &Path, depth: usize) -> u64 {
+    if depth > MAX_DEPTH {
+        // 超深子树跳过（防栈溢出 abort）
+        return 0;
+    }
     let mut total = 0u64;
     if let Ok(read) = std::fs::read_dir(dir) {
         for e in read.flatten() {
             if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                total += dir_size(&e.path());
+                total += dir_size_depth(&e.path(), depth + 1);
             } else if let Ok(m) = e.metadata() {
                 total += m.len();
             }

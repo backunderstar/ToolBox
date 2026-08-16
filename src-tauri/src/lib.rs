@@ -302,7 +302,12 @@ fn read_float_visible(app: &tauri::AppHandle) -> bool {
 
 fn write_float_visible(app: &tauri::AppHandle, visible: bool) {
     if let Ok(p) = float_visible_path(app) {
-        let _ = std::fs::write(&p, format!("{{\"visible\": {visible}}}"));
+        // 原子写：临时文件 + rename（与其他配置一致，防崩溃留损坏 JSON）
+        let raw = format!("{{\"visible\": {visible}}}");
+        let tmp = p.with_extension("json.tmp");
+        if std::fs::write(&tmp, &raw).is_ok() {
+            let _ = std::fs::rename(&tmp, &p);
+        }
     }
 }
 

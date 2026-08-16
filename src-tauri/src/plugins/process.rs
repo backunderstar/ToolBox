@@ -274,9 +274,9 @@ impl ProcessPlugin {
         match ack_rx.recv_timeout(timeout) {
             Ok(r) => r,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // 写线程还阻塞在 write_all 上；杀掉进程让管道对端关闭，
+                // 写线程还阻塞在 write_all 上；杀掉进程树让管道对端关闭，
                 // 写线程随即收到 BrokenPipe 退出，不会残留阻塞线程
-                let _ = self.child.kill();
+                kill_process_tree(&mut self.child);
                 Err(format!(
                     "写入插件 stdin 超时({timeout:?})，插件已挂死，进程已终止"
                 ))
@@ -297,8 +297,33 @@ impl ProcessPlugin {
             &Message::notification("shutdown", None),
             Duration::from_millis(500),
         );
-        let _ = self.child.kill();
+        kill_process_tree(&mut self.child);
         let _ = self.child.wait();
+    }
+}
+
+/// 终止子进程及其整棵进程树。
+///
+/// **为什么需要**：Windows 上 `Child::kill` 只杀直接子进程——插件
+/// （Python/脚本）再派生的孙进程会成孤儿继续运行（占用文件/端口/CPU）。
+/// `taskkill /T /F` 按 PID 递归终止整棵树；非 Windows 平台无进程树 API，
+/// 退回 `kill`（Unix 子进程通常同会话，普通场景够用）。
+fn kill_process_tree(child: &mut std::process::Child) {
+    #[cfg(target_os = "windows")]
+    {
+        let pid = child.id();
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        // taskkill 可能已结束进程；再 kill 一次兜底（幂等，无害）
+        let _ = child.kill();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = child.kill();
     }
 }
 
@@ -328,7 +353,7 @@ impl Drop for ProcessPlugin {
     fn drop(&mut self) {
         // 关闭写通道 → 写线程 recv 返回 Err 退出 → stdin drop 关闭管道
         let _ = self.write_tx.send(WriteReq::Shutdown);
-        let _ = self.child.kill();
+        kill_process_tree(&mut self.child);
         let _ = self.child.wait();
     }
 }

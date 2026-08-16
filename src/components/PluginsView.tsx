@@ -47,6 +47,8 @@ export function PluginsView() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const [events, setEvents] = useState<PluginEventLog[]>([]);
+  /** 操作错误提示（卸载/切换/重载失败时显示，可关闭）——此前仅 console.error 用户无感知 */
+  const [actionError, setActionError] = useState<string | null>(null);
 
   /* 事件桥：进程插件推送的事件（plugin-event）实时追加到日志 */
   useEffect(() => {
@@ -68,7 +70,7 @@ export function PluginsView() {
     try {
       await uninstall(id);
     } catch (e) {
-      console.error("[plugins] 卸载失败", e);
+      setActionError(`卸载失败: ${e}`);
     } finally {
       setBusy((b) => ({ ...b, [id]: false }));
     }
@@ -79,7 +81,7 @@ export function PluginsView() {
     try {
       await setEnabled(id, enabled);
     } catch (e) {
-      console.error("[plugins] 切换失败", e);
+      setActionError(`操作失败: ${e}`);
     } finally {
       setBusy((b) => ({ ...b, [id]: false }));
     }
@@ -90,7 +92,7 @@ export function PluginsView() {
     try {
       await reload(id);
     } catch (e) {
-      console.error("[plugins] 重载失败", e);
+      setActionError(`重载失败: ${e}`);
     } finally {
       setBusy((b) => ({ ...b, [id]: false }));
     }
@@ -202,6 +204,15 @@ export function PluginsView() {
           </button>
         </div>
       </header>
+
+      {actionError && (
+        <div className="empty-state" style={{ marginBottom: 12 }}>
+          <p style={{ color: "var(--color-danger, #c0392b)" }}>{actionError}</p>
+          <button className="btn btn-sm" onClick={() => setActionError(null)}>
+            关闭
+          </button>
+        </div>
+      )}
 
       {!vault.path ? (
         <div className="empty-state">

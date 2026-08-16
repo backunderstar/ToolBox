@@ -31,8 +31,26 @@ pub struct SearchHit {
     pub snippet: String,
 }
 
+/// 递归最大深度：恶意/意外的万层嵌套目录会让纯递归栈溢出直接 abort 进程
+/// （Rust 栈溢出不可捕获，无 panic 钩子）。超过上限的子树跳过。
+const MAX_DEPTH: usize = 64;
+
 /// 递归收集 notes/ 下全部 .md（相对路径 + 绝对路径）。
 fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
+    collect_md_depth(root, dir, base, out, 0);
+}
+
+fn collect_md_depth(
+    root: &Path,
+    dir: &Path,
+    base: &str,
+    out: &mut Vec<(String, PathBuf)>,
+    depth: usize,
+) {
+    if depth > MAX_DEPTH {
+        // 超深子树跳过（防栈溢出 abort）
+        return;
+    }
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -48,7 +66,7 @@ fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBu
         };
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
         if is_dir {
-            collect_md(root, &entry.path(), &rel, out);
+            collect_md_depth(root, &entry.path(), &rel, out, depth + 1);
         } else if name.ends_with(".md") {
             out.push((rel, entry.path()));
         }
@@ -170,17 +188,55 @@ fn read_index_content(abs: &Path) -> Option<String> {
 }
 
 /// 按首次命中位置切 snippet。
+///
+/// **不能直接 `content.to_lowercase().find(q)` 后拿字节索引切原串**：to_lowercase
+/// 可能改变字符的字节数（如 `İ` → `i̇` 是 1 字符变 2 字符），索引会偏移。
+/// 这里先做"逐字符大小写折叠 + 记录每个折叠后字符在原串的字节偏移"，
+/// 再在折叠序列上做窗口匹配——匹配位置经偏移表映射回原串，正确且线性。
 fn make_snippet(content: &str, q: &str) -> String {
-    let lower = content.to_lowercase();
-    let Some(idx) = lower.find(q) else {
+    let qchars: Vec<char> = q.to_lowercase().chars().collect();
+    if qchars.is_empty() {
+        return "…".to_string();
+    }
+    // 折叠序列 + 原串字节偏移表（folded[i] 来自 content 的 byte_offsets[i] 处）
+    let mut folded: Vec<char> = Vec::with_capacity(content.len());
+    let mut byte_offsets: Vec<usize> = Vec::with_capacity(content.len());
+    for (byte_idx, ch) in content.char_indices() {
+        for fc in ch.to_lowercase() {
+            folded.push(fc);
+            byte_offsets.push(byte_idx);
+        }
+    }
+    if folded.len() < qchars.len() {
+        return "…".to_string();
+    }
+    // 滑动窗口匹配
+    let mut start: Option<usize> = None;
+    'outer: for s in 0..=(folded.len() - qchars.len()) {
+        for (k, &qc) in qchars.iter().enumerate() {
+            if folded[s + k] != qc {
+                continue 'outer;
+            }
+        }
+        start = Some(s);
+        break;
+    }
+    let Some(start) = start else {
         return "…".to_string();
     };
-    let start = idx.saturating_sub(30);
-    let end = (idx + q.len() + 60).min(content.len());
-    let s = content.floor_char_boundary(start.min(content.len()));
-    let e = content.floor_char_boundary(end.min(content.len()));
+    let s_folded = start.saturating_sub(30);
+    let e_folded = (start + qchars.len() + 60).min(folded.len() - 1);
+    let s = byte_offsets[s_folded];
+    // 结束位置取到 e_folded 对应字符的末尾（起始字节 + 该字符 UTF-8 长度）
+    let e_byte = byte_offsets[e_folded];
+    let e = e_byte
+        + content[e_byte..]
+            .chars()
+            .next()
+            .map(char::len_utf8)
+            .unwrap_or(1);
     content
-        .get(s..e)
+        .get(s..e.min(content.len()))
         .unwrap_or("")
         .replace('\n', " ")
         .trim()
@@ -226,11 +282,14 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     let mut hits: Vec<SearchHit> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    // 1. 文件名匹配（排最前）
-    let like = format!("%{q}%");
+    // 1. 文件名匹配（排最前）。
+    // LIKE 通配符转义：`%` 和 `_` 在 LIKE 里是通配符，搜索词含它们会多命中
+    // （如搜 "100%" 会匹配所有含任意前缀后 "100" 的名字）。转义后配 ESCAPE。
+    let like_escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let like = format!("%{like_escaped}%");
     {
         let mut stmt = conn
-            .prepare("SELECT path FROM notes_idx WHERE path LIKE ?1")
+            .prepare("SELECT path FROM notes_idx WHERE path LIKE ?1 ESCAPE '\\'")
             .map_err(|e| format!("文件名搜索失败: {e}"))?;
         let rows = stmt
             .query_map([&like], |r| r.get::<_, String>(0))
@@ -247,11 +306,15 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
         }
     }
 
-    // 2. 内容匹配
+    // 2. 内容匹配。
+    // FTS5 短语查询包引号即可匹配整串；但引号/控制字符在 FTS 语法里有特殊含义
+    // ——历史实现直接 `q.replace('"', "")` 删引号（语义失真：搜 a"b 变 ab），
+    // 且纯标点查询会变成空短语让 FTS 报错、每次降级线性扫描。含这些字符时
+    // 直接走线性扫描：保语义、不报错、无反复降级。
+    let fts_safe = q.chars().all(|c| !c.is_control() && c != '"' && c != '\'');
     let nchars = q.chars().count();
-    if nchars >= 3 {
-        let escaped = q.replace('"', "");
-        let match_expr = format!("\"{escaped}\"");
+    if nchars >= 3 && fts_safe {
+        let match_expr = format!("\"{q}\"");
         let fts_ok = (|| -> Result<(), String> {
             let mut stmt = conn
                 .prepare("SELECT path FROM notes_fts WHERE notes_fts MATCH ?1 LIMIT ?2")
@@ -392,5 +455,47 @@ mod tests {
         assert!(search(&v.to_string_lossy(), "  ").unwrap().is_empty());
         assert!(search(&v.to_string_lossy(), "随便").unwrap().is_empty());
         std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn like_wildcard_is_escaped() {
+        // 回归：文件名 LIKE 通配符未转义时，搜 "100%" 的 `%` 会当通配符多命中
+        let v = tmp_vault("likeesc");
+        write_note(&v, "任务 100% 完成.md", "# x\n");
+        write_note(&v, "任务 100 完成.md", "# x\n");
+        let hits = search(&v.to_string_lossy(), "100%").unwrap();
+        assert_eq!(hits.len(), 1, "只应命中真含 % 的名字: {hits:?}");
+        assert_eq!(hits[0].path, "notes/任务 100% 完成.md");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn quote_query_uses_linear_scan() {
+        // 回归：含引号的查询不再被删引号（语义失真），也不触发 FTS 报错反复降级
+        let v = tmp_vault("qquote");
+        write_note(&v, "a.md", "他说 \"你好世界\" 然后离开。\n");
+        let hits = search(&v.to_string_lossy(), "\"你好世界\"").unwrap();
+        assert!(
+            hits.iter().any(|h| h.path == "notes/a.md"),
+            "应命中含引号内容: {hits:?}"
+        );
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn snippet_case_insensitive_hit() {
+        let content = "今天天气很好，Hello World 值得记录。";
+        let snip = make_snippet(content, "world");
+        assert!(snip.contains("Hello World"), "snippet 应包含命中原文: {snip}");
+    }
+
+    #[test]
+    fn snippet_safe_with_fold_length_change() {
+        // 回归：大小写折叠改变字符字节数（İ 1 字符 → 折叠后 2 字符）时，
+        // snippet 的偏移映射必须正确（历史实现拿 to_lowercase 的字节索引切
+        // 原串会偏移）；至少不 panic 且包含命中词。
+        let content = "İİİ İSTANBUL —— 折叠 后面内容填充文本。";
+        let snip = make_snippet(content, "折叠");
+        assert!(snip.contains("折叠"), "snippet: {snip}");
     }
 }

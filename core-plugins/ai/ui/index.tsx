@@ -6,7 +6,7 @@
 //                              增量经 ai-chunk 事件到达，结束/失败经 ai-done 事件
 //   ai.chat { messages } —— 非流式，返回完整回复字符串（如 AI 摘要场景，本视图未使用）
 // 跨插件：core-notes notes.read（读取命中片段）；RAG 检索经宿主内嵌全文搜索（api.host.search）。
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 /** 宿主注入的桥 API（PluginUiView 构造；只声明本组件用到的方法） */
@@ -77,15 +77,31 @@ const IconSparkle = (p: { width?: number; height?: number }) =>
 /* ---------------- 主组件 ---------------- */
 
 export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
-  // 当前笔记上下文：宿主在挂载时注入快照（activePath / activeContent），直接当初始 state
-  const [currentNote] = useState<string | null>(() => {
+  // 当前笔记上下文：宿主在挂载时注入快照（activePath / activeContent）作为初始值。
+  // 快照只在挂载时有效——宿主 vault 的状态在插件 UI 之外变化（用户在笔记视图
+  // 切换文件），插件必须**自行订阅 tb:vault-active 事件**（宿主 vault.tsx 在
+  // 笔记插件同步当前文件时广播）保持上下文最新，否则预设动作会一直用旧笔记内容。
+  const [currentNote, setCurrentNote] = useState<string | null>(() => {
     const c = api.context.activeContent;
     return typeof c === "string" && c ? c : null;
   });
-  const [noteName] = useState<string>(() => {
+  const [noteName, setNoteName] = useState<string>(() => {
     const p = api.context.activePath;
     return typeof p === "string" && p ? p : "未打开笔记";
   });
+
+  /* 订阅宿主 vault 的当前文件广播：插件 UI 存活期间持续刷新上下文 */
+  useEffect(() => {
+    const onActive = (e: Event) => {
+      const d = (e as CustomEvent<{ rel?: string; content?: string }>).detail;
+      if (typeof d?.rel === "string" && d.rel) {
+        setNoteName(d.rel);
+        if (typeof d.content === "string") setCurrentNote(d.content);
+      }
+    };
+    window.addEventListener("tb:vault-active", onActive);
+    return () => window.removeEventListener("tb:vault-active", onActive);
+  }, []);
 
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState("");

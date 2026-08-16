@@ -455,7 +455,17 @@ impl PluginManager {
             return;
         }
         let id = manifest.id.clone();
-        let is_enabled = self.plugin_enabled(&id);
+        // 启用判定（注意时序 bug，A6）：plugin_enabled 对 native 的判定依赖
+        // self.records（`records.iter().any(runtime == Native)`），而本函数在
+        // records.push **之前**调用它——首次扫描时 records 为空，native 会被
+        // 当作外部插件（enabled.contains 为 false）→ 核心插件首次刷新不启动
+        // （状态显示 enabled=true 但 stopped，直到某次 plugin_call 惰性启动）。
+        // 这里对 native 特判：核心插件默认启用 = 不在 disabled 集合。
+        let is_enabled = if manifest.runtime == PluginRuntime::Native {
+            !self.disabled.contains(&id)
+        } else {
+            self.plugin_enabled(&id)
+        };
         let idx = self.records.len();
         self.records.push(PluginRecord {
             manifest,
@@ -1131,6 +1141,44 @@ mod tests {
             last_crash: None,
         });
         m.start_native(0).expect("_core 下的 native 插件应能启动");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A6 回归：核心插件**首次扫描**（records 为空）时 native 判定不依赖 records，
+    /// 应立即启动（native 实例非 None）。历史 bug：plugin_enabled 靠 records 判断
+    /// native，而 scan 在 push 之前调用它，导致首次刷新核心插件全部 stopped。
+    #[test]
+    fn scan_starts_native_on_first_pass() {
+        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_notes.dll");
+        if !dll.exists() {
+            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-notes");
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("tb-scan-native-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let core_dir = base.join("plugins/_core/core-notes");
+        std::fs::create_dir_all(&core_dir).unwrap();
+        std::fs::copy(&dll, core_dir.join("tb_notes.dll")).unwrap();
+        std::fs::write(
+            core_dir.join("plugin.json"),
+            serde_json::json!({
+                "id": "core-notes",
+                "name": "笔记",
+                "version": "0.1.0",
+                "runtime": "native",
+                "command": ["tb_notes.dll"]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let mut m = PluginManager::default();
+        m.vault = Some(PathBuf::from("C:/vault"));
+        m.config_dir = Some(base.to_string_lossy().to_string());
+        m.scan_plugin_dir(&core_dir); // records 为空时的首次扫描
+        assert_eq!(m.records.len(), 1);
+        assert!(m.records[0].native.is_some(), "首次扫描即应启动 native 插件");
+        assert!(m.records[0].error.is_none(), "不应有启动错误");
         let _ = std::fs::remove_dir_all(&base);
     }
 

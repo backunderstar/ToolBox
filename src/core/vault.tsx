@@ -174,10 +174,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     if (isMockRef.current) return;
     const p = stateRef.current.path;
     if (!p) return;
+    // 时间戳到毫秒（17 位 YYYYMMDDHHmmssSSS）：秒级粒度连续新建会撞名
+    // （fsCreate 冲突虽然被捕获并 flash，但体验差）
     const ts = new Date()
       .toISOString()
       .replace(/[-:T]/g, "")
-      .slice(0, 14);
+      .slice(0, 17);
     // 笔记统一存放在工作区 notes/ 目录下
     const rel = `notes/笔记-${ts}.md`;
     try {
@@ -296,8 +298,11 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         const r = await searchAll(path, query);
         if (seq !== searchSeq.current) return; // 过期响应
         setResults(r);
-      } catch {
+      } catch (e) {
         if (seq !== searchSeq.current) return;
+        // 失败要明确提示：静默清空会让用户误以为"没有结果"（其余 invoke
+        // 失败都有 flash，唯独此处此前例外）
+        flash(`搜索失败: ${e}`);
         setResults([]);
       } finally {
         if (seq === searchSeq.current) setSearching(false);
