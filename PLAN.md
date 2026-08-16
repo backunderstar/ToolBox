@@ -1,7 +1,7 @@
 # ToolBox 规划文档
 
 个人工具箱桌面应用 —— Rust 核心 + 多语言插件系统 + 主题系统。
-目标功能：数据处理、清单、记录、笔记、AI 整理、博客发布。
+目标功能：清单、待办、笔记、项目文件管理、AI 整理、博客发布。
 
 ---
 
@@ -155,7 +155,7 @@ themes/my-theme/
 ```
 Vault（用户自选的工作区目录，纯数据）
 ├── notes/            # Markdown 笔记（可带 frontmatter 元数据）
-├── data/             # 结构化数据：checklists/*.json、records/*.json、todos/
+├── data/             # 结构化数据：checklists/*.json、todos/todos.json
 ├── projects/         # 项目文件（+ archive/）
 ├── site/             # 博客发布生成物（可重建）
 └── .toolbox/         # 备份（backups/）、搜索索引（SQLite）；插件与配置在应用目录
@@ -177,8 +177,8 @@ Vault（用户自选的工作区目录，纯数据）
 | **M0 骨架** | Tauri 2 + TS/React 脚手架；Rust `ping` 命令打通 IPC；主题令牌 + 亮/暗切换；应用外壳布局（侧栏 + 主区 + 状态栏） | ✅ 完成 |
 | **M1 笔记** | 文件树 + Vditor 即时渲染编辑器 + 新建/保存/删除 + 全文搜索 + 最近打开 + 设置页 | ✅ 完成 |
 | **M2 插件系统 v1** | manifest 加载器；webview JS 插件 API；Python 进程桥（JSON-RPC）；热重载；示例插件 | ✅ 完成 |
-| **M3 数据工具** | Base64 + 插件命令接入（JSON 格式化/时间戳/UUID/行尾转换已按需求移除） | ✅ 完成 |
-| **M4 清单与记录** | 清单（checklist）与工作记录（record）数据模型 + UI + 与笔记双向链接 | ✅ 完成 |
+| **M3 数据工具** | 工具页已按用户决定移除（JSON 格式化/时间戳/UUID/Base64 等） | ✅ 已移除 |
+| **M4 清单** | 清单（checklist）数据模型 + UI + 与笔记双向链接（记录功能已按用户决定移除） | ✅ 完成 |
 | **M5 主题系统完整** | 主题包格式 + 切换器 + 主题编辑器；3 内置主题（亮/暗/暖） | ✅ 完成 |
 | **M6 AI 集成** | 提供商配置（OpenAI 兼容 API）；对话/整理面板；选区摘要；笔记问答（轻量 RAG） | ✅ 完成 |
 | **M7 博客发布** | frontmatter → 导出管线；内置 SSG（Zola 兼容源）一键生成/预览/发布 | ✅ 完成 |
@@ -210,12 +210,16 @@ Vault（用户自选的工作区目录，纯数据）
 | ✅ 已完成 | **打包分发（阶段 3）** | `build:core:release` 构建 release DLL → `src-tauri/resources/_core/` 打进安装包（bundle.resources）；宿主启动 `ensure_core_plugins` 从资源部署到 %APPDATA%（清空后整体复制，与应用版本一致，仅打包构建执行）；build.rs 预创建资源目录；打包版 E2E 8/8（debug bundle + release DLL 加载/部署全链路） |
 | ✅ 已完成 | **插件自带前端（阶段 4 pilot）** | 插件目录 = DLL + 前端页面，加载时一起加载：manifest `ui.entry` 声明；插件前端（`core-plugins/<id>/ui/`，React+TSX）由 Vite lib 模式构建为自包含 IIFE（React 打进产物，NODE_ENV 显式 define）放进插件目录 `ui/`；宿主 `PluginUiView` 经 `plugins_read_file` 读入口 → Blob `<script>` 注入（CSP blob: 允许）→ 插件注册 `__TB_PLUGIN_UI__[id]` → 注入 api 桥（call → plugin_call / on → plugin-event / context.vault）挂载到 React 树（非 iframe）；`plugins_read_file` 支持 `_core/<id>`；pilot = core-blog（列表/生成/预览/状态切换全链路 E2E 4/4）；未声明 ui 的插件仍用宿主内置组件，其余插件前端迁移待用户确认逐批进行 |
 | ✅ 已完成 | **插件前端迁移样板（core-projects）** | 数据层（core/projects.tsx）并入 `core-plugins/projects/ui/index.tsx`：api 桥替代 useProjects/useVault、本地 state 管导航、内联图标 + 复用宿主 ConfirmDialog/.projects-* CSS；build-core.mjs 声明 ui；App 路由优先 PluginUiView（宿主组件保留回退）；E2E 4/4 |
-| ✅ 已完成 | **插件自带前端全部迁移（阶段 5）** | 统一 api 桥升级：`buildBridgeApi` 增 `nav`（go/openNote/openChecklist/openRecord 跨视图跳转）+ context 扩展（activePath/activeContent 宿主快照）+ `on` 跨插件订阅；core-notes 写操作发 notes-changed（宿主 vault 监听刷新文件树）；跨视图"打开笔记"经 `tb:open-note` 同 document 事件 + 挂载期标记；笔记插件打开文件经 `tb:vault-active` 回写宿主 vault（AI 预设读取当前笔记）。**迁移 7/9**：记录/笔记/清单/AI/待办浮窗（+ 已完成的博客/项目），仅搜索/备份系统插件无界面。笔记插件含 Vditor（cdn 复用宿主 /vditor）；浮窗改为宿主外壳 + core-todos 插件 UI（拖拽/锁定/列表全在插件内）。dev E2E 8/8（NOTES/AI/RECORDS/CHECKLIST/TODOS/BLOG/PROJECTS/RUNTIME_REGRESS） |
+| ✅ 已完成 | **插件自带前端全部迁移（阶段 5）** | 统一 api 桥升级：`buildBridgeApi` 增 `nav`（go/openNote/openChecklist 跨视图跳转）+ context 扩展（activePath/activeContent 宿主快照）+ `on` 跨插件订阅；core-notes 写操作发 notes-changed（宿主 vault 监听刷新文件树）；跨视图"打开笔记"经 `tb:open-note` 同 document 事件 + 挂载期标记；笔记插件打开文件经 `tb:vault-active` 回写宿主 vault（AI 预设读取当前笔记）。**迁移 6/6**：记录/笔记/清单/AI/待办浮窗（+ 已完成的博客/项目）。笔记插件含 Vditor（cdn 复用宿主 /vditor）；浮窗改为宿主外壳 + core-todos 插件 UI（拖拽/锁定/列表全在插件内）。dev E2E 8/8（NOTES/AI/RECORDS/CHECKLIST/TODOS/BLOG/PROJECTS/RUNTIME_REGRESS） |
 | ✅ 已完成 | **整体打包验收（阶段 6）** | `build:core:release`（release DLL + ui → resources/_core）→ `pnpm tauri build --debug` 打包版 exe + NSIS 安装包；打包版（release 资源部署到 %APPDATA%）E2E 8/8 全过；NSIS 静默安装到临时目录 → 运行已安装 exe：启动日志干净（插件部署/浮窗创建/无失败资源），%APPDATA% 插件含 ui 清单与文件；cargo 55 测试 + pnpm build 全绿 |
 | ✅ 已完成 | **搜索/备份迁回宿主本体（阶段 7，用户决策）** | 搜索与备份是系统级横切能力而非可装卸业务插件，从 core-plugins 迁回宿主框架：`src-tauri/src/core/search.rs`（SQLite FTS5 + 6 测试）+ `core/backup.rs`（快照/配置/插件存档/恢复 + 60s 后台线程 + 3 测试）；宿主命令 `search_all` 直调并仍聚合启用插件的 `search.provide`（记录）；新增 `backup_now/config_get/config_set/list/restore` 宿主命令，api.ts 备份段改 invoke；统一桥增 `host.search`（笔记/AI 插件界面复用宿主搜索）；`system` 锁定语义随迁回而消除（字段保留）；插件数 9 → 7（Cargo members、build-core.mjs、mock 同步）；dev E2E 8/8 + 宿主命令冒烟（插件列表 7 个/搜索含提供者聚合/备份建列恢复） |
 | ✅ 已完成 | **移除数据工具页（用户决策）** | 删除 ToolsView + src/tools/registry.tsx（Base64 工具）与侧边栏"数据工具"入口/路由/欢迎页卡片；插件命令试玩保留在插件页（CommandTry 共用组件不删）；清理死亡图标（IconSliders/IconBraces/IconClock/IconHash/IconText/IconEnter/IconCopy）与专属 CSS；共享样式（.segmented/.tool-option/.tool-check/.tool-result）保留；pnpm build + dev 验证（侧边栏/欢迎页/设置页导航配置均无残留，runtime-regress 通过） |
 | ✅ 已完成 | **移除记录功能 + 插件页铺满修复（用户决策）** | 删除 core-records 插件（crate + ui + 搜索提供者）、宿主 RecordsView/core/records.tsx/RecordsProvider、记录路由与导航（openRecord/openRecordId）、反链中的记录来源、WelcomeView 卡片；笔记插件 UI 反链/搜索来源同步简化；宿主全链路测试改用 tb_notes.dll（native_plugin_load_and_call）；插件数 7 → 6。**铺满修复**：.plugin-ui-view/.plugin-ui-container 缺 CSS 导致插件子页面未占满主区——补 flex 布局（容器占满 + 子视图 height:100%），实测笔记/AI 视图几何与主区完全一致。验证：cargo 51 测试、pnpm build、dev E2E 7/7（notes/ai/checklists/todos/blog/projects/regress） |
 | ✅ 已完成 | **导航栏全配置化（用户决策）** | navPrefs 升级 v2：`{ groups, order, meta }`——分组（内置 work/system + 用户自定义 + 插件动态组）、每组的项顺序（**插件项位置也可配置**）、项元数据覆盖（标签/图标/隐藏）。`normalizeNav(cfg, defs)` 归一化兜底：内置组常驻、自定义组新建/改名/删除（组内项回默认组）、settings 强制可见、失效项（插件禁用）保留配置（重启用回到用户位置）、新项自动补默认组、存储自愈。Sidebar 按 config/defs 渲染（分组折叠记忆 + meta 覆盖）；NavSettings 升级全配置编辑器（新建/重命名/删除分组、**HTML5 拖拽跨组移动**、组内上下移、隐藏开关、标签/图标编辑表单、恢复默认）；旧版 v1 配置自动迁移。验证：pnpm build、dev E2E 8/8（新增 NAV_FULL：默认渲染/折叠/新建组/拖拽跨组/改标签/隐藏/恢复默认）+ 既有 7 套件全过 |
+| ✅ 已完成 | **全代码审查 + 整改批次 1（功能修复）** | 多代理并行审查（前端/Rust/插件/构建/安全/契约）产出分级整改方案（用户批准顺序推进）。批次 1：AI 流式对话修复（`ai.chatStream` 在宿主 tokio worker 线程上 `rt().block_on` 嵌套另一 runtime 必 panic → 改为插件实例持有 runtime 并 `spawn` 独立任务，流结束/失败改由新增 `ai-done` 事件通知）；反链"打开清单"修复（宿主回退视图收不到 viewParams → 改 `tb:open-checklist` 事件广播 + 挂载期标记，与 openNote 同机制）；前端三 bug（navPrefs 损坏存储白屏、NavSettings 运算符优先级致误移分组、api.on/vault 监听取消竞态）。验证：cargo 51 测试、pnpm build、E2E 3/3（checklists/nav/ai） |
+| ✅ 已完成 | **整改批次 2（数据安全）** | 备份快照原子提交（先复制到隐藏 `.backup-*.tmp` 再 rename，崩溃只留被忽略的残留，杜绝"半截备份被恢复覆盖线上数据"）；恢复两阶段（先复制到暂存目录校验源完整再覆盖，失败可手工补救）；`backup_config_set` 范围钳制 + 后台线程 clamp/saturating_sub 防整数溢出 panic（debug）；prune 改按时间戳排序（修复跨位数边界删错备份）。验证：cargo 54 测试（新增 3 个边界测试） |
+| ✅ 已完成 | **整改批次 0（轻量安全）** | S1a `plugins_read_file` id 白名单 + root 规范化复核（堵 `../` 穿越任意文件读取）；S1b native 运行时强制 `_core` 目录（第三方插件声明 native 直接拒绝，堵任意 DLL 加载进宿主进程）；S1c vault 参数服务端校验（所有带 vault 命令绑定已配置工作区，防作用域指向任意目录）；S3 清单 get/save/delete 统一 id 校验（堵 `../` 越出清单目录读写）；S4 插件卸载崩溃（ai runtime 从 static 移入实例 drop 时 shutdown、blog 预览线程可停止 + 实例 Drop 时 join，FreeLibrary 后无残留线程执行已卸载代码）。验证：cargo 58 测试、E2E 4/4（notes/checklists/ai/blog） |
+| ✅ 已完成 | **死代码清理（用户决策）** | 6 个核心插件全部自带前端后，宿主回退视图成为死代码：删除 NotesView/ChecklistView/ProjectsView/AIChatView/BlogView + Editor/FileTree/Backlinks + 宿主数据层 checklists.tsx/projects.tsx（App 路由简化为"插件启用→PluginUiView / 禁用→占位"，未知视图不再静默落笔记视图）；删除 api.ts 28 个死封装（博客/项目/待办/对话/openUrl）与 nav 声明失效 view 字段；删除 public 调试页、core-records 构建残留、notes.listDir 死命令、BlogGenerateResult.indexUrl 幽灵字段。全程净删 3196 行。验证：cargo 58 测试、pnpm build、E2E 8/8 全过 |
 
 ---
 
@@ -225,20 +229,17 @@ Vault（用户自选的工作区目录，纯数据）
 ToolBox/
 ├── Cargo.toml              # Rust workspace（宿主 + tb-sdk + core-plugins/*）
 ├── tb-sdk/                 # 核心插件 SDK：C ABI 契约 + tb_plugin! 样板宏 + 路径安全
-├── core-plugins/           # 核心插件（cdylib，随应用分发；共 9 个）
-│   ├── records/            # 记录（data/records CRUD + 搜索提供者）
-│   ├── notes/              # 笔记（notes/ 文件操作）
+├── core-plugins/           # 核心插件（cdylib，随应用分发；共 6 个，全部自带前端）
+│   ├── notes/              # 笔记（notes/ 文件操作 + Vditor 编辑器 + 反链）
 │   ├── todos/              # 待办（浮窗数据层 + todos-changed）
 │   ├── checklists/         # 清单（data/checklists CRUD）
 │   ├── projects/           # 项目（projects/ 目录 + 归档 + 打开）
 │   ├── blog/               # 博客（frontmatter + 站点生成 + 预览服务器）
-│   ├── ai/                 # AI（OpenAI 兼容 + SSE 流式 + keyring）
-│   ├── search/             # 搜索（SQLite FTS5，系统锁定）
-│   └── backup/             # 备份（快照/存档/恢复，系统锁定）
+│   └── ai/                 # AI（OpenAI 兼容 + SSE 流式 + keyring）
 ├── src-tauri/              # Tauri 主进程（宿主框架 + 插件宿主）
 │   ├── src/
 │   │   ├── main.rs / lib.rs
-│   │   ├── core/           # vault、笔记、存储、搜索、AI、博客、备份
+│   │   ├── core/           # vault、path、search（SQLite FTS5）、backup（自动备份）
 │   │   ├── plugins/        # 插件管理器、native 加载器、进程桥、事件桥、manifest
 │   │   └── rpc/            # JSON-RPC 协议类型（serde）
 │   ├── capabilities/       # Tauri 权限声明
@@ -246,8 +247,8 @@ ToolBox/
 ├── src/                    # 前端（TypeScript + React）
 │   ├── main.tsx / App.tsx
 │   ├── themes/             # 令牌 + 主题引擎 + 内置主题
-│   ├── core/               # IPC 封装、插件运行时、状态
-│   └── components/         # 文件树、编辑器、面板、设置
+│   ├── core/               # IPC 封装、插件运行时、vault 状态、导航配置
+│   └── components/         # 侧边栏、插件 UI 容器、设置、导航配置编辑器
 ├── plugins/                # 外部插件示例（仓库内，部署到 %APPDATA%）
 ├── docs/                   # 架构、插件开发指南、主题开发指南
 ├── PLAN.md
@@ -262,13 +263,13 @@ ToolBox/
 |---|---|---|---|
 | 桌面框架 | Tauri 2 | Electron | Rust 核心 + 小体积 |
 | 前端 | React + TypeScript + Vite | Vue / Svelte / 原生 | 生态最大，插件 UI 好做 |
-| Markdown 编辑器 | CodeMirror 6 | Milkdown(ProseMirror) | 轻量、可扩展、编辑体验好 |
-| 状态管理 | zustand | valtio | 简单够用 |
-| Rust 核心库 | tauri / serde / serde_json / rusqlite / reqwest / libloading | | 插件宿主 + FTS 搜索；核心插件经 C ABI 加载 |
-| 搜索 | SQLite FTS5 | tantivy | v1 够用，数据量大再换 |
+| Markdown 编辑器 | Vditor | CodeMirror 6 | 即时渲染 + 所见即所得，前端静态资源随应用分发（实际选型；CodeMirror 曾为候选） |
+| 状态管理 | React 内置（state/context + ref 最新值模式） | zustand | 视图已插件化，宿主状态面小，未引入额外库 |
+| Rust 核心库 | tauri / serde / serde_json / rusqlite / reqwest / libloading / tiny_http / keyring | | 插件宿主 + FTS 搜索；核心插件经 C ABI 加载 |
+| 搜索 | SQLite FTS5（宿主 core/search.rs） | tantivy | v1 够用，数据量大再换 |
 | Python 桥 | stdio + JSON-RPC（serde_json） | PyO3 内嵌 | 子进程方案灵活、任意 Python 环境可用 |
-| 博客 | Zola（Rust SSG） | 自定义导出 | 与 Rust 技术栈同源 |
-| 测试 | cargo test + Vitest | | 核心协议层优先测试 |
+| 博客 | 自研 SSG（frontmatter → HTML）+ tiny_http 预览 | Zola | 与 Rust 技术栈同源，可控 |
+| 测试 | cargo test + CDP E2E 脚本（cdp-*.mjs 驱动真实 WebView2） | Vitest | 核心协议层/宿主逻辑 cargo test；界面层真实运行验证 |
 
 ---
 
@@ -287,8 +288,9 @@ ToolBox/
 > 进度：M0 ✓（骨架/主题/ping）→ M1 ✓（笔记模块+设置页）→ M2 ✓（插件系统 v1，53da90d）→ M3 ✓（数据工具，e6d864f）→ M4 ✓（清单与记录，4ba3ecc）→ M5 ✓（主题系统，b5af457）→ M6 ✓（AI 集成：提供商配置/对话/选区摘要/RAG 问答，f42b071）→ M7 ✓（博客发布：frontmatter/站点生成/内置预览，f42b071）。**里程碑全部完成。**
 >
 > 真实运行验证方法：临时在 `src-tauri/tauri.conf.json` 的 windows[0] 加
-> `"additionalBrowserArgs": "--remote-debugging-port=9226"`，`pnpm tauri dev` 后
-> 用 `node scripts/cdp-e2e-clean.mjs 9226` 驱动真实 WebView2 做端到端检查（验证后移除该配置）。
+> `"additionalBrowserArgs": "--remote-debugging-port=9226"`（并在 `lib.rs` 浮窗
+> builder 同样加一行，浮窗独立 WebView 无参数不注册 CDP target），`pnpm tauri dev`
+> 后用 `node scripts/cdp-*.mjs 9226` 驱动真实 WebView2 做端到端检查（验证后两处都移除）。
 
 > 注：当前 AI 会话的沙箱禁止执行外部程序（运行 exe 被拒绝），所以构建/运行命令需要你在自己终端执行；文件读写、代码编写、脚手架文件生成我都可以直接完成。
 
