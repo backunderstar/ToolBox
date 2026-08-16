@@ -95,5 +95,28 @@ if (doneBtn) {
   log("PASS 清除按钮状态正确（跳过：无已完成项）");
 }
 
+// ---- 7. 页签切换：待办 ↔ 清单（宿主外壳加载不同插件 UI）----
+await floatConn.conn.ev(`(() => {
+  const b = [...document.querySelectorAll('.float-window .float-tab')].find(b => b.textContent.includes('清单'));
+  b?.click(); return !!b;
+})()`);
+await waitFor(
+  floatConn.conn.ev,
+  `!!document.querySelector('.float-window .checklist-view')`,
+  "清单插件 UI 挂载",
+  20000,
+);
+log("PASS 页签切换 → 清单插件 UI 挂载（core-checklists）");
+await floatConn.conn.ev(`(() => {
+  const b = [...document.querySelectorAll('.float-window .float-tab')].find(b => b.textContent.includes('待办'));
+  b?.click(); return !!b;
+})()`);
+await waitFor(
+  floatConn.conn.ev,
+  `!!document.querySelector('.float-window .float-input')`,
+  "切回待办页（todos UI 重新挂载）",
+);
+log("PASS 切回待办页签（core-todos）");
+
 log("\n========== TODOS_UI_E2E_PASS ==========");
 process.exit(0);

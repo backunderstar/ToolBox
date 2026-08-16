@@ -17,7 +17,12 @@ await sleep(800);
 const TOKEN = "e2e-gsearch";
 const NAME = `e2e-gsearch-${Date.now()}.md`;
 
-// ---- 0. 确保工作区 + 写入测试文件（vault 根下任意位置，验证全局索引） ----
+// ---- 0. 清理历史测试文件（多次运行会累积 20+ 个 e2e-gsearch 文件，
+//      挤掉最新文件的 FTS/provider 命中导致断言失败）+ 确保工作区 ----
+import { globSync } from "node:fs";
+import { rmSync } from "node:fs";
+const VAULT = "D:\\WORKSPACE\\ToolBox\\src-tauri\\target\\e2e-vault";
+for (const f of globSync(`${VAULT}/projects/e2e-gsearch-*.md`)) rmSync(f, { force: true });
 const vp = await ev(
   `(async () => { const inv = window.__TAURI_INTERNALS__.invoke; const s = await inv('vault_get'); return s.path || ''; })()`,
 );
@@ -39,14 +44,26 @@ const enabled = await ev(
 if (!enabled) throw new Error("顶栏搜索框应可用（全局搜索恢复）");
 log("PASS 顶栏搜索框可用（全局搜索恢复）");
 
-// ---- 2. 输入 → 下拉出现命中（FTS） ----
+// ---- 2. 输入 → 下拉出现命中（FTS）----
+// 注意：① 搜索期间 results 保留旧值（防闪烁），需等**含目标文件**的 item；
+// ② 重复输入相同词不触发新搜索（React state 未变），必须先清空再输入
+await ev(`(() => {
+  const input = document.querySelector('.search input');
+  if (!input) return false;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(input, '');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+})()`);
+await sleep(300);
 const typed = await ev(
   `(() => { const input = document.querySelector('.search input'); if (!input) return false; const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; setter.call(input, ${JSON.stringify(TOKEN)}); input.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`,
 );
 if (!typed) throw new Error("无法输入搜索词");
 await waitFor(
-  `document.querySelectorAll('.search-dropdown .search-item').length >= 1`,
-  "搜索结果下拉出现",
+  `[...document.querySelectorAll('.search-dropdown .search-item')].some(i => i.textContent.includes('${NAME}'))`,
+  "搜索结果下拉出现（含目标文件）",
+  20000,
 );
 const ftsHit = await ev(
   `[...document.querySelectorAll('.search-dropdown .search-item')].some(i => i.textContent.includes('${NAME}'))`,

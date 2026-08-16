@@ -4,17 +4,32 @@ import { buildBridgeApi, injectPluginScript, type PluginBridgeApi } from "../cor
 import "./float.css";
 
 /**
- * 桌面半透明浮窗（快速待办）—— 插件自带前端加载器：
+ * 桌面半透明浮窗（快速工具）—— 插件自带前端加载器：
  * - 独立窗口（transparent + 无边框 + 桌面层不置顶），加载同一前端入口，按窗口 label 分流到这里
- * - 本组件只保留窗口外壳：float-mode body（透明背景）+ 加载 core-todos 插件自带前端
- *   （ui/index.js，与主窗口 PluginUiView 同一注入机制）并挂载到容器
- * - 浮窗内容（标题栏/输入/列表/锁定）全部在插件内；插件不可用时报错兜底
- * - 数据 = vault/data/todos/todos.json（core-todos 插件，事件同步）
+ * - **宿主统一外壳**：标题栏（拖拽区 + 位置锁定）+ 底部页签（待办 / 清单），
+ *   插件只渲染内容区（core-todos / core-checklists 的自带前端，与主窗口 PluginUiView
+ *   同一注入机制）；锁定时禁用拖拽与调整大小（todos 自绘标题栏已迁移到外壳，多插件共用）
+ * - 插件不可用时显示错误兜底
  */
+const TABS = [
+  { id: "core-todos", label: "待办" },
+  { id: "core-checklists", label: "清单" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
 export function FloatApp() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [vaultPath, setVaultPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabId>("core-todos");
+  const [locked, setLocked] = useState(() => {
+    try {
+      return localStorage.getItem("toolbox.float.locked") === "1";
+    } catch {
+      return false;
+    }
+  });
 
   /* 浮窗模式：body 背景透明（窗口自身 transparent，露出圆角外区域） */
   useEffect(() => {
@@ -37,26 +52,21 @@ export function FloatApp() {
     };
   }, []);
 
-  /* 加载 core-todos 插件自带前端并挂载（统一桥 + 浮窗专属 floatSetLocked） */
+  /* 加载当前页签插件自带前端并挂载（统一桥） */
   useEffect(() => {
     let disposed = false;
     let scriptUn: (() => void) | null = null;
     let styleEl: HTMLStyleElement | null = null;
     const w = window as unknown as Record<string, unknown>;
 
-    // 统一桥（call → plugin_call / on → plugin-event）+ 浮窗专属宿主命令
-    const api: PluginBridgeApi & {
-      floatSetLocked: (locked: boolean) => Promise<void>;
-    } = {
-      ...buildBridgeApi("core-todos", () => vaultPath),
-      floatSetLocked: (locked: boolean) => floatSetLocked(locked),
-    };
+    // 统一桥（call → plugin_call / on → plugin-event）
+    const api: PluginBridgeApi = buildBridgeApi(tab, () => vaultPath);
 
     (async () => {
       try {
         // 1. 样式注入（Vite 提取的 style.css；无则跳过）
         try {
-          const css = await pluginsReadFile("core-todos", "ui/style.css");
+          const css = await pluginsReadFile(tab, "ui/style.css");
           if (disposed) return;
           styleEl = document.createElement("style");
           styleEl.textContent = css;
@@ -65,12 +75,12 @@ export function FloatApp() {
           /* 无样式文件 */
         }
         // 2. 注入入口 JS（Blob URL script，顶层副作用注册 UI）
-        const code = await pluginsReadFile("core-todos", "ui/index.js");
+        const code = await pluginsReadFile(tab, "ui/index.js");
         if (disposed) return;
         scriptUn = await injectPluginScript(code);
         if (disposed) return;
         // 3. 取注册表并挂载
-        const reg = (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.["core-todos"];
+        const reg = (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[tab];
         if (!reg?.mount || !containerRef.current) {
           throw new Error("插件未注册界面（ui/index.js 缺少 __TB_PLUGIN_UI__ 注册）");
         }
@@ -83,16 +93,59 @@ export function FloatApp() {
 
     return () => {
       disposed = true;
-      (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.["core-todos"]?.unmount?.();
+      (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[tab]?.unmount?.();
       scriptUn?.();
       styleEl?.remove();
     };
-    // vaultPath 变化（工作区切换）时重建桥并重新挂载
+    // 页签/工作区变化时重建桥并重新挂载
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vaultPath]);
+  }, [tab, vaultPath]);
+
+  const toggleLock = () => {
+    const next = !locked;
+    setLocked(next);
+    try {
+      localStorage.setItem("toolbox.float.locked", next ? "1" : "0");
+    } catch {
+      /* 忽略 */
+    }
+    floatSetLocked(next).catch(() => undefined);
+  };
+
+  // 锁定后禁用拖拽：不给标题栏加 data-tauri-drag-region（锁按钮除外，需可点击）
+  const dragProps = locked ? {} : { "data-tauri-drag-region": true };
 
   return (
     <div className="float-window">
+      {/* 宿主标题栏：拖拽区 + 位置锁定（所有页签共用） */}
+      <div className="float-titlebar" {...dragProps}>
+        <span className="float-title" {...dragProps}>
+          {TABS.find((t) => t.id === tab)?.label}
+        </span>
+        <button
+          className={`float-lock${locked ? " on" : ""}`}
+          title={locked ? "已锁定位置 —— 点击解锁（可拖拽/调整大小）" : "锁定位置（防误拖）"}
+          aria-label={locked ? "解锁位置" : "锁定位置"}
+          aria-pressed={locked}
+          onClick={toggleLock}
+        >
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="5" y="11" width="14" height="9" rx="2" />
+            <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+          </svg>
+        </button>
+      </div>
+
+      {/* 插件内容区 */}
       {error ? (
         <div className="float-empty">
           插件界面加载失败
@@ -104,6 +157,20 @@ export function FloatApp() {
           style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
         />
       )}
+
+      {/* 底部页签：待办 / 清单 */}
+      <div className="float-tabs">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            className={`float-tab${tab === t.id ? " on" : ""}`}
+            onClick={() => setTab(t.id)}
+            aria-pressed={tab === t.id}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

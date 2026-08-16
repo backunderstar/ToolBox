@@ -222,3 +222,30 @@ body.float-mode {
 .float-clear:disabled {
   opacity: 0.4;
 }
+
+/* ---- 底部页签（待办 / 清单，宿主外壳） ---- */
+.float-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.float-tab {
+  flex: 1;
+  padding: 4px 0;
+  border-radius: 6px;
+  font-size: 11px;
+  color: rgba(236, 235, 231, 0.5);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.float-tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ecebe7;
+}
+.float-tab.on {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ecebe7;
+}
