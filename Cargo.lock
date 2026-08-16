@@ -4406,6 +4406,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tb-blog"
+version = "0.1.0"
+dependencies = [
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "tb-sdk",
+ "tiny_http",
+]
+
+[[package]]
 name = "tb-checklists"
 version = "0.1.0"
 dependencies = [

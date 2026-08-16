@@ -104,7 +104,7 @@ export function BlogView() {
   };
 
   const stopPreview = async () => {
-    await blogPreviewStop();
+    await blogPreviewStop(vault.path ?? "");
     setPreviewUrl(null);
   };
 

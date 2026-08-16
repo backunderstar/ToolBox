@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{ai, backup, blog, vault};
+use core::{ai, backup, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -88,7 +88,6 @@ pub fn run() {
         // 注意：托盘/菜单是 Tauri 2 核心能力（tauri::tray / tauri::menu），无需额外插件
         // 插件命令签名要求 Mutex<PluginManager>（见 plugins/mod.rs 的 State 参数）
         .manage(Mutex::new(PluginManager::default()))
-        .manage(blog::PreviewState::default())
         .on_window_event(|window, event| {
             // 关窗最小化到托盘：主窗口关闭请求 → 阻止并隐藏（托盘"退出"时放行）
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -119,11 +118,6 @@ pub fn run() {
             ai::ai_chat,
             ai::ai_chat_stream,
             ai::ai_test,
-            blog::blog_list,
-            blog::blog_generate,
-            blog::blog_preview_start,
-            blog::blog_preview_stop,
-            blog::blog_open_folder,
             backup::backup_now_cmd,
             backup::backup_config_get,
             backup::backup_config_set,

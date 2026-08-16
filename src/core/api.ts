@@ -163,7 +163,7 @@ export interface AiChunk {
 }
 export const aiTest = () => invoke<string>("ai_test");
 
-/* ---- M7 博客 ---- */
+/* ---- M7 博客发布（经 core-blog 原生插件） ---- */
 
 export interface PostMeta {
   path: string;
@@ -190,14 +190,15 @@ export interface BlogGenerateResult {
 }
 
 export const blogList = (vault: string) =>
-  invoke<BlogListResult>("blog_list", { vault });
+  pluginCall(vault, "core-blog", "blog.list", {}) as Promise<BlogListResult>;
 export const blogGenerate = (vault: string, siteTitle: string) =>
-  invoke<BlogGenerateResult>("blog_generate", { vault, siteTitle });
+  pluginCall(vault, "core-blog", "blog.generate", { siteTitle }) as Promise<BlogGenerateResult>;
 export const blogPreviewStart = (vault: string) =>
-  invoke<string>("blog_preview_start", { vault });
-export const blogPreviewStop = () => invoke<void>("blog_preview_stop");
+  pluginCall(vault, "core-blog", "blog.previewStart", {}) as Promise<string>;
+export const blogPreviewStop = (vault: string) =>
+  pluginCall(vault, "core-blog", "blog.previewStop", {}) as Promise<void>;
 export const blogOpenFolder = (vault: string) =>
-  invoke<void>("blog_open_folder", { vault });
+  pluginCall(vault, "core-blog", "blog.openFolder", {}) as Promise<void>;
 
 /* ---- 项目文件管理（经 core-projects 原生插件） ---- */
 
