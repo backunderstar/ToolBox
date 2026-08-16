@@ -3,26 +3,12 @@
 // 2) 点击 → App 动态路由 → 插件自带前端挂载
 // 3) 界面内实时统计功能
 // 4) Python 进程插件（py-tools，vendored 第三方库）加载与命令调用
-import { findMainPage, connect, sleep } from "./cdp-lib.mjs";
+import { findMainPage, connect, sleep , helpers } from "./cdp-lib.mjs";
 const PORT = process.argv[2] ?? "9226";
 const page = await findMainPage(PORT);
 if (!page) { console.error("no main page"); process.exit(1); }
 const { ev } = await connect(page);
-const waitFor = async (expr, desc, timeoutMs = 30000, interval = 400) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await ev(expr)) return true;
-    await sleep(interval);
-  }
-  throw new Error(`超时等待: ${desc}`);
-};
-const clickText = async (selector, text) => {
-  const ok = await ev(
-    `(() => { const els = [...document.querySelectorAll(${JSON.stringify(selector)})]; const el = els.find(e => e.textContent.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`
-  );
-  if (!ok) throw new Error(`未找到可点元素 ${selector}「${text}」`);
-};
-const log = (s) => console.log(s);
+const { waitFor, clickText, log } = helpers(ev);
 
 await sleep(800);
 
@@ -40,7 +26,8 @@ log("PASS 点击导航 → App 动态路由 → 插件自带前端挂载");
 // ---- 3. 界面内实时统计 ----
 const setText = await ev(`(() => { const ta = document.querySelector('.text-stats-input'); if (!ta) return false; const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; setter.call(ta, '你好 world\\n第二行\\n\\n第三段'); ta.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
 if (!setText) throw new Error("无法写入统计输入框");
-await sleep(300);
+// UI 走 400ms 防抖后调 analyze 命令（api.call → 本地注册表），等足再断言
+await sleep(700);
 const vals = await ev(`(() => { const spans = [...document.querySelectorAll('.stat-value')]; return spans.map(s => s.textContent).join(','); })()`);
 log(`PASS 界面内实时统计（字符/词/行/段 = ${vals}）`);
 if (!vals.startsWith("17")) throw new Error(`字符数应含 17（你好 world\n第二行\n\n第三段）: ${vals}`);

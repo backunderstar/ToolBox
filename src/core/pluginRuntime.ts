@@ -48,6 +48,40 @@ export interface BuildBridgeOptions {
   host?: PluginHostApi;
 }
 
+/** webview 插件本地命令注册表（pluginId → commandId → run）。
+ *
+ * **为什么需要**：Rust 的 `plugin_call` 只路由 native/process 插件（webview
+ * 插件在 Rust 侧没有命令分发——"webview 插件请由前端调用"）。但 webview 插件
+ * 的**自带前端 UI**（PluginUiView 挂载，api 由 buildBridgeApi 构造）与命令注册式
+ * 入口（main.js）共享同一窗口：`api.call("analyze")` 若直接走 plugin_call 会被
+ * Rust 拒绝。这里维护一份"本地注册表"：webview 插件经 `api.app.registerCommand`
+ * 注册的命令写入此表，`buildBridgeApi.call` 同插件调用时**先查本地表**，命中即
+ * 本地执行；未命中才走统一桥（跨调 native/process 插件）。UI 与命令注册式由此打通。
+ */
+const localCommands = new Map<
+  string,
+  Map<string, (args: unknown) => unknown | Promise<unknown>>
+>();
+
+/** 注册 webview 插件命令（plugins.tsx 的 registerCommand 调用） */
+export function registerLocalCommand(
+  pluginId: string,
+  id: string,
+  run: (args: unknown) => unknown | Promise<unknown>
+): void {
+  let m = localCommands.get(pluginId);
+  if (!m) {
+    m = new Map();
+    localCommands.set(pluginId, m);
+  }
+  m.set(id, run);
+}
+
+/** 清空某插件的本地命令（插件重载/卸载时调用，防旧回调残留） */
+export function clearLocalCommands(pluginId: string): void {
+  localCommands.delete(pluginId);
+}
+
 /** 构造统一 api 桥（vault 由调用方提供 getter） */
 export function buildBridgeApi(
   pluginId: string,
@@ -58,6 +92,17 @@ export function buildBridgeApi(
   return {
     pluginId,
     call: (command, args, targetPluginId) => {
+      // webview 插件本地命令优先（同插件调用；targetPluginId 指定其他插件时走桥）
+      if (!targetPluginId || targetPluginId === pluginId) {
+        const run = localCommands.get(pluginId)?.get(command);
+        if (run) {
+          try {
+            return Promise.resolve(run(args ?? {}));
+          } catch (e) {
+            return Promise.reject(e instanceof Error ? e : new Error(String(e)));
+          }
+        }
+      }
       const v = vault();
       if (!v) return Promise.reject(new Error("工作区未设置"));
       // args 缺省 {}（undefined 会被 invoke 序列化丢弃导致 Rust 侧缺参）

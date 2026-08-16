@@ -20,7 +20,13 @@ import {
   pluginsUninstall,
 } from "./api";
 import type { PluginInfo, PluginNav } from "./api";
-import { buildBridgeApi, injectPluginScript, type PluginBridgeApi } from "./pluginRuntime";
+import {
+  buildBridgeApi,
+  injectPluginScript,
+  registerLocalCommand,
+  clearLocalCommands,
+  type PluginBridgeApi,
+} from "./pluginRuntime";
 import { useVault } from "./vault";
 
 /**
@@ -135,6 +141,9 @@ export function PluginProvider({ children }: { children: ReactNode }) {
               return;
             }
             rt.commands.set(cmd.id, cmd);
+            // 同步写入共享本地注册表：插件自带前端 UI 经 api.call 也能调本命令
+            // （plugin_call 只路由 native/process，webview 命令靠这里本地执行）
+            registerLocalCommand(pluginId, cmd.id, (args) => cmd.run(args));
           },
         },
         fs: {
@@ -182,6 +191,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       // 重载时清空命令与事件监听，避免旧回调残留/重复注册
       rt.commands.clear();
       rt.listeners.clear();
+      clearLocalCommands(plugin.id);
       try {
         // 插件装在全局目录（%APPDATA%/com.toolbox.desktop/plugins/），
         // 由 Rust 侧限定在插件目录内读取入口文件。

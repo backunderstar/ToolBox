@@ -2,20 +2,12 @@
 // 1) 顶栏搜索恢复可用 → 输入触发全局 FTS（vault 根所有 .md）
 // 2) 结果下拉出现，含 FTS 命中与 py-tools 搜索提供者命中（source 徽章，文件名匹配）
 // 3) 点击结果 → 打开文件（笔记视图）
-import { findMainPage, connect, sleep } from "./cdp-lib.mjs";
+import { findMainPage, connect, sleep , helpers } from "./cdp-lib.mjs";
 const PORT = process.argv[2] ?? "9226";
 const page = await findMainPage(PORT);
 if (!page) { console.error("no main page"); process.exit(1); }
 const { ev } = await connect(page);
-const waitFor = async (expr, desc, timeoutMs = 30000, interval = 400) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await ev(expr)) return true;
-    await sleep(interval);
-  }
-  throw new Error(`超时等待: ${desc}`);
-};
-const log = (s) => console.log(s);
+const { waitFor, clickText, log } = helpers(ev);
 
 await sleep(800);
 // 搜索词 = 文件名片段：FTS（文件名/内容）与 py-tools provider（文件名匹配）都能命中

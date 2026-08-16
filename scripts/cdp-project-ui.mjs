@@ -1,24 +1,10 @@
 // cdp-project-ui.mjs — core-projects 插件自带前端 E2E：列表/新建/详情/归档
-import { findMainPage, connect, sleep } from "./cdp-lib.mjs";
+import { findMainPage, connect, sleep , helpers } from "./cdp-lib.mjs";
 const PORT = process.argv[2] ?? "9226";
 const page = await findMainPage(PORT);
 if (!page) { console.error("no main page"); process.exit(1); }
 const { ev } = await connect(page);
-const waitFor = async (expr, desc, timeoutMs = 25000, interval = 300) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await ev(expr)) return true;
-    await sleep(interval);
-  }
-  throw new Error(`超时等待: ${desc}`);
-};
-const clickText = async (selector, text) => {
-  const ok = await ev(
-    `(() => { const els = [...document.querySelectorAll(${JSON.stringify(selector)})]; const el = els.find(e => e.textContent.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`
-  );
-  if (!ok) throw new Error(`未找到可点元素 ${selector}「${text}」`);
-};
-const log = (s) => console.log(s);
+const { waitFor, clickText, log } = helpers(ev);
 
 await sleep(600);
 

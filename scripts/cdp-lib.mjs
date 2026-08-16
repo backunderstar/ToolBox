@@ -61,3 +61,27 @@ export async function connect(page) {
   await send("Runtime.enable");
   return { ws, ev };
 }
+
+/** E2E 公共辅助（绑定 ev 求值器）：waitFor / clickText / log。
+ * 各脚本统一从这里取，不再各自复制一份（历史：多数脚本各 15 行样板）。 */
+export function helpers(ev) {
+  return {
+    /** 轮询等待表达式为真（默认 30s/400ms） */
+    waitFor: async (expr, desc, timeoutMs = 30000, interval = 400) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if (await ev(expr)) return true;
+        await sleep(interval);
+      }
+      throw new Error(`超时等待: ${desc}`);
+    },
+    /** 点击文本匹配的元素（selector 内第一个 textContent === text 的） */
+    clickText: async (selector, text) => {
+      const ok = await ev(
+        `(() => { const els = [...document.querySelectorAll(${JSON.stringify(selector)})]; const el = els.find(e => e.textContent.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`
+      );
+      if (!ok) throw new Error(`未找到可点元素 ${selector}「${text}」`);
+    },
+    log: (s) => console.log(s),
+  };
+}

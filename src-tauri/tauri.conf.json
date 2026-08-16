@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build:core:release && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -28,8 +28,12 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "resources": ["resources/_core"],
+    "targets": [
+      "nsis"
+    ],
+    "resources": [
+      "resources/_core"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

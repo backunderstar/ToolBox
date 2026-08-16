@@ -1,22 +1,10 @@
 // cdp-nav-full.mjs — 导航栏全配置 E2E：默认渲染/折叠/新建分组/拖拽跨组/改标签/隐藏/恢复默认
-import { findMainPage, connect, sleep } from "./cdp-lib.mjs";
+import { findMainPage, connect, sleep , helpers } from "./cdp-lib.mjs";
 const page = await findMainPage("9226");
 const { ev } = await connect(page);
-const waitFor = async (expr, desc, timeoutMs = 15000, interval = 300) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await ev(expr)) return true;
-    await sleep(interval);
-  }
-  throw new Error(`超时等待: ${desc}`);
-};
-const log = (s) => console.log(s);
+const { waitFor, clickText, log } = helpers(ev);
 const navLabels = () => ev(`[...document.querySelectorAll('.sidebar .nav-item span')].map(e => e.textContent.trim())`);
 const groupLabels = () => ev(`[...document.querySelectorAll('.sidebar .nav-group-head .nav-label')].map(e => e.textContent.trim())`);
-const clickText = async (selector, text) => {
-  const ok = await ev(`(() => { const els = [...document.querySelectorAll(${JSON.stringify(selector)})]; const el = els.find(e => e.textContent.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`);
-  if (!ok) throw new Error(`未找到 ${selector}「${text}」`);
-};
 
 await sleep(1500);
 

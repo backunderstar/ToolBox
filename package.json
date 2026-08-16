@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri",
     "build:core": "node scripts/build-core.mjs",
     "build:core:release": "node scripts/build-core.mjs --release",
+    "version:sync": "node scripts/sync-version.mjs",
     "sync:vditor": "node scripts/sync-vditor.mjs"
   },
   "dependencies": {

@@ -4,7 +4,7 @@
 // - --release（pnpm build:core:release）：release DLL + ui → src-tauri/resources/_core/<id>/
 //   打进安装包（bundle.resources），安装后宿主 ensure_core_plugins 部署到 %APPDATA%
 import { execSync } from "node:child_process";
-import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,9 @@ import react from "@vitejs/plugin-react";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isRelease = process.argv.includes("--release");
+// 版本单源：插件 manifest 的 version 读自 package.json（升版只改一处，见 sync-version.mjs）
+const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+const VERSION = pkg.version;
 
 const PLUGINS = [
   {
@@ -74,7 +77,14 @@ const crateName = (p) => `tb-${p.id.slice(5)}`;
 async function buildPluginUi(p) {
   const uiDir = path.join(root, "core-plugins", p.id.slice(5), "ui");
   const entry = path.join(uiDir, "index.tsx");
-  if (!(await exists(entry))) return null; // 无自带前端
+  if (!(await exists(entry))) {
+    // 声明了 ui 却缺源文件：静默跳过会部署"声明 ui 但无产物"的坏清单，
+    // 运行时挂载失败且难排查——直接抛错暴露问题
+    if (p.ui) {
+      throw new Error(`[build-core] ${p.id} 声明了 ui.entry 但缺少源码: ${entry}`);
+    }
+    return null; // 未声明 ui 的正常插件
+  }
   const outDir = path.join(root, "target", "plugin-ui", p.id);
   rmSync(outDir, { recursive: true, force: true });
   await viteBuild({
@@ -150,7 +160,7 @@ for (const p of PLUGINS) {
   const manifest = {
     id: p.id,
     name: p.name,
-    version: "0.1.0",
+    version: VERSION,
     runtime: "native",
     command: [p.dll],
     description: p.description,
@@ -162,3 +172,16 @@ for (const p of PLUGINS) {
   writeFileSync(path.join(target, "plugin.json"), JSON.stringify(manifest, null, 2), "utf8");
   console.log(`[build-core] 已部署: ${p.id} → ${target}`);
 }
+
+// 部署后自检：每个插件目录必须有 plugin.json 与 DLL（漏部署/坏清单应在构建期暴露，
+// 而不是等到安装包跑起来才发现"核心插件缺失"）。
+for (const p of PLUGINS) {
+  const target = path.join(coreRoot, p.id);
+  if (!(await exists(path.join(target, "plugin.json")))) {
+    throw new Error(`[build-core] 自检失败: ${p.id}/plugin.json 缺失（部署异常）`);
+  }
+  if (!(await exists(path.join(target, p.dll)))) {
+    throw new Error(`[build-core] 自检失败: ${p.id}/${p.dll} 缺失（DLL 未构建）`);
+  }
+}
+console.log(`[build-core] 自检通过: ${PLUGINS.length} 个插件均含 plugin.json + DLL`);
