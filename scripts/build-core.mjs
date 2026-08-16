@@ -93,6 +93,7 @@ for (const p of PLUGINS) {
     command: [p.dll],
     description: p.description,
     searchProvider: p.searchProvider ?? false,
+    system: p.system ?? false,
     nav: p.nav ?? [],
   };
   writeFileSync(path.join(target, "plugin.json"), JSON.stringify(manifest, null, 2), "utf8");
