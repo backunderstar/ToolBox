@@ -151,6 +151,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        // 自动更新：检查/下载/安装新版本（发布包在 GitHub Releases，见 tauri.conf.json updater）
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(float_hotkey_plugin)
         // 注意：托盘/菜单是 Tauri 2 核心能力（tauri::tray / tauri::menu），无需额外插件
         // 插件命令签名要求 Mutex<PluginManager>（见 plugins/mod.rs 的 State 参数）

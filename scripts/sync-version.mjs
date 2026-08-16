@@ -24,8 +24,8 @@ const v = pkg.version;
   const fp = path.join(root, "src/core/version.ts");
   const body = `// 应用版本与里程碑标识：由 scripts/sync-version.mjs 从 package.json 同步（版本单源）。
 export const APP_VERSION = "${v}";
-/** 顶栏 tag 与「关于」展示的统一文案 */
-export const APP_TAG = "v${v} · M1–M8 + 备份";
+/** 顶栏 tag 与「关于」展示的统一文案（用户决策：只显示版本号，不带里程碑文案） */
+export const APP_TAG = "v${v}";
 `;
   writeFileSync(fp, body, "utf8");
   console.log("[sync-version] src/core/version.ts ->", v);

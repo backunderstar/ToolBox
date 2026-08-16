@@ -20,6 +20,7 @@ import { IconFolder, IconPlus, IconTrash } from "./icons";
 import { APP_TAG } from "../core/version";
 import { onRowKeyDown } from "../core/keyboard";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 
 interface SettingsViewProps {
   themeId: string;
@@ -48,6 +49,31 @@ export function SettingsView({
   const [confirmDelTheme, setConfirmDelTheme] = useState<ThemeDef | null>(null);
   /* 删除/新建自定义主题后强制重渲染（listThemes 读 localStorage） */
   const [, force] = useReducer((x: number) => x + 1, 0);
+  /* 自动更新状态：idle 未检查 / checking 检查中 / latest 已最新 / installing 下载安装中 /
+     done 安装完成待重启 / error 失败 */
+  const [updateStatus, setUpdateStatus] = useState<
+    "idle" | "checking" | "latest" | "installing" | "done" | "error"
+  >("idle");
+  const [updateVersion, setUpdateVersion] = useState("");
+  const [updateErr, setUpdateErr] = useState("");
+
+  const onCheckUpdate = async () => {
+    try {
+      setUpdateStatus("checking");
+      const update = await checkUpdate();
+      if (!update) {
+        setUpdateStatus("latest");
+        return;
+      }
+      setUpdateVersion(update.version);
+      setUpdateStatus("installing");
+      await update.downloadAndInstall();
+      setUpdateStatus("done");
+    } catch (e) {
+      setUpdateStatus("error");
+      setUpdateErr(String(e));
+    }
+  };
 
   const themes = listThemes();
   const current = findTheme(themeId);
@@ -237,6 +263,30 @@ export function SettingsView({
               {ping ? ping.message : "连接中…"}
             </span>
           </div>
+          <div className="settings-row">
+            <span className="settings-label">自动更新</span>
+            <span className="settings-value">
+              {updateStatus === "idle" && "从 GitHub Releases 检测新版本"}
+              {updateStatus === "checking" && "正在检查…"}
+              {updateStatus === "latest" && "已是最新版本"}
+              {updateStatus === "installing" && `发现 v${updateVersion}，正在下载安装…`}
+              {updateStatus === "done" && `v${updateVersion} 已安装，请重启应用生效`}
+              {updateStatus === "error" && "检查失败（未配置发布源或网络异常）"}
+            </span>
+            <button
+              className="btn-ghost sm"
+              onClick={() => void onCheckUpdate()}
+              disabled={updateStatus === "checking" || updateStatus === "installing"}
+              title="检查 GitHub Releases 是否有新版本"
+            >
+              {updateStatus === "checking" ? "检查中…" : updateStatus === "installing" ? "安装中…" : "检查更新"}
+            </button>
+          </div>
+          {updateStatus === "error" && updateErr && (
+            <div className="settings-value warn" style={{ fontSize: 11, marginTop: 4 }}>
+              {updateErr.slice(0, 120)}
+            </div>
+          )}
         </section>
       </div>
       <ConfirmDialog

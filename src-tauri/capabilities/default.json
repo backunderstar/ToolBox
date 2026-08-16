@@ -1,12 +1,13 @@
 {
   "identifier": "default",
-  "description": "主窗口默认能力：基础 IPC + 标题栏主题同步 + 文件夹选择对话框",
+  "description": "主窗口默认能力：基础 IPC + 标题栏主题同步 + 文件夹选择对话框 + 自动更新检查",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-set-theme",
     "dialog:default",
     "opener:default",
-    "window-state:default"
+    "window-state:default",
+    "updater:default"
   ]
 }

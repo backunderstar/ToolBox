@@ -18,10 +18,28 @@ pnpm tauri dev        # 启动开发模式（弹窗）
 
 ## 当前状态
 
-- **框架（已完成）**：应用外壳（顶栏/侧栏/状态栏）、设计令牌与亮暗主题（含原生标题栏同步）、系统托盘常驻、桌面半透明浮窗（快速待办）、自动备份、全文搜索（SQLite FTS5）、导航栏全配置化（分组/排序/标签/图标/隐藏均可配）。
+- **框架（已完成）**：应用外壳（顶栏/侧栏/状态栏）、设计令牌与亮暗主题（含原生标题栏同步）、系统托盘常驻、桌面半透明浮窗（快速待办 + 全局快捷键 Alt+Q）、自动备份、全文搜索（SQLite FTS5 + 拼音首字母/全拼 + 清单待办内容索引）、导航栏全配置化（分组/排序/标签/图标/隐藏均可配）、自动更新（Tauri updater + GitHub Releases）。
 - **6 个核心插件（已完成，全部自带前端）**：笔记（Vditor 即时渲染 + 反链）、待办（浮窗数据层）、清单（打卡/进度/笔记关联）、项目文件管理、博客发布（SSG 生成/内置预览）、AI 整理（OpenAI 兼容对话 + SSE 流式 + 笔记问答 RAG）。
-- 插件系统：统一 api 桥（call / on / context / nav / host.search），原生 DLL（FFI）+ 进程（JSON-RPC）+ webview（JS）三类运行时。
+- 插件系统：统一 api 桥（call / on / context / nav / host.search），原生 DLL（FFI）+ 进程（JSON-RPC）+ webview（JS）三类运行时；核心插件可卸载（物理删除 + 标记防复活）、可界面安装（.zip / 目录）。
 - **已移除**：数据工具页、记录功能、Git 版本历史（用户决策，不恢复）。
+
+## 发布与自动更新
+
+应用内「设置 → 关于 → 检查更新」从 GitHub Releases 拉取新版本（Tauri updater）。
+发布链路：**打 tag → GitHub Actions 构建 → 自动发布**。
+
+```bash
+# 1) 改 package.json 的 version → 2) 同步到各处 → 3) 提交打 tag → 4) push 触发 CI
+pnpm version:sync                    # 版本单源：tauri.conf.json / version.ts / 8 个 Cargo.toml
+git add -A && git commit -m "v0.1.1"
+git tag v0.1.1 && git push origin v0.1.1   # 触发 CI（.github/workflows/build-release.yml）
+```
+
+首次使用前配置（见 workflow 文件头注释）：
+1. 仓库 `Settings → Secrets`：`TAURI_SIGNING_PRIVATE_KEY`（`%USERPROFILE%\.tauri\toolbox-updater.key` 内容）、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+2. `src-tauri/tauri.conf.json` → `plugins.updater.endpoints`：把 `YOUR_NAME/YOUR_REPO` 替换为真实仓库
+
+
 
 ## 目录
 
