@@ -205,7 +205,8 @@ Vault（用户自选的工作区目录，纯数据）
 | ✅ 已完成 | 插件事件桥 | 进程插件 Notification → 纯 mpsc 事件总线（ProcessPlugin 不接触 tauri 类型，规避 0xC0000139 加载崩溃路径）→ 前端 `plugin-event` → 插件页实时事件日志；csv-tool 增加 eventTest 演示命令 |
 | ✅ 已完成 | 插件全局化 | 插件从工作区 `vault/plugins` 迁到全局 `%APPDATA%/com.toolbox.desktop/plugins/`（插件是工具不属于数据）；启用状态全局统一；旧布局自动迁移（复制 + 工作区目录回收站清理）；webview 入口改由 `plugins_read_file` 限定目录读取 |
 | ✅ 已完成 | **核心插件 cdylib 化（阶段 0）** | Cargo workspace（宿主 + tb-sdk + core-plugins/*）；tb-sdk 定义 C ABI 契约（tb_abi_version/tb_create/tb_call/tb_free_string/tb_destroy + TbHostApi 宿主回灌含 ctx）；libloading 加载器 + `_core` 目录 + 统一 plugin_call 路由；records（记录）下沉为原生插件（CRUD/事件/搜索提供者，真实 DLL 集成测试）；备份改造（恢复到备份点 + %APPDATA% 配置/插件存档）；搜索提供者机制（manifest searchProvider，search_all 聚合命中）；删除版本历史 |
-| ⏳ 进行中 | **核心插件 cdylib 化（阶段 1）** | 迁移 笔记（最大）+ 待办清单 + 项目 为原生核心插件；侧边栏/视图注册表完全动态化 |
+| ⏳ 进行中 | **核心插件 cdylib 化（阶段 1）** | 迁移 笔记（最大）+ 待办清单 + 项目 为原生核心插件；侧边栏/视图注册表完全动态化（禁用即消失） |
+| ✅ 已完成 | **核心插件 cdylib 化（阶段 1）** | 笔记/待办/清单/项目 全部迁移为原生核心插件（5 个 cdylib 插件：records/notes/todos/checklists/projects）；宿主 core/ 只余 ai/blog/backup/search/vault；核心插件**默认启用**（显式禁用记入 disabled 集合，旧格式兼容）；侧边栏/视图注册表完全动态化（入口由插件 nav 声明提供，按 group 归组，禁用即消失 + 守卫占位）；api.ts fs*/todos*/projects* 透明转发 plugin_call；E2E 9/9 |
 
 ---
 
@@ -214,9 +215,13 @@ Vault（用户自选的工作区目录，纯数据）
 ```
 ToolBox/
 ├── Cargo.toml              # Rust workspace（宿主 + tb-sdk + core-plugins/*）
-├── tb-sdk/                 # 核心插件 SDK：C ABI 契约 + tb_plugin! 样板宏
-├── core-plugins/           # 核心插件（cdylib，随应用分发）
-│   └── records/            # 记录（已插件化；笔记/清单/项目 迁移中）
+├── tb-sdk/                 # 核心插件 SDK：C ABI 契约 + tb_plugin! 样板宏 + 路径安全
+├── core-plugins/           # 核心插件（cdylib，随应用分发；共 5 个）
+│   ├── records/            # 记录（data/records CRUD + 搜索提供者）
+│   ├── notes/              # 笔记（notes/ 文件操作）
+│   ├── todos/              # 待办（浮窗数据层 + todos-changed）
+│   ├── checklists/         # 清单（data/checklists CRUD）
+│   └── projects/           # 项目（projects/ 目录 + 归档 + 打开）
 ├── src-tauri/              # Tauri 主进程（宿主框架 + 插件宿主）
 │   ├── src/
 │   │   ├── main.rs / lib.rs
