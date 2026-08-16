@@ -71,7 +71,7 @@ const IconSparkle = (p: { width?: number; height?: number }) =>
       <path d="M12 3.5l1.9 5.6 5.6 1.9-5.6 1.9L12 18.5l-1.9-5.6L4.5 11l5.6-1.9z" />
       <path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />
     </>,
-    p.width ?? 26
+    p.width ?? 26,
   );
 
 /* ---------------- 主组件 ---------------- */
@@ -127,10 +127,7 @@ export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
     countRef.current += 1;
   };
   const scrollToBottom = () =>
-    setTimeout(
-      () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
-      50
-    );
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
   /**
    * 流式对话公共流程：建占位 assistant 消息 → 订阅 ai-chunk 逐段累积 →
@@ -257,20 +254,13 @@ export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
       for (const h of top) {
         try {
           // 跨插件：core-notes 读取命中文件内容（最多 1500 字符）
-          const text = (await api.call(
-            "notes.read",
-            { rel: h.path },
-            "core-notes"
-          )) as string;
+          const text = (await api.call("notes.read", { rel: h.path }, "core-notes")) as string;
           chunks.push(`【${h.path}】\n${text.slice(0, 1500)}`);
         } catch {
           /* 跳过读取失败 */
         }
       }
-      const context =
-        chunks.length > 0
-          ? chunks.join("\n\n---\n\n")
-          : "（未检索到相关笔记）";
+      const context = chunks.length > 0 ? chunks.join("\n\n---\n\n") : "（未检索到相关笔记）";
       const messages: ChatMessage[] = [
         {
           role: "system",
@@ -294,9 +284,7 @@ export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
       <header className="view-header">
         <div>
           <h1>AI 整理</h1>
-          <p className="view-sub">
-            对话、总结笔记、问答检索（需在设置页配置 AI 提供商）
-          </p>
+          <p className="view-sub">对话、总结笔记、问答检索（需在设置页配置 AI 提供商）</p>
         </div>
         <div className="view-actions">
           {/* 宿主 nav 桥不可用时（如浮窗）隐藏跳转按钮 */}
@@ -335,13 +323,25 @@ export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
 
         <div className="ai-actions">
           <div className="ai-presets">
-            <button className="btn btn-sm" onClick={() => preset("summary")} disabled={!currentNote || busy}>
+            <button
+              className="btn btn-sm"
+              onClick={() => preset("summary")}
+              disabled={!currentNote || busy}
+            >
               总结当前笔记
             </button>
-            <button className="btn btn-sm" onClick={() => preset("outline")} disabled={!currentNote || busy}>
+            <button
+              className="btn btn-sm"
+              onClick={() => preset("outline")}
+              disabled={!currentNote || busy}
+            >
               提炼大纲
             </button>
-            <button className="btn btn-sm" onClick={() => preset("polish")} disabled={!currentNote || busy}>
+            <button
+              className="btn btn-sm"
+              onClick={() => preset("polish")}
+              disabled={!currentNote || busy}
+            >
               润色
             </button>
           </div>
@@ -359,10 +359,18 @@ export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
               }}
               placeholder="提问，或输入问题后点「笔记问答」检索笔记回答…"
             />
-            <button className="btn btn-sm" onClick={() => void askWithRag()} disabled={busy || !input.trim()}>
+            <button
+              className="btn btn-sm"
+              onClick={() => void askWithRag()}
+              disabled={busy || !input.trim()}
+            >
               笔记问答
             </button>
-            <button className="btn btn-primary-ai" onClick={sendFromInput} disabled={busy || !input.trim()}>
+            <button
+              className="btn btn-primary-ai"
+              onClick={sendFromInput}
+              disabled={busy || !input.trim()}
+            >
               {busy ? "思考中…" : "发送"}
             </button>
           </div>

@@ -104,7 +104,7 @@ export function BlogPluginUi({ api }: { api: PluginUiApi }) {
       const raw = (await api.call("notes.read", { rel: p.path }, "core-notes")) as string;
       const next = raw.replace(
         /^(status\s*:\s*)(\S+)/m,
-        (_, k: string, v: string) => `${k}${v === "published" ? "draft" : "published"}`
+        (_, k: string, v: string) => `${k}${v === "published" ? "draft" : "published"}`,
       );
       if (next === raw) {
         show(`「${p.title}」没有 status 字段，无法切换发布状态`, true);
@@ -146,10 +146,18 @@ export function BlogPluginUi({ api }: { api: PluginUiApi }) {
         <button className="btn" onClick={() => void generate()} disabled={busy}>
           {busy ? "处理中…" : "生成站点"}
         </button>
-        <button className="btn" onClick={() => void preview()} disabled={busy || result?.siteGeneratedAt == null}>
+        <button
+          className="btn"
+          onClick={() => void preview()}
+          disabled={busy || result?.siteGeneratedAt == null}
+        >
           预览
         </button>
-        <button className="btn" onClick={() => void openFolder()} disabled={result?.siteGeneratedAt == null}>
+        <button
+          className="btn"
+          onClick={() => void openFolder()}
+          disabled={result?.siteGeneratedAt == null}
+        >
           打开站点目录
         </button>
       </div>
@@ -167,8 +175,12 @@ export function BlogPluginUi({ api }: { api: PluginUiApi }) {
               <div className="blog-ui-title">{p.title}</div>
               <div className="blog-ui-meta">
                 {p.date} · {p.tags.length ? p.tags.join("、") : "无标签"}
-                {p.status === "published" && <span className="badge badge-status-ready">已发布</span>}
-                {p.status !== "published" && <span className="badge badge-status-stopped">草稿</span>}
+                {p.status === "published" && (
+                  <span className="badge badge-status-ready">已发布</span>
+                )}
+                {p.status !== "published" && (
+                  <span className="badge badge-status-stopped">草稿</span>
+                )}
               </div>
               <button className="btn btn-sm" onClick={() => void toggleStatus(p)}>
                 {p.status === "published" ? "撤回草稿" : "发布"}

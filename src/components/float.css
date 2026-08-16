@@ -55,7 +55,9 @@ body.float-mode {
   height: 22px;
   border-radius: 6px;
   color: rgba(236, 235, 231, 0.45);
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 .float-lock:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -184,7 +186,10 @@ body.float-mode {
   border-radius: 6px;
   color: rgba(236, 235, 231, 0.35);
   opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
 }
 .float-item:hover .float-del {
   opacity: 1;
@@ -206,7 +211,9 @@ body.float-mode {
   border-radius: 7px;
   font-size: 11px;
   color: rgba(236, 235, 231, 0.5);
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 .float-clear:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.07);

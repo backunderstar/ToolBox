@@ -56,10 +56,7 @@ export function useVault(): VaultContextValue {
 
 export function VaultProvider({ children }: { children: ReactNode }) {
   // 调试模式：?mock=1 时在浏览器（无 Tauri）中也能渲染笔记界面
-  const isMock = useMemo(
-    () => new URLSearchParams(window.location.search).has("mock"),
-    []
-  );
+  const isMock = useMemo(() => new URLSearchParams(window.location.search).has("mock"), []);
   const isMockRef = useRef(isMock);
   isMockRef.current = isMock;
 
@@ -83,16 +80,19 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const flash = useCallback((msg: string) => setStatus(msg), []);
 
-  const refresh = useCallback(async (vaultPath?: string) => {
-    const p = vaultPath ?? stateRef.current.path;
-    if (!p) return;
-    try {
-      const list = await fsList(p);
-      setFiles(list);
-    } catch (e) {
-      flash(String(e));
-    }
-  }, [flash]);
+  const refresh = useCallback(
+    async (vaultPath?: string) => {
+      const p = vaultPath ?? stateRef.current.path;
+      if (!p) return;
+      try {
+        const list = await fsList(p);
+        setFiles(list);
+      } catch (e) {
+        flash(String(e));
+      }
+    },
+    [flash],
+  );
 
   const save = useCallback(
     async (manual = false) => {
@@ -118,7 +118,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         flash(String(e));
       }
     },
-    [flash]
+    [flash],
   );
 
   const openFile = useCallback(
@@ -144,7 +144,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         flash(String(e));
       }
     },
-    [save, flash]
+    [save, flash],
   );
 
   const pickVault = useCallback(async () => {
@@ -176,10 +176,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     if (!p) return;
     // 时间戳到毫秒（17 位 YYYYMMDDHHmmssSSS）：秒级粒度连续新建会撞名
     // （fsCreate 冲突虽然被捕获并 flash，但体验差）
-    const ts = new Date()
-      .toISOString()
-      .replace(/[-:T]/g, "")
-      .slice(0, 17);
+    const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 17);
     // 笔记统一存放在工作区 notes/ 目录下
     const rel = `notes/笔记-${ts}.md`;
     try {
@@ -210,7 +207,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         flash(String(e));
       }
     },
-    [refresh, flash]
+    [refresh, flash],
   );
 
   const renameFile = useCallback(
@@ -224,11 +221,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         flash(`文件名包含非法字符: ${name}`);
         return;
       }
-      if (
-        stateRef.current.files.some(
-          (f) => f.path === to && f.path !== from
-        )
-      ) {
+      if (stateRef.current.files.some((f) => f.path === to && f.path !== from)) {
         flash(`同名文件已存在: ${to}`);
         return;
       }
@@ -241,7 +234,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         flash(String(e));
       }
     },
-    [refresh, flash]
+    [refresh, flash],
   );
 
   const updateContent = useCallback(
@@ -252,7 +245,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => void save(false), AUTOSAVE_DELAY);
     },
-    [save]
+    [save],
   );
 
   /* 启动：读取已保存的工作区（mock 模式则用内置示例） */
@@ -262,7 +255,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       setFiles([{ name: "示例笔记.md", path: "notes/示例笔记.md", isDir: false, size: null }]);
       setActivePath("notes/示例笔记.md");
       setContent(
-        "# 示例笔记\n\n欢迎使用 ToolBox。\n\n- 列表一\n- 列表二\n\n```js\nconsole.log(1)\n```\n\n> 引用内容\n\n**加粗** 与 $E=mc^2$"
+        "# 示例笔记\n\n欢迎使用 ToolBox。\n\n- 列表一\n- 列表二\n\n```js\nconsole.log(1)\n```\n\n> 引用内容\n\n**加粗** 与 $E=mc^2$",
       );
       return;
     }
@@ -329,7 +322,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           if (payload.pluginId === "core-notes" && payload.event === "notes-changed") {
             void refresh();
           }
-        })
+        }),
       )
       .then((fn) => {
         if (cancelled) fn();
@@ -403,7 +396,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       renameFile,
       setQuery,
       updateContent,
-    ]
+    ],
   );
 
   return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;

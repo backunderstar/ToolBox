@@ -30,12 +30,6 @@ export function useNav(): NavContextValue {
   return ctx;
 }
 
-export function NavProvider({
-  value,
-  children,
-}: {
-  value: NavContextValue;
-  children: ReactNode;
-}) {
+export function NavProvider({ value, children }: { value: NavContextValue; children: ReactNode }) {
   return <NavContext.Provider value={value}>{children}</NavContext.Provider>;
 }

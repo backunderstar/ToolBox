@@ -58,16 +58,13 @@ export interface BuildBridgeOptions {
  * 注册的命令写入此表，`buildBridgeApi.call` 同插件调用时**先查本地表**，命中即
  * 本地执行；未命中才走统一桥（跨调 native/process 插件）。UI 与命令注册式由此打通。
  */
-const localCommands = new Map<
-  string,
-  Map<string, (args: unknown) => unknown | Promise<unknown>>
->();
+const localCommands = new Map<string, Map<string, (args: unknown) => unknown | Promise<unknown>>>();
 
 /** 注册 webview 插件命令（plugins.tsx 的 registerCommand 调用） */
 export function registerLocalCommand(
   pluginId: string,
   id: string,
-  run: (args: unknown) => unknown | Promise<unknown>
+  run: (args: unknown) => unknown | Promise<unknown>,
 ): void {
   let m = localCommands.get(pluginId);
   if (!m) {
@@ -86,7 +83,7 @@ export function clearLocalCommands(pluginId: string): void {
 export function buildBridgeApi(
   pluginId: string,
   getVault: () => string | null,
-  opts?: BuildBridgeOptions
+  opts?: BuildBridgeOptions,
 ): PluginBridgeApi {
   const vault = () => getVault();
   return {

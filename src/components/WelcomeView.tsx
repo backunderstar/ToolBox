@@ -104,9 +104,7 @@ export function WelcomeView({ ping, themeName, onOpenNotes }: WelcomeViewProps) 
         </div>
         <div className="env-item">
           <span className="env-key">主题</span>
-          <span className="env-value">
-            {themeName}（设置页可选 / 顶栏切换亮暗）
-          </span>
+          <span className="env-value">{themeName}（设置页可选 / 顶栏切换亮暗）</span>
         </div>
       </section>
 
@@ -125,9 +123,7 @@ export function WelcomeView({ ping, themeName, onOpenNotes }: WelcomeViewProps) 
                 <div className="module-name">{m.name}</div>
                 <p className="module-desc">{m.desc}</p>
                 <div className="module-meta">
-                  <span className={`tag ${m.done ? "tag-done" : "tag-plan"}`}>
-                    {m.milestone}
-                  </span>
+                  <span className={`tag ${m.done ? "tag-done" : "tag-plan"}`}>{m.milestone}</span>
                   <span className="tag tag-muted">插件化</span>
                 </div>
               </article>

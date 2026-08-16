@@ -39,7 +39,9 @@ const PLUGINS = [
     dll: "tb_checklists.dll",
     description: "核心插件：清单（data/checklists CRUD）",
     ui: { entry: "ui/index.js" },
-    nav: [{ id: "checklist", label: "清单", icon: "check", group: "工作区", view: "ChecklistView" }],
+    nav: [
+      { id: "checklist", label: "清单", icon: "check", group: "工作区", view: "ChecklistView" },
+    ],
   },
   {
     id: "core-projects",
@@ -107,7 +109,13 @@ async function buildPluginUi(p) {
   return outDir;
 }
 
-const exists = (p) => import("node:fs").then((fs) => fs.promises.access(p).then(() => true).catch(() => false));
+const exists = (p) =>
+  import("node:fs").then((fs) =>
+    fs.promises
+      .access(p)
+      .then(() => true)
+      .catch(() => false),
+  );
 
 const profile = isRelease ? "release" : "debug";
 // 打包资源目录始终存在（tauri build.rs 检查 resources/_core；release 填充 DLL）
@@ -115,7 +123,7 @@ mkdirSync(path.join(root, "src-tauri", "resources", "_core"), { recursive: true 
 console.log(`[build-core] 构建核心插件（${profile}）...`);
 execSync(
   `cargo build --manifest-path "${path.join(root, "Cargo.toml")}"${isRelease ? " --release" : ""}`,
-  { stdio: "inherit" }
+  { stdio: "inherit" },
 );
 
 // 输出目录：release → 打包资源（src-tauri/resources/_core）；debug → %APPDATA%

@@ -52,7 +52,7 @@ console.error = (...args: unknown[]) => {
 window.addEventListener("error", (e) => {
   console.error(
     `[global-error] type=${e.type} message=${e.message} src=${e.filename}:${e.lineno}:${e.colno}`,
-    e.error
+    e.error,
   );
 });
 window.addEventListener("unhandledrejection", (e) => {
@@ -77,10 +77,10 @@ document.addEventListener(
     void import("@tauri-apps/plugin-opener").then((m) =>
       m.openUrl(href).catch(() => {
         window.open(href, "_blank");
-      })
+      }),
     );
   },
-  true
+  true,
 );
 
 // 捕获阶段监听：抓取 script/link 等资源加载失败的真实 URL
@@ -100,7 +100,7 @@ window.addEventListener(
       console.error(`[resource-error] <${tag}> ${src ?? "(无地址)"}`);
     }
   },
-  true
+  true,
 );
 
 // 启动 3 秒后：dump 加载失败的资源条目（responseStatus=0 表示失败）

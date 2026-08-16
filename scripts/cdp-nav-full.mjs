@@ -1,10 +1,14 @@
 // cdp-nav-full.mjs — 导航栏全配置 E2E：默认渲染/折叠/新建分组/拖拽跨组/改标签/隐藏/恢复默认
-import { findMainPage, connect, sleep , helpers } from "./cdp-lib.mjs";
+import { findMainPage, connect, sleep, helpers } from "./cdp-lib.mjs";
 const page = await findMainPage("9226");
 const { ev } = await connect(page);
 const { waitFor, clickText, log } = helpers(ev);
-const navLabels = () => ev(`[...document.querySelectorAll('.sidebar .nav-item span')].map(e => e.textContent.trim())`);
-const groupLabels = () => ev(`[...document.querySelectorAll('.sidebar .nav-group-head .nav-label')].map(e => e.textContent.trim())`);
+const navLabels = () =>
+  ev(`[...document.querySelectorAll('.sidebar .nav-item span')].map(e => e.textContent.trim())`);
+const groupLabels = () =>
+  ev(
+    `[...document.querySelectorAll('.sidebar .nav-group-head .nav-label')].map(e => e.textContent.trim())`,
+  );
 
 await sleep(1500);
 
@@ -50,7 +54,10 @@ await ev(`(() => {
 })()`);
 await sleep(200);
 await clickText(".nav-settings-newgroup button", "创建");
-await waitFor(`[...document.querySelectorAll('.nav-settings-group-name')].some(e => e.value === '我的收藏')`, "新分组出现");
+await waitFor(
+  `[...document.querySelectorAll('.nav-settings-group-name')].some(e => e.value === '我的收藏')`,
+  "新分组出现",
+);
 log("PASS 新建分组「我的收藏」");
 
 // ---- 3. 拖拽跨组：把「笔记」拖到「我的收藏」----
@@ -70,10 +77,13 @@ const dropped = await ev(`(() => {
   return true;
 })()`);
 if (!dropped) throw new Error("未找到我的收藏组");
-await waitFor(`(() => {
+await waitFor(
+  `(() => {
   const group = [...document.querySelectorAll('.nav-settings-group')].find(g => g.querySelector('.nav-settings-group-name')?.value === '我的收藏');
   return group ? group.textContent.includes('笔记') : false;
-})()`, "笔记出现在我的收藏组");
+})()`,
+  "笔记出现在我的收藏组",
+);
 log("PASS 拖拽「笔记」→「我的收藏」（跨组移动）");
 
 // ---- 4. 改标签 + 图标 ----
@@ -94,8 +104,10 @@ await sleep(200);
 await clickText(".nav-settings-meta-editor button", "保存");
 await sleep(300);
 // 回到侧边栏验证
-await clickText(".nav-item", "设置") === false ? null : null; // 已在设置
-await ev(`(() => { const el = [...document.querySelectorAll('.sidebar .nav-item')].find(e => e.textContent.includes('设置')); el?.click(); return !!el; })()`);
+(await clickText(".nav-item", "设置")) === false ? null : null; // 已在设置
+await ev(
+  `(() => { const el = [...document.querySelectorAll('.sidebar .nav-item')].find(e => e.textContent.includes('设置')); el?.click(); return !!el; })()`,
+);
 await sleep(300);
 labels = await navLabels();
 console.log("侧边栏项（改标签后）:", labels.join(" | "));
@@ -112,8 +124,10 @@ await ev(`(() => {
   sw?.click(); return !!sw;
 })()`);
 await sleep(300);
-await clickText(".sidebar .nav-item", "设置") === false ? null : null;
-await ev(`(() => { const el = [...document.querySelectorAll('.sidebar .nav-item')].find(e => e.textContent.includes('设置')); el?.click(); return !!el; })()`);
+(await clickText(".sidebar .nav-item", "设置")) === false ? null : null;
+await ev(
+  `(() => { const el = [...document.querySelectorAll('.sidebar .nav-item')].find(e => e.textContent.includes('设置')); el?.click(); return !!el; })()`,
+);
 await sleep(300);
 labels = await navLabels();
 if (labels.includes("插件")) throw new Error("隐藏后插件仍在");
@@ -124,7 +138,9 @@ await clickText(".sidebar .nav-item", "设置");
 await waitFor(`!!document.querySelector('.settings-actions')`, "设置操作区");
 await clickText(".settings-actions button", "恢复默认");
 await sleep(300);
-await ev(`(() => { const el = [...document.querySelectorAll('.sidebar .nav-item')].find(e => e.textContent.includes('设置')); el?.click(); return !!el; })()`);
+await ev(
+  `(() => { const el = [...document.querySelectorAll('.sidebar .nav-item')].find(e => e.textContent.includes('设置')); el?.click(); return !!el; })()`,
+);
 await sleep(300);
 labels = await navLabels();
 console.log("恢复默认后:", labels.join(" | "));

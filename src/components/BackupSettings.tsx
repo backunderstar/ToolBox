@@ -31,7 +31,9 @@ export function BackupSettings() {
   };
 
   useEffect(() => {
-    void backupConfigGet().then(setConfig).catch(() => setConfig(null));
+    void backupConfigGet()
+      .then(setConfig)
+      .catch(() => setConfig(null));
   }, []);
 
   const loadList = async () => {
@@ -64,7 +66,7 @@ export function BackupSettings() {
     try {
       const info = await backupNow(vault.path);
       showMsg(
-        `备份完成：${info.fileCount} 个文件，${formatSize(info.sizeBytes)}（含配置与插件存档，保留最近 ${config?.keep ?? 10} 份）`
+        `备份完成：${info.fileCount} 个文件，${formatSize(info.sizeBytes)}（含配置与插件存档，保留最近 ${config?.keep ?? 10} 份）`,
       );
       await loadList();
     } catch (e) {
@@ -82,7 +84,7 @@ export function BackupSettings() {
     try {
       await backupRestore(vault.path, b.name);
       showMsg(
-        `已恢复到 ${new Date(b.timestamp * 1000).toLocaleString("zh-CN", { hour12: false })}（恢复前已自动保存当前状态）`
+        `已恢复到 ${new Date(b.timestamp * 1000).toLocaleString("zh-CN", { hour12: false })}（恢复前已自动保存当前状态）`,
       );
       await loadList();
     } catch (e) {
@@ -127,9 +129,7 @@ export function BackupSettings() {
           <input
             type="checkbox"
             checked={config?.enabled ?? true}
-            onChange={(e) =>
-              config && save({ ...config, enabled: e.target.checked })
-            }
+            onChange={(e) => config && save({ ...config, enabled: e.target.checked })}
           />
           启用（应用运行期间按间隔自动备份）
         </label>
@@ -181,15 +181,11 @@ export function BackupSettings() {
         </div>
       </div>
 
-      {msg && (
-        <div className={`settings-message ${msgErr ? "err" : "ok"}`}>{msg}</div>
-      )}
+      {msg && <div className={`settings-message ${msgErr ? "err" : "ok"}`}>{msg}</div>}
 
       {entries.length > 0 && (
         <div className="backup-list">
-          <div className="backup-list-label">
-            已有备份（{entries.length}）
-          </div>
+          <div className="backup-list-label">已有备份（{entries.length}）</div>
           {[...entries].reverse().map((b) => (
             <div className="backup-row" key={b.name}>
               <span className="backup-time">
@@ -197,10 +193,14 @@ export function BackupSettings() {
               </span>
               <span className="backup-size">{formatSize(b.sizeBytes)}</span>
               {b.hasConfig && (
-                <span className="badge badge-version" title="含 %APPDATA% 配置存档">配置</span>
+                <span className="badge badge-version" title="含 %APPDATA% 配置存档">
+                  配置
+                </span>
               )}
               {b.hasPlugins && (
-                <span className="badge badge-version" title="含全局插件目录存档">插件</span>
+                <span className="badge badge-version" title="含全局插件目录存档">
+                  插件
+                </span>
               )}
               <button
                 className="btn btn-sm"

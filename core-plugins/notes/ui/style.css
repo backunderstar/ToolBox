@@ -16,7 +16,9 @@
   color: var(--fg);
   font-size: var(--text-sm);
   outline: none;
-  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
 }
 
 .files-search-input::placeholder {

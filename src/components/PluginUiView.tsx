@@ -2,11 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { pluginsReadFile, searchAll } from "../core/api";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
-import {
-  buildBridgeApi,
-  injectPluginScript,
-  type PluginBridgeApi,
-} from "../core/pluginRuntime";
+import { buildBridgeApi, injectPluginScript, type PluginBridgeApi } from "../core/pluginRuntime";
 
 interface UiRegistry {
   mount: (el: HTMLElement, api: PluginBridgeApi) => void;

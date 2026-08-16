@@ -74,7 +74,10 @@ export function Sidebar({
             const Icon = ICON_MAP[meta?.icon ?? def.icon] ?? IconGrid;
             return { id, label, Icon };
           })
-          .filter((x): x is { id: string; label: string; Icon: ComponentType<SVGProps<SVGSVGElement>> } => !!x);
+          .filter(
+            (x): x is { id: string; label: string; Icon: ComponentType<SVGProps<SVGSVGElement>> } =>
+              !!x,
+          );
         if (items.length === 0) return null;
         const groupCollapsed = !!group.collapsed;
 
@@ -88,7 +91,11 @@ export function Sidebar({
               >
                 <span className="nav-label">{group.label}</span>
                 <span className="nav-group-caret">
-                  {groupCollapsed ? <IconChevronRight width={11} height={11} /> : <IconChevronDown width={11} height={11} />}
+                  {groupCollapsed ? (
+                    <IconChevronRight width={11} height={11} />
+                  ) : (
+                    <IconChevronDown width={11} height={11} />
+                  )}
                 </span>
               </button>
             )}

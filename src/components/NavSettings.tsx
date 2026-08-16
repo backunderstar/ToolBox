@@ -222,9 +222,7 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
                         {hidden && <span className="nav-settings-hidden">已隐藏</span>}
                       </span>
                       <span className="nav-settings-from" title="来源">
-                        {defById.get(item.id)?.groupId === group.id
-                          ? ""
-                          : "已移动"}
+                        {defById.get(item.id)?.groupId === group.id ? "" : "已移动"}
                       </span>
                     </span>
                     <span className="nav-settings-actions">
@@ -264,19 +262,19 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
                             className={`switch${hidden ? " off" : ""}${
                               isSettings ? " disabled" : ""
                             }`}
-                            title={
-                              isSettings
-                                ? "设置固定显示"
-                                : hidden
-                                  ? "点击显示"
-                                  : "点击隐藏"
-                            }
+                            title={isSettings ? "设置固定显示" : hidden ? "点击显示" : "点击隐藏"}
                           >
                             <input
                               type="checkbox"
                               checked={!hidden}
                               disabled={isSettings}
-                              aria-label={isSettings ? "设置固定显示" : hidden ? `显示「${label}」` : `隐藏「${label}」`}
+                              aria-label={
+                                isSettings
+                                  ? "设置固定显示"
+                                  : hidden
+                                    ? `显示「${label}」`
+                                    : `隐藏「${label}」`
+                              }
                               onChange={() => toggleHidden(item.id)}
                             />
                             <span className="switch-track" />

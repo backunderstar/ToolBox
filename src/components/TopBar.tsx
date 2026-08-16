@@ -67,22 +67,14 @@ export function TopBar({
         <span className="topbar-tag">{APP_TAG}</span>
       </div>
 
-      <button
-        className="workspace-btn"
-        onClick={onPickVault}
-        title="选择 / 切换工作区文件夹"
-      >
+      <button className="workspace-btn" onClick={onPickVault} title="选择 / 切换工作区文件夹">
         <IconFolder width={13} height={13} />
         <span>{vaultName ?? "选择工作区"}</span>
       </button>
 
       <div
         className={`search${searchEnabled ? "" : " disabled"}`}
-        title={
-          searchEnabled
-            ? "搜索文件名与笔记内容"
-            : "进入「笔记」并选择工作区后可用"
-        }
+        title={searchEnabled ? "搜索文件名与笔记内容" : "进入「笔记」并选择工作区后可用"}
       >
         <svg
           width="13"

@@ -58,7 +58,7 @@ function AppInner() {
   const vault = useVault();
   const pluginCtx = usePlugins();
   const [view, setView] = useState<ViewId>(() =>
-    new URLSearchParams(window.location.search).has("mock") ? "notes" : "overview"
+    new URLSearchParams(window.location.search).has("mock") ? "notes" : "overview",
   );
   const [viewParams, setViewParams] = useState<ViewParams>({});
   const [themeId, setThemeId] = useState<string>(getInitialTheme);
@@ -67,9 +67,7 @@ function AppInner() {
   const [focusTick, setFocusTick] = useState(0);
 
   /* 布局偏好：导航折叠（持久化）。文件面板/专注模式已随宿主回退笔记视图删除 */
-  const [navCollapsed, setNavCollapsed] = useState(
-    () => loadLayoutPrefs().navCollapsed
-  );
+  const [navCollapsed, setNavCollapsed] = useState(() => loadLayoutPrefs().navCollapsed);
 
   /* 导航栏全配置：分组/顺序/隐藏/标签图标覆盖（localStorage 持久化；归一化兜底插件增删） */
   const [navConfig, setNavConfig] = useState<NavConfig | null>(() => loadNavConfig());
@@ -88,7 +86,7 @@ function AppInner() {
         groupId: groupIdFor(n.group),
       })),
     ],
-    [pluginCtx.navItems]
+    [pluginCtx.navItems],
   );
 
   /* 归一化配置（渲染与设置页共用；失效项清理/新项补齐/settings 强制可见） */
@@ -106,9 +104,7 @@ function AppInner() {
   const toggleNavGroup = (groupId: string) => {
     updateNav((cur) => ({
       ...cur,
-      groups: cur.groups.map((g) =>
-        g.id === groupId ? { ...g, collapsed: !g.collapsed } : g
-      ),
+      groups: cur.groups.map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g)),
     }));
   };
 
@@ -128,12 +124,11 @@ function AppInner() {
           message: "preview",
           coreVersion: "—",
           os: "浏览器预览（未连接 Tauri 核心）",
-        })
+        }),
       );
   }, []);
 
-  const toggleThemeMode = () =>
-    setThemeId((t) => toggleTheme(t));
+  const toggleThemeMode = () => setThemeId((t) => toggleTheme(t));
 
   /* Ctrl+K：切到笔记视图并聚焦搜索框（快捷键提示的真实实现） */
   useEffect(() => {
@@ -151,9 +146,7 @@ function AppInner() {
   const themeMode = getThemeBase(themeId);
   const themeName = findTheme(themeId)?.name ?? themeId;
 
-  const vaultName = vault.path
-    ? (vault.path.split(/[\\/]/).pop() ?? vault.path)
-    : null;
+  const vaultName = vault.path ? (vault.path.split(/[\\/]/).pop() ?? vault.path) : null;
 
   /* 跨视图导航（供双向链接跳转）。
      openFile 来自 vault（每次渲染新对象），但 openNote 只需稳定引用：用 ref 包住 */
@@ -203,7 +196,7 @@ function AppInner() {
         setViewParams({ openChecklistId: id });
       },
     }),
-    [view, viewParams]
+    [view, viewParams],
   );
 
   return (
@@ -255,25 +248,49 @@ function AppInner() {
               corePluginEnabled(pluginCtx.plugins, "core-checklists") ? (
                 <PluginUiView pluginId="core-checklists" />
               ) : (
-                <CoreDisabled name="清单" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+                <CoreDisabled
+                  name="清单"
+                  onGoPlugins={() => {
+                    setView("plugins");
+                    setViewParams({});
+                  }}
+                />
               )
             ) : view === "projects" ? (
               corePluginEnabled(pluginCtx.plugins, "core-projects") ? (
                 <PluginUiView pluginId="core-projects" />
               ) : (
-                <CoreDisabled name="项目" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+                <CoreDisabled
+                  name="项目"
+                  onGoPlugins={() => {
+                    setView("plugins");
+                    setViewParams({});
+                  }}
+                />
               )
             ) : view === "ai" ? (
               corePluginEnabled(pluginCtx.plugins, "core-ai") ? (
                 <PluginUiView pluginId="core-ai" />
               ) : (
-                <CoreDisabled name="AI 整理" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+                <CoreDisabled
+                  name="AI 整理"
+                  onGoPlugins={() => {
+                    setView("plugins");
+                    setViewParams({});
+                  }}
+                />
               )
             ) : view === "blog" ? (
               corePluginEnabled(pluginCtx.plugins, "core-blog") ? (
                 <PluginUiView pluginId="core-blog" />
               ) : (
-                <CoreDisabled name="博客发布" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+                <CoreDisabled
+                  name="博客发布"
+                  onGoPlugins={() => {
+                    setView("plugins");
+                    setViewParams({});
+                  }}
+                />
               )
             ) : view === "settings" ? (
               <SettingsView
@@ -288,23 +305,26 @@ function AppInner() {
               corePluginEnabled(pluginCtx.plugins, "core-notes") ? (
                 <PluginUiView pluginId="core-notes" />
               ) : (
-                <CoreDisabled name="笔记" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+                <CoreDisabled
+                  name="笔记"
+                  onGoPlugins={() => {
+                    setView("plugins");
+                    setViewParams({});
+                  }}
+                />
               )
-            ) : pluginView ?? (
-              // 未知视图（nav 声明但插件未启用/无自带前端）：明确占位
-              <div className="empty-state">
-                <h2>未找到页面</h2>
-                <p>该视图不存在或对应插件未启用</p>
-              </div>
+            ) : (
+              (pluginView ?? (
+                // 未知视图（nav 声明但插件未启用/无自带前端）：明确占位
+                <div className="empty-state">
+                  <h2>未找到页面</h2>
+                  <p>该视图不存在或对应插件未启用</p>
+                </div>
+              ))
             )}
           </main>
         </div>
-        <StatusBar
-          ping={pingInfo}
-          theme={themeMode}
-          vaultName={vaultName}
-          status={vault.status}
-        />
+        <StatusBar ping={pingInfo} theme={themeMode} vaultName={vaultName} status={vault.status} />
       </div>
     </NavProvider>
   );

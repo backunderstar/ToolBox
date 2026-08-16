@@ -127,9 +127,7 @@ export function SettingsView({
                 <button className="btn" onClick={vault.pickVault}>
                   选择工作区文件夹
                 </button>
-                <span className="settings-hint">
-                  笔记、插件与数据都围绕一个普通文件夹展开
-                </span>
+                <span className="settings-hint">笔记、插件与数据都围绕一个普通文件夹展开</span>
               </div>
             </div>
           )}
@@ -154,11 +152,7 @@ export function SettingsView({
                   >
                     <div className="theme-swatches">
                       {swatchOf(t).map((c, i) => (
-                        <span
-                          key={i}
-                          className="theme-swatch"
-                          style={{ background: c }}
-                        />
+                        <span key={i} className="theme-swatch" style={{ background: c }} />
                       ))}
                     </div>
                     <div className="theme-card-name">{t.name}</div>
@@ -187,9 +181,7 @@ export function SettingsView({
                 <button className="btn btn-sm" onClick={() => setThemeIo((v) => !v)}>
                   {themeIo ? "收起导出/导入" : "导出 / 导入主题"}
                 </button>
-                <span className="settings-hint">
-                  自定义主题保存在本机，可随时调整或删除
-                </span>
+                <span className="settings-hint">自定义主题保存在本机，可随时调整或删除</span>
               </div>
               {themeIo && (
                 <ThemeIoPanel
@@ -233,9 +225,7 @@ export function SettingsView({
           </div>
           <div className="settings-row">
             <span className="settings-label">核心版本</span>
-            <span className="settings-value">
-              {ping ? `v${ping.coreVersion}` : "—"}
-            </span>
+            <span className="settings-value">{ping ? `v${ping.coreVersion}` : "—"}</span>
           </div>
           <div className="settings-row">
             <span className="settings-label">平台</span>
@@ -306,7 +296,11 @@ function ThemeIoPanel({ onDone }: { onDone: () => void }) {
             rows={4}
             placeholder="（暂无自定义主题）"
           />
-          <button className="btn btn-sm" onClick={() => void copyExport()} disabled={!exported.trim()}>
+          <button
+            className="btn btn-sm"
+            onClick={() => void copyExport()}
+            disabled={!exported.trim()}
+          >
             复制
           </button>
         </div>
@@ -326,9 +320,7 @@ function ThemeIoPanel({ onDone }: { onDone: () => void }) {
           </button>
         </div>
       </div>
-      {msg && (
-        <p className={`settings-message ${msgErr ? "err" : "ok"}`}>{msg}</p>
-      )}
+      {msg && <p className={`settings-message ${msgErr ? "err" : "ok"}`}>{msg}</p>}
     </div>
   );
 }

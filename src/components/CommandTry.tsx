@@ -11,12 +11,12 @@ export const EXAMPLE_ARGS: Record<string, string> = {
   "text-stats:analyze": JSON.stringify(
     { text: "你好，世界！\n这是第二行。\n\n新段落开始。" },
     null,
-    2
+    2,
   ),
   "csv-tool:csv.convert": JSON.stringify(
     { csv: "名称,数量\n苹果,3\n香蕉,5", format: "json" },
     null,
-    2
+    2,
   ),
 };
 
@@ -91,11 +91,7 @@ export function CommandTry({ pluginId, command, name, invoke }: CommandTryProps)
             spellCheck={false}
             placeholder='JSON 参数，如 {"text": "你好"}'
           />
-          {result && (
-            <pre className={`try-result ${result.ok ? "ok" : "err"}`}>
-              {result.text}
-            </pre>
-          )}
+          {result && <pre className={`try-result ${result.ok ? "ok" : "err"}`}>{result.text}</pre>}
         </div>
       )}
     </>

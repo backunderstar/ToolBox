@@ -174,8 +174,21 @@ export function TodosPluginUi({ api }: { api: PluginBridgeApi }) {
           disabled={vaultMissing}
           spellCheck={false}
         />
-        <button className="float-add" onClick={() => void add()} disabled={!text.trim() || vaultMissing} title="添加">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <button
+          className="float-add"
+          onClick={() => void add()}
+          disabled={!text.trim() || vaultMissing}
+          title="添加"
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
@@ -199,7 +212,16 @@ export function TodosPluginUi({ api }: { api: PluginBridgeApi }) {
                 onClick={() => void toggle(it.id)}
               >
                 {it.done && (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M4 12.5l5 5L20 6.5" />
                   </svg>
                 )}
@@ -211,7 +233,15 @@ export function TodosPluginUi({ api }: { api: PluginBridgeApi }) {
                 aria-label={`删除待办：${it.text}`}
                 onClick={() => void remove(it.id)}
               >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                >
                   <path d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </button>
@@ -223,7 +253,11 @@ export function TodosPluginUi({ api }: { api: PluginBridgeApi }) {
       {/* 底部：清除已完成 */}
       {items.length > 0 && (
         <div className="float-foot">
-          <button className="float-clear" onClick={() => void clearDone()} disabled={doneCount === 0}>
+          <button
+            className="float-clear"
+            onClick={() => void clearDone()}
+            disabled={doneCount === 0}
+          >
             清除已完成（{doneCount}）
           </button>
         </div>

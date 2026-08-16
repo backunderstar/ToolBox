@@ -1,11 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  aiConfigGet,
-  aiConfigSet,
-  aiConfigSetKey,
-  aiConfigClearKey,
-  aiTest,
-} from "../core/api";
+import { aiConfigGet, aiConfigSet, aiConfigSetKey, aiConfigClearKey, aiTest } from "../core/api";
 
 /**
  * 设置页 AI 区块（M6）：提供商配置（OpenAI 兼容）+ 连通性测试。
@@ -126,7 +120,11 @@ export function AISettings() {
               <button className="btn" onClick={() => void save()} disabled={saving}>
                 {saving ? "保存中…" : "保存配置"}
               </button>
-              <button className="btn" onClick={() => void test()} disabled={testing || (!hasKey && !keyInput.trim())}>
+              <button
+                className="btn"
+                onClick={() => void test()}
+                disabled={testing || (!hasKey && !keyInput.trim())}
+              >
                 {testing ? "测试中…" : "测试连接"}
               </button>
               {hasKey && (
@@ -141,9 +139,7 @@ export function AISettings() {
             不写入任何配置文件。
           </p>
           {message && (
-            <p className={`settings-message ${message.ok ? "ok" : "err"}`}>
-              {message.text}
-            </p>
+            <p className={`settings-message ${message.ok ? "ok" : "err"}`}>{message.text}</p>
           )}
         </>
       )}

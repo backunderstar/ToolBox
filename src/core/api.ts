@@ -68,8 +68,7 @@ export interface PluginInfo {
 export const ping = () => invoke<PingInfo>("ping");
 
 export const vaultGet = () => invoke<VaultSettings>("vault_get");
-export const vaultSet = (path: string) =>
-  invoke<void>("vault_set", { path });
+export const vaultSet = (path: string) => invoke<void>("vault_set", { path });
 
 /* ---- 笔记文件操作（经 core-notes 原生插件，宿主进程内 FFI） ---- */
 
@@ -92,8 +91,7 @@ export const searchAll = (vault: string, query: string) =>
 
 /* ---- 插件系统 ---- */
 
-export const pluginsList = (vault: string) =>
-  invoke<PluginInfo[]>("plugins_list", { vault });
+export const pluginsList = (vault: string) => invoke<PluginInfo[]>("plugins_list", { vault });
 export const pluginsSetEnabled = (vault: string, id: string, enabled: boolean) =>
   invoke<void>("plugins_set_enabled", { vault, id, enabled });
 export const pluginsReload = (vault: string, id: string) =>
@@ -103,25 +101,16 @@ export const pluginsUninstall = (vault: string, id: string) =>
 /** 读取全局插件目录内的文件（webview 插件入口加载用，插件已不在 vault 内） */
 export const pluginsReadFile = (id: string, rel: string) =>
   invoke<string>("plugins_read_file", { id, rel });
-export const pluginsInvoke = (
-  vault: string,
-  id: string,
-  command: string,
-  args: unknown
-) => invoke<unknown>("plugins_invoke", { vault, id, command, args });
+export const pluginsInvoke = (vault: string, id: string, command: string, args: unknown) =>
+  invoke<unknown>("plugins_invoke", { vault, id, command, args });
 /** 统一插件命令调用（native → FFI；process → JSON-RPC；webview 由前端调用） */
-export const pluginCall = (
-  vault: string,
-  id: string,
-  command: string,
-  args: unknown
-) => invoke<unknown>("plugin_call", { vault, id, command, args });
+export const pluginCall = (vault: string, id: string, command: string, args: unknown) =>
+  invoke<unknown>("plugin_call", { vault, id, command, args });
 
 /* ---- 系统 ---- */
 
 /** 在系统文件管理器中打开路径（Windows：资源管理器） */
-export const openInExplorer = (path: string) =>
-  invoke<void>("open_in_explorer", { path });
+export const openInExplorer = (path: string) => invoke<void>("open_in_explorer", { path });
 
 /* ---- M6 AI 配置（经 core-ai 原生插件；无显式 vault 用当前工作区） ---- */
 
@@ -133,26 +122,16 @@ export interface AiConfig {
 }
 
 export const aiConfigGet = () =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-ai", "ai.configGet", {})
-  ) as Promise<AiConfig>;
+  currentVault().then((v) => pluginCall(v, "core-ai", "ai.configGet", {})) as Promise<AiConfig>;
 export const aiConfigSet = (config: { baseUrl: string; model: string }) =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-ai", "ai.configSet", { config })
-  ) as Promise<void>;
+  currentVault().then((v) => pluginCall(v, "core-ai", "ai.configSet", { config })) as Promise<void>;
 /** 保存 API Key 到系统凭据管理器（Windows 凭据管理器 / Keychain） */
 export const aiConfigSetKey = (key: string) =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-ai", "ai.configSetKey", { key })
-  ) as Promise<void>;
+  currentVault().then((v) => pluginCall(v, "core-ai", "ai.configSetKey", { key })) as Promise<void>;
 export const aiConfigClearKey = () =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-ai", "ai.configClearKey", {})
-  ) as Promise<void>;
+  currentVault().then((v) => pluginCall(v, "core-ai", "ai.configClearKey", {})) as Promise<void>;
 export const aiTest = () =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-ai", "ai.test", {})
-  ) as Promise<string>;
+  currentVault().then((v) => pluginCall(v, "core-ai", "ai.test", {})) as Promise<string>;
 
 /* ---- 自动备份（宿主内嵌命令，原 core-backup 插件命令；搜索/备份已迁回本体框架） ---- */
 
@@ -181,14 +160,11 @@ export interface BackupEntry {
   hasPlugins: boolean;
 }
 
-export const backupConfigGet = () =>
-  invoke<BackupConfig>("backup_config_get");
+export const backupConfigGet = () => invoke<BackupConfig>("backup_config_get");
 export const backupConfigSet = (config: BackupConfig) =>
   invoke<void>("backup_config_set", { config });
-export const backupNow = (vault: string) =>
-  invoke<BackupInfo>("backup_now", { vault });
-export const backupList = (vault: string) =>
-  invoke<BackupEntry[]>("backup_list", { vault });
+export const backupNow = (vault: string) => invoke<BackupInfo>("backup_now", { vault });
+export const backupList = (vault: string) => invoke<BackupEntry[]>("backup_list", { vault });
 /** 恢复到备份点（恢复前自动保存当前状态；覆盖合并，保留新增文件） */
 export const backupRestore = (vault: string, name: string) =>
   invoke<BackupInfo>("backup_restore", { vault, name });
@@ -205,5 +181,4 @@ async function currentVault(): Promise<string> {
 /** 显示 / 隐藏浮窗（返回操作后可见状态） */
 export const floatToggle = () => invoke<boolean>("float_toggle");
 /** 锁定 / 解锁浮窗位置（锁定时禁用拖拽与改大小） */
-export const floatSetLocked = (locked: boolean) =>
-  invoke<void>("float_set_locked", { locked });
+export const floatSetLocked = (locked: boolean) => invoke<void>("float_set_locked", { locked });

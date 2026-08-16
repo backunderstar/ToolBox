@@ -104,10 +104,7 @@ interface PluginRuntime {
 
 export function PluginProvider({ children }: { children: ReactNode }) {
   const vault = useVault();
-  const isMock = useMemo(
-    () => new URLSearchParams(window.location.search).has("mock"),
-    []
-  );
+  const isMock = useMemo(() => new URLSearchParams(window.location.search).has("mock"), []);
   const vaultRef = useRef(vault.path);
   vaultRef.current = vault.path;
 
@@ -173,14 +170,13 @@ export function PluginProvider({ children }: { children: ReactNode }) {
             if (set) set.forEach((cb) => void cb(data));
           },
         },
-        log: (...args) =>
-          console.log(`[plugin:${pluginId}]`, ...args),
+        log: (...args) => console.log(`[plugin:${pluginId}]`, ...args),
         call: bridge.call,
         on: bridge.on,
         context: bridge.context,
       };
     },
-    [getRuntime]
+    [getRuntime],
   );
 
   /** 加载并求值一个 webview 插件入口（注册其命令） */
@@ -234,7 +230,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
         console.error(`[plugin:${plugin.id}] 入口加载失败`, e);
       }
     },
-    [buildApi, getRuntime]
+    [buildApi, getRuntime],
   );
 
   /** 重新发现插件 + 加载所有已启用 webview 插件的命令 */
@@ -291,7 +287,15 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "notes", label: "笔记", icon: "file-text", group: "工作区", pluginId: "core-notes" }],
+          nav: [
+            {
+              id: "notes",
+              label: "笔记",
+              icon: "file-text",
+              group: "工作区",
+              pluginId: "core-notes",
+            },
+          ],
         },
         {
           id: "core-checklists",
@@ -308,7 +312,15 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "checklist", label: "清单", icon: "check", group: "工作区", pluginId: "core-checklists" }],
+          nav: [
+            {
+              id: "checklist",
+              label: "清单",
+              icon: "check",
+              group: "工作区",
+              pluginId: "core-checklists",
+            },
+          ],
         },
         {
           id: "core-projects",
@@ -325,7 +337,15 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "projects", label: "项目", icon: "folder", group: "工作区", pluginId: "core-projects" }],
+          nav: [
+            {
+              id: "projects",
+              label: "项目",
+              icon: "folder",
+              group: "工作区",
+              pluginId: "core-projects",
+            },
+          ],
         },
         {
           id: "core-blog",
@@ -342,7 +362,9 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "blog", label: "博客发布", icon: "globe", group: "系统", pluginId: "core-blog" }],
+          nav: [
+            { id: "blog", label: "博客发布", icon: "globe", group: "系统", pluginId: "core-blog" },
+          ],
         },
         {
           id: "core-ai",
@@ -359,7 +381,9 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", pluginId: "core-ai" }],
+          nav: [
+            { id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", pluginId: "core-ai" },
+          ],
         },
       ];
       setPlugins(mock);
@@ -369,9 +393,10 @@ export function PluginProvider({ children }: { children: ReactNode }) {
         id: "analyze",
         name: "统计文本",
         run: async (args) => {
-          const text = typeof (args as { text?: unknown })?.text === "string"
-            ? ((args as { text: string }).text)
-            : "";
+          const text =
+            typeof (args as { text?: unknown })?.text === "string"
+              ? (args as { text: string }).text
+              : "";
           const trimmed = text.trim();
           return {
             chars: [...text].length,
@@ -398,9 +423,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           }
           if (rows.length === 0) return { text: "[]" };
           const [header, ...data] = rows;
-          const out = data.map((r) =>
-            Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""]))
-          );
+          const out = data.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])));
           return { text: JSON.stringify(out, null, 2) };
         },
       });
@@ -422,7 +445,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       await Promise.all(
         list
           .filter((pl) => pl.enabled && pl.runtime === "webview")
-          .map((pl) => loadWebviewPlugin(pl))
+          .map((pl) => loadWebviewPlugin(pl)),
       );
     } catch (e) {
       console.error("[plugins] 刷新失败", e);
@@ -440,7 +463,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       }
       await refresh();
     },
-    [isMock, refresh]
+    [isMock, refresh],
   );
 
   const reload = useCallback(
@@ -452,7 +475,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       }
       await refresh();
     },
-    [isMock, refresh]
+    [isMock, refresh],
   );
 
   const uninstall = useCallback(
@@ -462,7 +485,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       await pluginsUninstall(p, id); // 停进程 + 清状态 + 删目录（回收站）
       await refresh();
     },
-    [refresh]
+    [refresh],
   );
 
   const invoke = useCallback(
@@ -482,7 +505,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
         ? pluginCall(p, pluginId, command, args)
         : pluginsInvoke(p, pluginId, command, args);
     },
-    [plugins, getRuntime, isMock]
+    [plugins, getRuntime, isMock],
   );
 
   const commandsOf = useCallback(
@@ -497,7 +520,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       }
       return plugin.commands.map((c) => ({ id: c, name: c }));
     },
-    [plugins, getRuntime]
+    [plugins, getRuntime],
   );
 
   /* 启用插件的导航入口（任何启用的插件都可声明 nav 并入侧边栏；
@@ -531,7 +554,18 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       commandsOf,
       navItems,
     }),
-    [plugins, loading, runtimeErrors, refresh, setEnabled, reload, uninstall, invoke, commandsOf, navItems]
+    [
+      plugins,
+      loading,
+      runtimeErrors,
+      refresh,
+      setEnabled,
+      reload,
+      uninstall,
+      invoke,
+      commandsOf,
+      navItems,
+    ],
   );
 
   return <PluginContext.Provider value={value}>{children}</PluginContext.Provider>;

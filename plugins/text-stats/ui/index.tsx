@@ -55,7 +55,9 @@ export function TextStatsUi({ api }: { api: PluginBridgeApi }) {
       <div>
         <h1>文本统计</h1>
         <p className="view-sub">
-          {api.context.vault ? `工作区: ${api.context.vault}` : "尚未选择工作区（本工具无需工作区）"}
+          {api.context.vault
+            ? `工作区: ${api.context.vault}`
+            : "尚未选择工作区（本工具无需工作区）"}
           {" · 统计逻辑在命令 analyze（UI 经 api.call 调用）"}
         </p>
       </div>

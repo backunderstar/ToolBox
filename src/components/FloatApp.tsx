@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { pluginsReadFile, vaultGet, floatSetLocked } from "../core/api";
-import {
-  buildBridgeApi,
-  injectPluginScript,
-  type PluginBridgeApi,
-} from "../core/pluginRuntime";
+import { buildBridgeApi, injectPluginScript, type PluginBridgeApi } from "../core/pluginRuntime";
 import "./float.css";
 
 /**

@@ -1,5 +1,5 @@
 // cdp-plugin-ui.mjs — 插件自带前端（组件模式）E2E：core-blog ui/index.js 加载 + 功能
-import { findMainPage, connect, sleep , helpers } from "./cdp-lib.mjs";
+import { findMainPage, connect, sleep, helpers } from "./cdp-lib.mjs";
 const PORT = process.argv[2] ?? "9226";
 const page = await findMainPage(PORT);
 if (!page) {
@@ -20,7 +20,10 @@ if (hasHostView) throw new Error("仍渲染宿主 BlogView（应渲染插件自�
 log("PASS 博客页渲染插件自带前端（core-blog ui/index.js）");
 
 // ---- 2. 列表：经桥调用 core-blog DLL 拉取笔记 ----
-await waitFor(`document.querySelectorAll('.blog-ui-row').length >= 1`, "笔记列表出现（经桥 → DLL）");
+await waitFor(
+  `document.querySelectorAll('.blog-ui-row').length >= 1`,
+  "笔记列表出现（经桥 → DLL）",
+);
 const rowInfo = await ev(`(() => {
   const rows = [...document.querySelectorAll('.blog-ui-row')];
   return rows.map(r => ({
@@ -44,7 +47,7 @@ await sleep(200);
 await clickText(".blog-plugin-ui button", "生成站点");
 await waitFor(
   `[...document.querySelectorAll('.blog-plugin-ui .settings-message')].some(m => m.textContent.includes('站点已生成'))`,
-  "生成站点成功提示（经桥）"
+  "生成站点成功提示（经桥）",
 );
 log("PASS 生成站点经插件界面按钮 + 桥 + DLL");
 
@@ -69,7 +72,7 @@ if (toggled !== "clicked") {
   if (!published) throw new Error("无可发布的草稿笔记行");
   await waitFor(
     `[...document.querySelectorAll('.blog-ui-row')].some(r => r.textContent.includes('已发布'))`,
-    "发布成功（经桥跨插件调用）"
+    "发布成功（经桥跨插件调用）",
   );
   // 发布后再撤回（幂等验证双向切换）
   toggled = await ev(`(() => {
@@ -83,7 +86,7 @@ if (toggled !== "clicked") {
 }
 await waitFor(
   `[...document.querySelectorAll('.blog-plugin-ui .settings-message')].some(m => m.textContent.includes('已撤回'))`,
-  "发布状态切换（经桥跨插件调用）"
+  "发布状态切换（经桥跨插件调用）",
 );
 log("PASS 发布状态切换（发布 ↔ 撤回，桥跨插件调用 core-notes 读写）");
 

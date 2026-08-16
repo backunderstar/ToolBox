@@ -48,9 +48,7 @@ export function ThemeEditor({
   const tokenValue = (key: string): string => {
     if (draft.tokens[key]) return draft.tokens[key];
     // 回退到当前计算样式，保证 color input 有初值
-    return getComputedStyle(document.documentElement)
-      .getPropertyValue(key)
-      .trim();
+    return getComputedStyle(document.documentElement).getPropertyValue(key).trim();
   };
 
   return (

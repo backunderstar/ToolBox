@@ -54,9 +54,7 @@ export function PluginsView() {
   useEffect(() => {
     let un: (() => void) | null = null;
     listen<PluginEventPayload>("plugin-event", (e) => {
-      setEvents((prev) =>
-        [...prev, { ...e.payload, time: Date.now() }].slice(-50)
-      );
+      setEvents((prev) => [...prev, { ...e.payload, time: Date.now() }].slice(-50));
     })
       .then((fn) => (un = fn))
       .catch(() => {
@@ -113,9 +111,7 @@ export function PluginsView() {
           <div className="plugin-title">
             <h2>{p.name}</h2>
             <span className="badge badge-version">v{p.version}</span>
-            <span className="badge badge-runtime">
-              {RUNTIME_LABEL[p.runtime] ?? p.runtime}
-            </span>
+            <span className="badge badge-runtime">{RUNTIME_LABEL[p.runtime] ?? p.runtime}</span>
             {p.builtin && <span className="badge badge-builtin">核心</span>}
             {p.system && (
               <span className="badge badge-provider" title="数据安全/横切能力，不可禁用">
@@ -123,7 +119,10 @@ export function PluginsView() {
               </span>
             )}
             {p.provider && (
-              <span className="badge badge-provider" title="实现 search.provide，启用后进入全局搜索">
+              <span
+                className="badge badge-provider"
+                title="实现 search.provide，启用后进入全局搜索"
+              >
                 搜索提供者
               </span>
             )}
@@ -176,13 +175,7 @@ export function PluginsView() {
           <div className="plugin-commands">
             <span className="plugin-commands-label">命令</span>
             {commands.map((c) => (
-              <CommandTry
-                key={c.id}
-                pluginId={p.id}
-                command={c.id}
-                name={c.name}
-                invoke={invoke}
-              />
+              <CommandTry key={c.id} pluginId={p.id} command={c.id} name={c.name} invoke={invoke} />
             ))}
           </div>
         )}
@@ -237,9 +230,7 @@ export function PluginsView() {
           )}
           {externalPlugins.length > 0 && (
             <div className="plugin-group">
-              {corePlugins.length > 0 && (
-                <div className="plugin-group-label">外部插件</div>
-              )}
+              {corePlugins.length > 0 && <div className="plugin-group-label">外部插件</div>}
               {externalPlugins.map((p) => renderCard(p))}
             </div>
           )}
@@ -285,9 +276,7 @@ export function PluginsView() {
                   <span className="plugin-event-time">{fmtTime(e.time)}</span>
                   <span className="plugin-event-id">{e.pluginId}</span>
                   <span className="plugin-event-name">{e.event}</span>
-                  <code className="plugin-event-data">
-                    {JSON.stringify(e.data)}
-                  </code>
+                  <code className="plugin-event-data">{JSON.stringify(e.data)}</code>
                 </div>
               ))}
           </div>

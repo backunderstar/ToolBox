@@ -184,11 +184,7 @@ export function applyTheme(id: string): void {
 }
 
 /** 纯 DOM 应用（预览用，不持久化） */
-export function applyThemeStyle(
-  base: ThemeMode,
-  id: string,
-  tokens: Record<string, string>
-): void {
+export function applyThemeStyle(base: ThemeMode, id: string, tokens: Record<string, string>): void {
   document.documentElement.dataset.theme = base;
   document.documentElement.dataset.themeId = id;
   const entries = Object.entries(tokens);

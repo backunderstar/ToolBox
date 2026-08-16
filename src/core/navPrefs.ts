@@ -136,7 +136,7 @@ export function normalizeNav(cfg: NavConfig | null, defs: NavItemDef[]): NavConf
     (g) =>
       BUILTIN_GROUPS.some((b) => b.id === g.id) ||
       g.id.startsWith("user:") ||
-      (order[g.id] ?? []).length > 0
+      (order[g.id] ?? []).length > 0,
   );
   const finalOrder: Record<string, string[]> = {};
   for (const g of finalGroups) finalOrder[g.id] = order[g.id] ?? [];

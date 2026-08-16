@@ -74,7 +74,7 @@ const IconTrash = (p: { width?: number; height?: number } = {}) =>
       <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l.8 12a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9l.8-12" />
       <path d="M10 11v6M14 11v6" />
     </>,
-    p.width ?? 12
+    p.width ?? 12,
   );
 const IconFileText = (p: { width?: number; height?: number } = {}) =>
   svg(
@@ -83,7 +83,7 @@ const IconFileText = (p: { width?: number; height?: number } = {}) =>
       <path d="M14 3v4h4" />
       <path d="M9 12h6M9 16h6" />
     </>,
-    p.width ?? 12
+    p.width ?? 12,
   );
 
 /* ---------------- 主组件（数据层 + 视图） ---------------- */
@@ -132,7 +132,7 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
             total: c.items.length,
             updatedAt: c.updatedAt,
           }))
-          .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+          .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)),
       );
     } catch (e) {
       console.error("[checklists] 刷新失败", e);
@@ -173,9 +173,7 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
       // 避免服务端返回的旧快照覆盖正在输入的状态（宿主的 Provider 常驻无此竞态，插件需防护）
       if (!pendingRef.current) {
         // 仅当当前仍显示该清单时同步 UI（其余场景由后续刷新兜底）
-        setCurrent((prev) =>
-          saved && prev && prev.id === saved.id ? { ...saved } : prev
-        );
+        setCurrent((prev) => (saved && prev && prev.id === saved.id ? { ...saved } : prev));
       }
       await refresh();
     } catch (e) {
@@ -245,11 +243,9 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
     };
     window.addEventListener("tb:open-checklist", handle);
     // 挂载期标记：视图切换是异步的，本组件可能晚于标记写入才挂载
-    const pending = (window as unknown as Record<string, unknown>)
-      .__TB_PENDING_CHECKLIST__;
+    const pending = (window as unknown as Record<string, unknown>).__TB_PENDING_CHECKLIST__;
     if (typeof pending === "string" && pending) {
-      delete (window as unknown as Record<string, unknown>)
-        .__TB_PENDING_CHECKLIST__;
+      delete (window as unknown as Record<string, unknown>).__TB_PENDING_CHECKLIST__;
       void openRef.current(pending);
     }
     return () => window.removeEventListener("tb:open-checklist", handle);
@@ -322,9 +318,7 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
   const setItemNote = (id: string, note: string | undefined) => {
     mutate((c) => ({
       ...c,
-      items: c.items.map((i) =>
-        i.id === id ? { ...i, note: note || undefined } : i
-      ),
+      items: c.items.map((i) => (i.id === id ? { ...i, note: note || undefined } : i)),
     }));
   };
 
@@ -414,9 +408,7 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
   };
 
   /* 笔记选择器列表：Markdown 文件（等价宿主 vault.files 过滤） */
-  const mdNotes = notes.filter(
-    (f) => !f.isDir && f.path.toLowerCase().endsWith(".md")
-  );
+  const mdNotes = notes.filter((f) => !f.isDir && f.path.toLowerCase().endsWith(".md"));
 
   const done = current?.items.filter((i) => i.done).length ?? 0;
   const total = current?.items.length ?? 0;
@@ -446,11 +438,7 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
                 onKeyDown={(e) => e.key === "Enter" && void submitCreate()}
                 placeholder="新建清单…"
               />
-              <button
-                className="icon-btn sm"
-                onClick={() => void submitCreate()}
-                title="新建清单"
-              >
+              <button className="icon-btn sm" onClick={() => void submitCreate()} title="新建清单">
                 <IconPlus width={13} height={13} />
               </button>
             </div>
@@ -511,20 +499,14 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
                     onChange={(e) => rename(e.target.value)}
                     spellCheck={false}
                   />
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => void refresh()}
-                  >
+                  <button className="btn btn-sm" onClick={() => void refresh()}>
                     刷新
                   </button>
                 </div>
 
                 <div className="checklist-progress">
                   <div className="checklist-progress-track">
-                    <div
-                      className="checklist-progress-fill"
-                      style={{ width: `${pct}%` }}
-                    />
+                    <div className="checklist-progress-fill" style={{ width: `${pct}%` }} />
                   </div>
                   <span className="checklist-progress-text">
                     {done}/{total} · {pct}%
@@ -533,10 +515,7 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
 
                 <ul className="checklist-items">
                   {current.items.map((item) => (
-                    <li
-                      key={item.id}
-                      className={`checklist-item${item.done ? " done" : ""}`}
-                    >
+                    <li key={item.id} className={`checklist-item${item.done ? " done" : ""}`}>
                       <label className="checklist-check">
                         <input
                           type="checkbox"
@@ -555,9 +534,7 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
                           <button
                             className={`note-link${
                               // 断链提示：目标笔记已不存在时标灰（点开会报错）
-                              notes.some((f) => f.path === item.note)
-                                ? ""
-                                : " broken"
+                              notes.some((f) => f.path === item.note) ? "" : " broken"
                             }`}
                             onClick={() => api.nav?.openNote(item.note!)}
                             title={
@@ -592,7 +569,7 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
                               <div className="note-picker-list">
                                 {mdNotes
                                   .filter((n) =>
-                                    n.path.toLowerCase().includes(noteQuery.toLowerCase())
+                                    n.path.toLowerCase().includes(noteQuery.toLowerCase()),
                                   )
                                   .map((n) => (
                                     <button

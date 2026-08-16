@@ -7,13 +7,22 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function probe(page, expression) {
   try {
     const ws = new WebSocket(page.webSocketDebuggerUrl);
-    await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+    await new Promise((res, rej) => {
+      ws.onopen = res;
+      ws.onerror = rej;
+    });
     const r = await new Promise((res) => {
       ws.onmessage = (e) => {
         const m = JSON.parse(e.data);
         if (m.id === 1) res(m);
       };
-      ws.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression, returnByValue: true } }));
+      ws.send(
+        JSON.stringify({
+          id: 1,
+          method: "Runtime.evaluate",
+          params: { expression, returnByValue: true },
+        }),
+      );
     });
     ws.close();
     return r.result?.result?.value === true;
@@ -44,17 +53,34 @@ export async function findFloatPage(port) {
 /** 连接页面：返回 { ev, ws }（ev 求值表达式，awaitPromise 支持 async 表达式） */
 export async function connect(page) {
   const ws = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  await new Promise((res, rej) => {
+    ws.onopen = res;
+    ws.onerror = rej;
+  });
   let id = 0;
   const pending = new Map();
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.id) { const cb = pending.get(m.id); if (cb) { pending.delete(m.id); cb(m); } }
+    if (m.id) {
+      const cb = pending.get(m.id);
+      if (cb) {
+        pending.delete(m.id);
+        cb(m);
+      }
+    }
   };
   const send = (method, params = {}) =>
-    new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
+    new Promise((res) => {
+      const i = ++id;
+      pending.set(i, res);
+      ws.send(JSON.stringify({ id: i, method, params }));
+    });
   const ev = async (expression) => {
-    const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+    const r = await send("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    });
     if (r.result?.exceptionDetails) return "EXC:" + r.result.exceptionDetails.text;
     return r.result?.result?.value;
   };
@@ -78,7 +104,7 @@ export function helpers(ev) {
     /** 点击文本匹配的元素（selector 内第一个 textContent === text 的） */
     clickText: async (selector, text) => {
       const ok = await ev(
-        `(() => { const els = [...document.querySelectorAll(${JSON.stringify(selector)})]; const el = els.find(e => e.textContent.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`
+        `(() => { const els = [...document.querySelectorAll(${JSON.stringify(selector)})]; const el = els.find(e => e.textContent.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`,
       );
       if (!ok) throw new Error(`未找到可点元素 ${selector}「${text}」`);
     },

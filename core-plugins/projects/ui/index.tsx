@@ -46,14 +46,19 @@ const IconFolder = (p: { width?: number; height?: number; className?: string }) 
     <>
       <path d="M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
     </>,
-    p.width ?? 14
+    p.width ?? 14,
   );
 const IconPlus = () => svg(<path d="M12 5v14M5 12h14" />, 14);
 const IconRefresh = () => svg(<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4" />, 14);
-const IconTrash = () => svg(<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />, 12);
+const IconTrash = () =>
+  svg(
+    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />,
+    12,
+  );
 const IconChevronRight = () => svg(<path d="M9 6l6 6-6 6" />, 12);
 const IconArrowLeft = () => svg(<path d="M19 12H5M12 19l-7-7 7-7" />, 13);
-const IconFile = () => svg(<path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8zM14 3v5h5" />, 16);
+const IconFile = () =>
+  svg(<path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8zM14 3v5h5" />, 16);
 
 /* ---------------- 主组件 ---------------- */
 
@@ -247,7 +252,11 @@ export function ProjectsPluginUi({ api }: { api: PluginBridgeApi }) {
               placeholder="输入项目名称，回车创建（文件夹位于工作区 projects/ 下）"
               spellCheck={false}
             />
-            <button className="btn btn-primary" onClick={() => void create()} disabled={!newName.trim()}>
+            <button
+              className="btn btn-primary"
+              onClick={() => void create()}
+              disabled={!newName.trim()}
+            >
               <IconPlus />
               新建项目
             </button>
@@ -410,7 +419,11 @@ function ProjectSection({
         <div className="project-list">
           {items.map((it) => (
             <div className="project-card" key={it.name}>
-              <button className="project-card-main" onClick={() => onOpen(it.name)} title={`打开项目 ${it.name}`}>
+              <button
+                className="project-card-main"
+                onClick={() => onOpen(it.name)}
+                title={`打开项目 ${it.name}`}
+              >
                 <IconFolder className="module-icon" width={18} height={18} />
                 <span className="project-card-name">{it.name}</span>
                 <span className="project-card-meta">{it.fileCount} 个文件</span>

@@ -69,17 +69,48 @@ const svg = (children: React.ReactNode, size = 14, sw = 1.6) => (
     {children}
   </svg>
 );
-const IconFileText = () => svg(<><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4" /><path d="M9 12h6M9 16h6" /></>, 14);
-const IconFolder = () => svg(<path d="M3.5 6.5h6l2 2.5h9v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />, 14);
+const IconFileText = () =>
+  svg(
+    <>
+      <path d="M6 3h8l4 4v14H6z" />
+      <path d="M14 3v4h4" />
+      <path d="M9 12h6M9 16h6" />
+    </>,
+    14,
+  );
+const IconFolder = () =>
+  svg(<path d="M3.5 6.5h6l2 2.5h9v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />, 14);
 const IconChevronRight = () => svg(<path d="M9 6l6 6-6 6" />, 12);
 const IconChevronLeft = () => svg(<path d="M15 6l-6 6 6 6" />, 14);
 const IconChevronDown = () => svg(<path d="M6 9l6 6 6-6" />, 12);
 const IconPlus = () => svg(<path d="M12 5v14M5 12h14" />, 14);
-const IconTrash = () => svg(<><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l.8 12a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9l.8-12" /><path d="M10 11v6M14 11v6" /></>, 12);
+const IconTrash = () =>
+  svg(
+    <>
+      <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l.8 12a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9l.8-12" />
+      <path d="M10 11v6M14 11v6" />
+    </>,
+    12,
+  );
 const IconExpand = () => svg(<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />, 14);
 const IconShrink = () => svg(<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />, 14);
-const IconLink = () => svg(<><path d="M9.5 14.5l5-5" /><path d="M8 12.5L5.5 15a3.5 3.5 0 0 0 5 5L13 17.5" /><path d="M16 11.5l2.5-2.5a3.5 3.5 0 0 0-5-5L11 6.5" /></>, 12);
-const IconSparkle = () => svg(<><path d="M12 3.5l1.9 5.6 5.6 1.9-5.6 1.9L12 18.5l-1.9-5.6L4.5 11l5.6-1.9z" /></>, 14, 1.6);
+const IconLink = () =>
+  svg(
+    <>
+      <path d="M9.5 14.5l5-5" />
+      <path d="M8 12.5L5.5 15a3.5 3.5 0 0 0 5 5L13 17.5" />
+      <path d="M16 11.5l2.5-2.5a3.5 3.5 0 0 0-5-5L11 6.5" />
+    </>,
+    12,
+  );
+const IconSparkle = () =>
+  svg(
+    <>
+      <path d="M12 3.5l1.9 5.6 5.6 1.9-5.6 1.9L12 18.5l-1.9-5.6L4.5 11l5.6-1.9z" />
+    </>,
+    14,
+    1.6,
+  );
 
 /* ---------------- 主组件 ---------------- */
 
@@ -94,7 +125,9 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
   const [searching, setSearching] = useState(false);
   const [status, setStatus] = useState("就绪");
   /* 布局偏好：文件面板折叠 / 专注模式（localStorage 持久化，宿主布局互不影响） */
-  const [filesCollapsed, setFilesCollapsed] = useState(() => loadPref("notes.filesCollapsed", false));
+  const [filesCollapsed, setFilesCollapsed] = useState(() =>
+    loadPref("notes.filesCollapsed", false),
+  );
   const [focusMode, setFocusMode] = useState(() => loadPref("notes.focusMode", false));
   const [dark, setDark] = useState(() => document.documentElement.dataset.theme === "dark");
 
@@ -113,7 +146,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
   /* 主题跟随：宿主切换主题时更新（Vditor setTheme + 暗色变量由宿主 tokens 自动生效） */
   useEffect(() => {
     const mo = new MutationObserver(() =>
-      setDark(document.documentElement.dataset.theme === "dark")
+      setDark(document.documentElement.dataset.theme === "dark"),
     );
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => mo.disconnect();
@@ -176,9 +209,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
       dirtyRef.current = false;
       setDirty(false);
       // 同步宿主 vault（tb:vault-active）：AI 预设等插件界面经 context 读取当前笔记
-      window.dispatchEvent(
-        new CustomEvent("tb:vault-active", { detail: { rel, content: text } })
-      );
+      window.dispatchEvent(new CustomEvent("tb:vault-active", { detail: { rel, content: text } }));
     } catch (e) {
       flash(String(e));
     }
@@ -268,7 +299,8 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
   useEffect(() => {
     if (!vaultRef.current) return;
     const w = window as unknown as Record<string, unknown>;
-    const pending = typeof w.__TB_PENDING_NOTE__ === "string" ? (w.__TB_PENDING_NOTE__ as string) : null;
+    const pending =
+      typeof w.__TB_PENDING_NOTE__ === "string" ? (w.__TB_PENDING_NOTE__ as string) : null;
     if (pending) {
       w.__TB_PENDING_NOTE__ = null;
       void openFile(pending);
@@ -380,7 +412,11 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
       {!focusMode &&
         (filesCollapsed ? (
           <aside className="files-pane collapsed">
-            <button className="files-expand" onClick={() => setFilesCollapsed(false)} title="展开文件面板">
+            <button
+              className="files-expand"
+              onClick={() => setFilesCollapsed(false)}
+              title="展开文件面板"
+            >
               <IconChevronRight />
             </button>
           </aside>
@@ -390,7 +426,12 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
               <span className="files-title" title={vault}>
                 {vaultName}
               </span>
-              <button className="icon-btn sm" title="新建笔记" aria-label="新建笔记" onClick={() => void newNote()}>
+              <button
+                className="icon-btn sm"
+                title="新建笔记"
+                aria-label="新建笔记"
+                onClick={() => void newNote()}
+              >
                 <IconPlus />
               </button>
               <button
@@ -438,7 +479,10 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
         ) : activePath ? (
           <>
             <div className="editor-header">
-              <span className={`dirty-dot${dirty ? " on" : ""}`} title={dirty ? "有未保存修改" : "已保存"} />
+              <span
+                className={`dirty-dot${dirty ? " on" : ""}`}
+                title={dirty ? "有未保存修改" : "已保存"}
+              />
               <span className="editor-title" title={activePath}>
                 {activePath}
               </span>
@@ -512,7 +556,7 @@ function buildTree(entries: FileEntry[]): TreeNode[] {
   }
   const sort = (nodes: TreeNode[]) => {
     nodes.sort((a, b) =>
-      a.isDir === b.isDir ? a.name.localeCompare(b.name, "zh") : a.isDir ? -1 : 1
+      a.isDir === b.isDir ? a.name.localeCompare(b.name, "zh") : a.isDir ? -1 : 1,
     );
     nodes.forEach((n) => sort(n.children));
   };
@@ -538,7 +582,7 @@ function FileTree({
 }) {
   const tree = useMemo(() => buildTree(files), [files]);
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(files.filter((f) => f.isDir).map((f) => f.path))
+    () => new Set(files.filter((f) => f.isDir).map((f) => f.path)),
   );
 
   const toggle = (path: string) =>
@@ -564,9 +608,7 @@ function FileTree({
 
   /** 按 path 聚焦某一行（键盘导航用） */
   const focusRow = (path: string) => {
-    const el = document.querySelector<HTMLElement>(
-      `.tree-row[data-path="${CSS.escape(path)}"]`
-    );
+    const el = document.querySelector<HTMLElement>(`.tree-row[data-path="${CSS.escape(path)}"]`);
     el?.focus();
   };
 
@@ -637,7 +679,7 @@ function TreeNodeRow({
     () => () => {
       if (confirmTimer.current) clearTimeout(confirmTimer.current);
     },
-    []
+    [],
   );
 
   const isOpen = expanded.has(node.path);
@@ -711,11 +753,9 @@ function TreeNodeRow({
         onKeyDown={onRowKeyDown}
       >
         <span className="tree-chevron">
-          {node.isDir ? (isOpen ? <IconChevronDown /> : <IconChevronRight />) : null}
+          {node.isDir ? isOpen ? <IconChevronDown /> : <IconChevronRight /> : null}
         </span>
-        <span className="tree-icon">
-          {node.isDir ? <IconFolder /> : <IconFileText />}
-        </span>
+        <span className="tree-icon">{node.isDir ? <IconFolder /> : <IconFileText />}</span>
         {editing ? (
           <input
             ref={inputRef}
@@ -909,7 +949,7 @@ function highlight(text: string, query: string): React.ReactNode {
   const parts = text.split(new RegExp(`(${escaped})`, "ig"));
   const lower = query.toLowerCase();
   return parts.map((part, i) =>
-    part.toLowerCase() === lower ? <mark key={i}>{part}</mark> : part
+    part.toLowerCase() === lower ? <mark key={i}>{part}</mark> : part,
   );
 }
 
@@ -1001,7 +1041,7 @@ function NoteEditor({
             { role: "user", content: sel.slice(0, 6000) },
           ],
         },
-        "core-ai"
+        "core-ai",
       )) as string;
       const block = `\n\n> **AI 摘要**\n${reply
         .split("\n")
@@ -1012,7 +1052,7 @@ function NoteEditor({
       const msg = String(e);
       vd.tip(
         msg.includes("未配置 API Key") ? "未配置 AI —— 请到设置页填写" : msg.slice(0, 80),
-        3000
+        3000,
       );
     } finally {
       aiBusyRef.current = false;
