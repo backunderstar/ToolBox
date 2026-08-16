@@ -48,6 +48,7 @@ const PLUGINS = [
     name: "项目",
     dll: "tb_projects.dll",
     description: "核心插件：项目文件管理（projects/ 目录/归档/默认应用打开）",
+    ui: { entry: "ui/index.js" },
     nav: [{ id: "projects", label: "项目", icon: "folder", group: "工作区", view: "ProjectsView" }],
   },
   {

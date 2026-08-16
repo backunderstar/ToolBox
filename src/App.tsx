@@ -224,7 +224,11 @@ function AppInner() {
               )
             ) : view === "projects" ? (
               corePluginEnabled(pluginCtx.plugins, "core-projects") ? (
-                <ProjectsView />
+                hasPluginUi(pluginCtx.plugins, "core-projects") ? (
+                  <PluginUiView pluginId="core-projects" />
+                ) : (
+                  <ProjectsView />
+                )
               ) : (
                 <CoreDisabled name="项目" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
