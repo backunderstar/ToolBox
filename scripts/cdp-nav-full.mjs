@@ -61,8 +61,10 @@ await waitFor(
 log("PASS 新建分组「我的收藏」");
 
 // ---- 3. 拖拽跨组：把「笔记」拖到「我的收藏」----
+// 注意：每行有「移动到…」下拉（select 的 option 含所有分组名，会污染 textContent），
+// 查找行一律用 .nav-settings-label 精确匹配
 const dragged = await ev(`(() => {
-  const row = [...document.querySelectorAll('.nav-settings-row')].find(r => r.textContent.includes('笔记') && !r.textContent.includes('我的收藏'));
+  const row = [...document.querySelectorAll('.nav-settings-row')].find(r => r.querySelector('.nav-settings-label')?.textContent === '笔记');
   if (!row) return false;
   row.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
   return true;
@@ -86,9 +88,30 @@ await waitFor(
 );
 log("PASS 拖拽「笔记」→「我的收藏」（跨组移动）");
 
+// ---- 3b. 按钮式跨组移动（每行的「移动到…」下拉，不依赖拖拽）----
+const selMoved = await ev(`(() => {
+  const row = [...document.querySelectorAll('.nav-settings-row')].find(r => r.querySelector('.nav-settings-label')?.textContent === '清单');
+  const sel = row?.querySelector('.nav-settings-move');
+  if (!sel) return false;
+  const opt = [...sel.options].find(o => o.textContent === '我的收藏');
+  if (!opt) return false;
+  sel.value = opt.value;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+})()`);
+if (!selMoved) throw new Error("未找到「清单」行的移动到下拉");
+await waitFor(
+  `(() => {
+  const group = [...document.querySelectorAll('.nav-settings-group')].find(g => g.querySelector('.nav-settings-group-name')?.value === '我的收藏');
+  return group ? group.textContent.includes('清单') : false;
+})()`,
+  "清单出现在我的收藏组",
+);
+log("PASS 按钮式「移动到…」把「清单」移入「我的收藏」（不依赖拖拽）");
+
 // ---- 4. 改标签 + 图标 ----
 await ev(`(() => {
-  const row = [...document.querySelectorAll('.nav-settings-row')].find(r => r.textContent.includes('笔记') && !r.textContent.includes('我的收藏'));
+  const row = [...document.querySelectorAll('.nav-settings-row')].find(r => r.querySelector('.nav-settings-label')?.textContent === '笔记');
   const btn = row && [...row.querySelectorAll('button')].find(b => b.title.includes('编辑标签'));
   btn?.click(); return !!btn;
 })()`);

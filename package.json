@@ -15,7 +15,9 @@
     "build:core": "node scripts/build-core.mjs",
     "build:core:release": "node scripts/build-core.mjs --release",
     "version:sync": "node scripts/sync-version.mjs",
-    "sync:vditor": "node scripts/sync-vditor.mjs"
+    "sync:vditor": "node scripts/sync-vditor.mjs",
+    "sync:plugins": "node scripts/sync-external-plugins.mjs",
+    "build-external-ui": "node scripts/build-external-ui.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

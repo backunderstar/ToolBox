@@ -3008,6 +3008,21 @@
   align-items: center;
   gap: 4px;
 }
+/* 跨组移动下拉（按钮式，不依赖拖拽） */
+.nav-settings-move {
+  font-size: var(--text-xs);
+  padding: 2px 4px;
+  max-width: 88px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.nav-settings-move:hover {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
 .nav-settings-newgroup {
   display: inline-flex;
   align-items: center;

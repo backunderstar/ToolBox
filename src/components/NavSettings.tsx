@@ -20,7 +20,8 @@ interface NavSettingsProps {
 /**
  * 设置页"导航栏"卡片（全配置）：
  * - 分组管理：新建 / 重命名（自定义组）/ 删除（组内项回默认组）
- * - 项：跨组拖拽移动 + 组内上下移 + 隐藏开关 + 编辑（标签/图标覆盖，插件项也可改）
+ * - 项：跨组移动（拖拽 drop 或每行的「移动到…」下拉，按钮式最可靠——
+ *   WebView2 里 HTML5 拖拽不稳定）+ 组内上下移 + 隐藏开关 + 编辑（标签/图标覆盖，插件项也可改）
  * - 插件项的位置完全由用户配置（默认按插件声明 group 归组，可任意移动）
  */
 export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
@@ -189,7 +190,9 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
             </div>
 
             {isEmpty ? (
-              <div className="nav-settings-empty">把导航项拖到这里，或从其他组拖入</div>
+              <div className="nav-settings-empty">
+                把导航项拖到这里，或使用每行的「移动到…」下拉
+              </div>
             ) : (
               items.map((item) => {
                 const meta = config.meta[item.id];
@@ -258,6 +261,29 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
                           >
                             ✎
                           </button>
+                          {/* 跨组移动（按钮式：WebView2 拖拽不可靠，提供最可靠路径） */}
+                          <select
+                            className="nav-settings-move"
+                            value=""
+                            title="移动到其他分组…"
+                            aria-label={`移动「${label}」到其他分组`}
+                            onChange={(e) => {
+                              const to = e.target.value;
+                              if (to) moveToGroup(item.id, group.id, to);
+                              e.target.value = "";
+                            }}
+                          >
+                            <option value="" disabled>
+                              移动到…
+                            </option>
+                            {config.groups
+                              .filter((g) => g.id !== group.id)
+                              .map((g) => (
+                                <option key={g.id} value={g.id}>
+                                  {g.label}
+                                </option>
+                              ))}
+                          </select>
                           <label
                             className={`switch${hidden ? " off" : ""}${
                               isSettings ? " disabled" : ""
