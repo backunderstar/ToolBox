@@ -7,9 +7,9 @@
 //     meta:  { 项id: { label?, icon?, hidden? } }  // 项元数据覆盖（标签/图标/隐藏，插件项也可覆盖）}
 //
 // 规则：
-// - 内置组 id 固定（work 工作区 / system 系统），label 不可改；
-//   自定义组 id 用时间戳，可改名；插件声明的 group（label 字符串）匹配内置组 label
-//   归入内置组，否则自动建动态组（dyn:<group>）。
+// - 内置组 id 固定（work 工作区 / system 系统），label 可配置（用户可改名）；
+//   自定义组 id 用时间戳，可改名；插件声明的 group（label 字符串）按内置组
+//   **默认 label** 匹配归入内置组（改名不影响），否则自动建动态组（dyn:<group>）。
 // - normalizeNav 以当前代码的项定义（静态 + 插件 nav）为底：
 //   失效项清理、未配置项补回默认组尾部、settings 强制可见、空自定义组清除。
 // - 插件增删时：新增项自动入默认组、删除项自动清理（存储随之自愈）。
@@ -69,8 +69,13 @@ const VERSION = 2;
 export function normalizeNav(cfg: NavConfig | null, defs: NavItemDef[]): NavConfig {
   const groups: NavGroup[] = [];
   const groupById = new Map<string, NavGroup>();
+  /** 建组或更新 label：cfg.groups 是用户配置的权威，已存在的组用其 label 覆盖
+   *  （否则改名不生效——ensureGroup 只在不存在时创建是历史 bug）。 */
   const ensureGroup = (id: string, label: string) => {
-    if (!groupById.has(id)) {
+    const existing = groupById.get(id);
+    if (existing) {
+      if (label) existing.label = label;
+    } else {
       const g: NavGroup = { id, label };
       groupById.set(id, g);
       groups.push(g);
@@ -87,7 +92,9 @@ export function normalizeNav(cfg: NavConfig | null, defs: NavItemDef[]): NavConf
   for (const g of raw) {
     const builtin = BUILTIN_GROUPS.find((b) => b.id === g.id);
     if (builtin) {
-      ensureGroup(g.id, builtin.label);
+      // 内置组 id 固定、始终存在；label 可配置（用户可改名），空名回退默认。
+      // groupIdFor 仍按 BUILTIN_GROUPS 常量 label 匹配插件声明，改名不影响归组。
+      ensureGroup(g.id, g.label?.trim() || builtin.label);
       if (g.collapsed) groupById.get(g.id)!.collapsed = true;
     } else {
       ensureGroup(g.id, g.label || g.id);

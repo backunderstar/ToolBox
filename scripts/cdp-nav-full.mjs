@@ -60,22 +60,22 @@ await waitFor(
 );
 log("PASS 新建分组「我的收藏」");
 
-// ---- 3. 拖拽跨组：把「笔记」拖到「我的收藏」----
-// 注意：每行有「移动到…」下拉（select 的 option 含所有分组名，会污染 textContent），
-// 查找行一律用 .nav-settings-label 精确匹配
-const dragged = await ev(`(() => {
+// ---- 3. 拖拽跨组（自定义 pointer 拖拽）：把「笔记」拖到「我的收藏」----
+// 注意：行内有按钮等交互元素，查找一律用 .nav-settings-label 精确匹配
+const rowPt = await ev(`(() => {
   const row = [...document.querySelectorAll('.nav-settings-row')].find(r => r.querySelector('.nav-settings-label')?.textContent === '笔记');
   if (!row) return false;
-  row.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+  const r = row.getBoundingClientRect();
+  row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: r.x + 20, clientY: r.y + 10 }));
   return true;
 })()`);
-if (!dragged) throw new Error("未找到笔记设置行");
-// 找到「我的收藏」组容器并 drop
+if (!rowPt) throw new Error("未找到笔记设置行");
 const dropped = await ev(`(() => {
   const group = [...document.querySelectorAll('.nav-settings-group')].find(g => g.querySelector('.nav-settings-group-name')?.value === '我的收藏');
   if (!group) return false;
-  group.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true }));
-  group.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true }));
+  const r = group.getBoundingClientRect();
+  window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+  window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
   return true;
 })()`);
 if (!dropped) throw new Error("未找到我的收藏组");
@@ -86,28 +86,39 @@ await waitFor(
 })()`,
   "笔记出现在我的收藏组",
 );
-log("PASS 拖拽「笔记」→「我的收藏」（跨组移动）");
+log("PASS 拖拽「笔记」→「我的收藏」（pointer 拖拽，WebView2 可靠）");
 
-// ---- 3b. 按钮式跨组移动（每行的「移动到…」下拉，不依赖拖拽）----
-const selMoved = await ev(`(() => {
-  const row = [...document.querySelectorAll('.nav-settings-row')].find(r => r.querySelector('.nav-settings-label')?.textContent === '清单');
-  const sel = row?.querySelector('.nav-settings-move');
-  if (!sel) return false;
-  const opt = [...sel.options].find(o => o.textContent === '我的收藏');
-  if (!opt) return false;
-  sel.value = opt.value;
-  sel.dispatchEvent(new Event('change', { bubbles: true }));
+// ---- 3b. 内置组可重命名（工作区/系统 → 可配置）----
+// 注意：blur() 对无焦点元素是 no-op，必须先用 focus() 拿到焦点再 blur（模拟真实交互）
+await ev(`(() => {
+  const input = [...document.querySelectorAll('.nav-settings-group-name')].find(i => i.value === '系统');
+  if (!input) return false;
+  input.focus();
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(input, '系统工具');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.blur();
   return true;
 })()`);
-if (!selMoved) throw new Error("未找到「清单」行的移动到下拉");
-await waitFor(
-  `(() => {
-  const group = [...document.querySelectorAll('.nav-settings-group')].find(g => g.querySelector('.nav-settings-group-name')?.value === '我的收藏');
-  return group ? group.textContent.includes('清单') : false;
-})()`,
-  "清单出现在我的收藏组",
-);
-log("PASS 按钮式「移动到…」把「清单」移入「我的收藏」（不依赖拖拽）");
+await sleep(400);
+let gLabels = await groupLabels();
+if (!gLabels.includes("系统工具")) throw new Error(`内置组改名未生效: ${gLabels.join(",")}`);
+log("PASS 内置组「系统」可重命名 → 「系统工具」");
+// 改回默认名（后续步骤依赖"系统"组）
+await ev(`(() => {
+  const input = [...document.querySelectorAll('.nav-settings-group-name')].find(i => i.value === '系统工具');
+  if (!input) return false;
+  input.focus();
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(input, '系统');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.blur();
+  return true;
+})()`);
+await sleep(400);
+gLabels = await groupLabels();
+if (!gLabels.includes("系统")) throw new Error(`内置组名未恢复: ${gLabels.join(",")}`);
+log("PASS 内置组名改回「系统」");
 
 // ---- 4. 改标签 + 图标 ----
 await ev(`(() => {

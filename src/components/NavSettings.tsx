@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   BUILTIN_GROUPS,
   type NavConfig,
@@ -30,6 +31,11 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  /** 正在拖拽的项（视觉高亮） */
+  const [drag, setDrag] = useState<{ itemId: string; from: string } | null>(null);
+  /** 拖拽悬停的目标组 id（高亮） */
+  const [dragOver, setDragOver] = useState<string | null>(null);
+  /** 拖拽源（pointer 事件闭包用 ref 读取，避免 state 异步） */
   const dragRef = useRef<{ itemId: string; from: string } | null>(null);
 
   const orderOf = (groupId: string): string[] => config.order[groupId] ?? [];
@@ -54,6 +60,36 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
     if (!target.includes(itemId)) target.push(itemId);
     order[to] = target;
     onChange({ ...config, order });
+  };
+
+  /**
+   * 自定义拖拽（Pointer Events）：WebView2 的 HTML5 DnD 走系统拖放协议不稳定
+   * （拖动行时 drop 经常不触发），pointer 方案完全在前端可控：
+   * 行上按下（避开按钮/输入框等交互元素）→ 拖动时高亮悬停的组 → 松手即跨组移动。
+   */
+  const startRowDrag = (e: ReactPointerEvent, itemId: string, from: string) => {
+    if (e.button !== 0) return;
+    const t = e.target as HTMLElement;
+    if (t.closest("button, input, select, textarea, label")) return;
+    dragRef.current = { itemId, from };
+    setDrag({ itemId, from });
+    const move = (ev: PointerEvent) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      setDragOver(el?.closest<HTMLElement>(".nav-settings-group")?.dataset.groupId ?? null);
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      const to = el?.closest<HTMLElement>(".nav-settings-group")?.dataset.groupId;
+      const d = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      setDragOver(null);
+      if (d && to && d.from !== to) moveToGroup(d.itemId, d.from, to);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   };
 
   const toggleHidden = (itemId: string) => {
@@ -131,9 +167,9 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
       <div className="settings-row">
         <span className="settings-label">说明</span>
         <span className="settings-hint">
-          左侧导航完全可配置：新建/重命名分组，把任意项（含插件项）拖到任意组、
-          调整顺序、隐藏、改名换图标；"设置"固定显示。插件禁用后其入口消失，
-          恢复启用时回到你配置的位置。
+          左侧导航完全可配置：新建/重命名分组（内置"工作区/系统"也可改名），
+          按住任意项（含插件项）拖到其他分组、组内上下移调整顺序、隐藏、改名换图标；
+          "设置"固定显示。插件禁用后其入口消失，恢复启用时回到你配置的位置。
         </span>
       </div>
 
@@ -145,36 +181,25 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
         const isEmpty = items.length === 0;
         return (
           <div
-            className="nav-settings-group"
+            className={`nav-settings-group${dragOver === group.id ? " drag-over" : ""}`}
             key={group.id}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const drag = dragRef.current;
-              dragRef.current = null;
-              if (drag && drag.from !== group.id) {
-                moveToGroup(drag.itemId, drag.from, group.id);
-              }
-            }}
+            data-group-id={group.id}
           >
             <div className="nav-settings-group-head">
-              {isBuiltin ? (
-                <span className="nav-settings-group-label">{group.label}</span>
-              ) : (
-                <input
-                  className="nav-settings-group-name"
-                  defaultValue={group.label}
-                  onBlur={(e) => renameGroup(group.id, e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                    if (e.key === "Escape") {
-                      (e.target as HTMLInputElement).value = group.label;
-                      (e.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  spellCheck={false}
-                />
-              )}
+              <input
+                className="nav-settings-group-name"
+                defaultValue={group.label}
+                title={isBuiltin ? "内置分组，名称可改（插件归组不受影响）" : "分组名称"}
+                onBlur={(e) => renameGroup(group.id, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") {
+                    (e.target as HTMLInputElement).value = group.label;
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                spellCheck={false}
+              />
               <span className="nav-settings-group-meta">
                 {isBuiltin ? "内置" : isEmpty ? "空分组" : `${items.length} 项`}
                 {!isBuiltin && (
@@ -190,9 +215,7 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
             </div>
 
             {isEmpty ? (
-              <div className="nav-settings-empty">
-                把导航项拖到这里，或使用每行的「移动到…」下拉
-              </div>
+              <div className="nav-settings-empty">把导航项拖到这里（按住行拖动）</div>
             ) : (
               items.map((item) => {
                 const meta = config.meta[item.id];
@@ -203,17 +226,11 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
                 const idx = orderOf(group.id).indexOf(item.id);
                 return (
                   <div
-                    className={`nav-settings-row${hidden ? " hidden" : ""}`}
+                    className={`nav-settings-row${hidden ? " hidden" : ""}${
+                      drag?.itemId === item.id ? " dragging" : ""
+                    }`}
                     key={item.id}
-                    draggable
-                    onDragStart={(e) => {
-                      dragRef.current = { itemId: item.id, from: group.id };
-                      e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", item.id);
-                    }}
-                    onDragEnd={() => {
-                      dragRef.current = null;
-                    }}
+                    onPointerDown={(e) => startRowDrag(e, item.id, group.id)}
                   >
                     <span className="nav-settings-name">
                       <span className="nav-settings-icon">
@@ -261,29 +278,6 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
                           >
                             ✎
                           </button>
-                          {/* 跨组移动（按钮式：WebView2 拖拽不可靠，提供最可靠路径） */}
-                          <select
-                            className="nav-settings-move"
-                            value=""
-                            title="移动到其他分组…"
-                            aria-label={`移动「${label}」到其他分组`}
-                            onChange={(e) => {
-                              const to = e.target.value;
-                              if (to) moveToGroup(item.id, group.id, to);
-                              e.target.value = "";
-                            }}
-                          >
-                            <option value="" disabled>
-                              移动到…
-                            </option>
-                            {config.groups
-                              .filter((g) => g.id !== group.id)
-                              .map((g) => (
-                                <option key={g.id} value={g.id}>
-                                  {g.label}
-                                </option>
-                              ))}
-                          </select>
                           <label
                             className={`switch${hidden ? " off" : ""}${
                               isSettings ? " disabled" : ""
