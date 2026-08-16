@@ -35,6 +35,8 @@ tauri-plugin-window-state = "2"
 libloading = "0.8"
 # 核心插件 C ABI 契约（宿主侧解析 tb_sdk 返回的 JSON）
 tb-sdk = { path = "../tb-sdk" }
+# 界面安装 DLL 插件：解压用户选择的 .zip 插件包（zip-slip 防护见 enclosed_name）
+zip = "2"
 # 全文搜索（宿主内嵌）：SQLite FTS5 trigram 索引（bundled-full 免系统依赖）
 rusqlite = { version = "0.40", features = ["bundled-full"] }
 

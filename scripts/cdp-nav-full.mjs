@@ -89,32 +89,24 @@ await waitFor(
 log("PASS 拖拽「笔记」→「我的收藏」（pointer 拖拽，WebView2 可靠）");
 
 // ---- 3b. 内置组可重命名（工作区/系统 → 可配置）----
-// 注意：blur() 对无焦点元素是 no-op，必须先用 focus() 拿到焦点再 blur（模拟真实交互）
-await ev(`(() => {
-  const input = [...document.querySelectorAll('.nav-settings-group-name')].find(i => i.value === '系统');
+// 注意：窗口失焦时 input.focus()/blur() 是 no-op（事件不触发），
+// React onBlur 监听 focusout——直接用 FocusEvent 派发触发（模拟真实交互）
+const fireRename = (from, to) => `(() => {
+  const input = [...document.querySelectorAll('.nav-settings-group-name')].find(i => i.value === ${JSON.stringify(from)});
   if (!input) return false;
-  input.focus();
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-  setter.call(input, '系统工具');
+  setter.call(input, ${JSON.stringify(to)});
   input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.blur();
+  input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
   return true;
-})()`);
+})()`;
+await ev(fireRename("系统", "系统工具"));
 await sleep(400);
 let gLabels = await groupLabels();
 if (!gLabels.includes("系统工具")) throw new Error(`内置组改名未生效: ${gLabels.join(",")}`);
 log("PASS 内置组「系统」可重命名 → 「系统工具」");
 // 改回默认名（后续步骤依赖"系统"组）
-await ev(`(() => {
-  const input = [...document.querySelectorAll('.nav-settings-group-name')].find(i => i.value === '系统工具');
-  if (!input) return false;
-  input.focus();
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-  setter.call(input, '系统');
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.blur();
-  return true;
-})()`);
+await ev(fireRename("系统工具", "系统"));
 await sleep(400);
 gLabels = await groupLabels();
 if (!gLabels.includes("系统")) throw new Error(`内置组名未恢复: ${gLabels.join(",")}`);

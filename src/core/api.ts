@@ -98,6 +98,14 @@ export const pluginsReload = (vault: string, id: string) =>
   invoke<void>("plugins_reload", { vault, id });
 export const pluginsUninstall = (vault: string, id: string) =>
   invoke<void>("plugins_uninstall", { vault, id });
+/** 重新安装已卸载的核心插件（从随应用分发的资源恢复 DLL + 目录） */
+export const pluginsReinstallCore = (vault: string, id: string) =>
+  invoke<void>("plugins_reinstall_core", { vault, id });
+/** 已卸载的核心插件 id 列表（前端展示"重新安装"入口） */
+export const pluginsRemovedCore = () => invoke<string[]>("plugins_removed_core");
+/** 界面安装 DLL 插件：source = 用户选择的 .zip 包路径或插件目录路径；kind = "zip" | "dir" */
+export const pluginsInstallNative = (vault: string, source: string, kind: string) =>
+  invoke<string>("plugins_install_native", { vault, source, kind });
 /** 读取全局插件目录内的文件（webview 插件入口加载用，插件已不在 vault 内） */
 export const pluginsReadFile = (id: string, rel: string) =>
   invoke<string>("plugins_read_file", { id, rel });

@@ -87,8 +87,10 @@ impl Default for PluginManager {
     }
 }
 
-/// plugins/ 目录内容快照：有 plugin.json 的目录名（排序），
-/// 目录增删/清单增删都会改变快照，从而触发重新发现。
+/// plugins/ 目录内容快照：有 plugin.json 的目录名（排序）+ `_core` 容器下的
+/// 子目录名（核心/手动安装插件）。任何增删/清单变化都会改变快照，从而触发
+/// 重新发现——包括用户手动放入 _core 的 DLL 插件目录（_core 本身无 plugin.json，
+/// 不含它的话新增子目录不会改变快照，导致"放进去刷新不识别"）。
 fn plugins_snapshot(dir: &Path) -> Vec<String> {
     let mut out: Vec<String> = std::fs::read_dir(dir)
         .map(|rd| {
@@ -99,6 +101,18 @@ fn plugins_snapshot(dir: &Path) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default();
+    let core = dir.join(CORE_DIR);
+    if let Ok(rd) = std::fs::read_dir(&core) {
+        let mut subs: Vec<String> = rd
+            .flatten()
+            .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+            .filter_map(|e| e.file_name().to_string_lossy().into_owned().into())
+            .collect();
+        subs.sort();
+        for s in subs {
+            out.push(format!("{CORE_DIR}/{s}"));
+        }
+    }
     out.sort();
     out
 }
@@ -145,16 +159,83 @@ pub fn ensure_core_plugins(app: &tauri::AppHandle) {
         return;
     };
     let dst = cfg.join("plugins").join(CORE_DIR);
-    match deploy_core_plugins(&src, &dst) {
+    let removed = load_removed_core(app);
+    match deploy_core_plugins(&src, &dst, &removed) {
         Ok(()) => eprintln!("[plugin] 已部署随应用分发的核心插件到 {:?}", dst),
         Err(e) => eprintln!("[plugin] 核心插件资源部署失败: {e}"),
     }
 }
 
-/// 部署实现（可测）：清空目标后从 src 整体复制。
-fn deploy_core_plugins(src: &Path, dst: &Path) -> Result<(), String> {
-    let _ = std::fs::remove_dir_all(dst);
-    copy_dir_recursive(src, dst)
+/// 部署实现（可测）：**随包插件逐个覆盖部署**，不清空整个目标——
+/// `_core` 下用户手动安装的本地 DLL 插件（非随包）保留，刷新后自动识别为原生插件。
+/// 已卸载的核心插件（removed_core）跳过部署。
+fn deploy_core_plugins(src: &Path, dst: &Path, removed: &HashSet<String>) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| format!("创建目录失败: {e}"))?;
+    let read = std::fs::read_dir(src).map_err(|e| format!("读取资源目录失败 {src:?}: {e}"))?;
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !entry.path().is_dir() || removed.contains(&name) {
+            // 跳过已卸载的核心插件（用户卸载后保持卸载状态，不随应用重启恢复）
+            continue;
+        }
+        let target = dst.join(&name);
+        // 覆盖部署（先删旧目录再复制，避免残留已删除的文件）
+        let _ = std::fs::remove_dir_all(&target);
+        copy_dir_recursive(&entry.path(), &target)?;
+    }
+    Ok(())
+}
+
+/// 已卸载核心插件 id 集合（plugins.json 的 `removed_core` 键；随应用分发的
+/// 核心插件被用户卸载后记录在此，部署与扫描跳过，直到重新安装）。
+fn load_removed_core(app: &tauri::AppHandle) -> HashSet<String> {
+    load_state_map(app)
+        .get("removed_core")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn save_removed_core(app: &tauri::AppHandle, removed: &HashSet<String>) -> Result<(), String> {
+    let mut map = load_state_map(app);
+    let arr: Vec<Value> = removed
+        .iter()
+        .cloned()
+        .map(Value::String)
+        .collect();
+    map.insert("removed_core".into(), Value::Array(arr));
+    save_state_map(app, &map)
+}
+
+/// 核心插件资源源目录：优先打包资源（resource_dir/resources/_core，安装包内），
+/// 其次 dev 源码 resources（src-tauri/resources/_core，由 build:core:release 生成）。
+fn core_plugin_source(app: &tauri::AppHandle, id: &str) -> Result<PathBuf, String> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(res) = app.path().resource_dir() {
+        candidates.push(res.join("resources").join(CORE_DIR).join(id));
+    }
+    // dev：target/debug/toolbox.exe → 仓库根 → src-tauri/resources/_core/<id>
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(p) = exe
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+        {
+            candidates.push(p.join("src-tauri").join("resources").join(CORE_DIR).join(id));
+        }
+    }
+    candidates
+        .into_iter()
+        .find(|p| p.is_dir())
+        .ok_or_else(|| {
+            format!(
+                "未找到核心插件资源: {id}（打包版应随应用分发；开发模式请先运行 pnpm build:core:release）"
+            )
+        })
 }
 
 fn state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -575,24 +656,194 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 卸载：停进程 + 清启用状态 + 删除插件目录（进回收站）。
-    /// 核心插件（native）不可卸载，只能启用/禁用。
+    /// 卸载插件：停进程 + 清启用状态 + 删除插件目录。
+    /// - 外部插件：目录移入回收站（可恢复，无资源可还原）。
+    /// - 核心插件（native，随应用分发）：**真实卸载**——DLL/目录物理删除
+    ///   （不可回收），并记录到 removed_core，防止下次启动从随应用分发的
+    ///   资源重新部署；需要时经 plugins_reinstall_core 从资源一键恢复。
+    /// - 手动安装的 native 插件（_core 下、无随包资源）：物理删除即可，
+    ///   不记 removed_core（部署逻辑不清空 _core，不会复活）。
     pub fn uninstall(&mut self, app: &tauri::AppHandle, id: &str) -> Result<(), String> {
         let idx = self
             .records
             .iter()
             .position(|r| r.manifest.id == id)
             .ok_or("插件不存在")?;
-        if self.records[idx].manifest.runtime == PluginRuntime::Native {
-            return Err("核心插件不可卸载，只能禁用".to_string());
-        }
+        let is_native = self.records[idx].manifest.runtime == PluginRuntime::Native;
         let dir = self.records[idx].dir.clone();
         self.stop_record(idx);
         self.records.remove(idx);
         self.enabled.remove(id);
         self.disabled.remove(id);
         save_state(app, &self.enabled, &self.disabled)?;
-        trash::delete(&dir).map_err(|e| format!("删除插件目录失败: {e}"))?;
+        if is_native {
+            // 随包核心插件：记录"已卸载"，防止启动时重新部署
+            if core_plugin_source(app, id).is_ok() {
+                let mut removed = load_removed_core(app);
+                removed.insert(id.to_string());
+                save_removed_core(app, &removed)?;
+            }
+            // 真实卸载：DLL/目录物理删除（随包插件可从资源恢复，手动安装的不可恢复）
+            std::fs::remove_dir_all(&dir).map_err(|e| format!("删除插件目录失败: {e}"))?;
+        } else {
+            trash::delete(&dir).map_err(|e| format!("删除插件目录失败: {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// 界面安装 DLL 插件（用户选择的 .zip 包或插件目录）：
+    /// 解包/复制到临时目录 → 定位 plugin.json 校验（native + command + id）→
+    /// 部署到 _core/<id> → 扫描并启用启动。zip 解压带 zip-slip 防护。
+    pub fn install_native(
+        &mut self,
+        app: &tauri::AppHandle,
+        source: &str,
+        kind: &str,
+    ) -> Result<String, String> {
+        if kind != "zip" && kind != "dir" {
+            return Err(format!("未知安装来源: {kind}"));
+        }
+        let cfg = app
+            .path()
+            .app_config_dir()
+            .map_err(|e| format!("定位配置目录失败: {e}"))?;
+        let core_root = cfg.join("plugins").join(CORE_DIR);
+        std::fs::create_dir_all(&core_root).map_err(|e| format!("创建插件目录失败: {e}"))?;
+        let tmp = cfg
+            .join("plugins")
+            .join(format!(".install-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).map_err(|e| format!("创建临时目录失败: {e}"))?;
+
+        // 1. 解包到临时目录
+        let unpack = || -> Result<(), String> {
+            if kind == "zip" {
+                let file =
+                    std::fs::File::open(source).map_err(|e| format!("打开插件包失败: {e}"))?;
+                let mut zip =
+                    zip::ZipArchive::new(file).map_err(|e| format!("解析插件包失败: {e}"))?;
+                for i in 0..zip.len() {
+                    let mut entry = zip
+                        .by_index(i)
+                        .map_err(|e| format!("读取插件包条目失败: {e}"))?;
+                    // zip-slip 防护：拒绝 ../ 等越界路径
+                    let Some(rel) = entry.enclosed_name() else {
+                        return Err("插件包包含非法路径（拒绝越界解压）".into());
+                    };
+                    let out = tmp.join(&rel);
+                    if entry.is_dir() {
+                        std::fs::create_dir_all(&out).map_err(|e| format!("创建目录失败: {e}"))?;
+                    } else {
+                        if let Some(p) = out.parent() {
+                            std::fs::create_dir_all(p).map_err(|e| format!("创建目录失败: {e}"))?;
+                        }
+                        let mut f =
+                            std::fs::File::create(&out).map_err(|e| format!("写入失败: {e}"))?;
+                        std::io::copy(&mut entry, &mut f).map_err(|e| format!("解压失败: {e}"))?;
+                    }
+                }
+                Ok(())
+            } else {
+                copy_dir_recursive(Path::new(source), &tmp)
+            }
+        };
+        unpack().map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp);
+            e
+        })?;
+
+        // 2. 定位 plugin.json（根或唯一子目录——常见打包结构 <id>/plugin.json）
+        let (manifest_dir, manifest) = find_plugin_manifest(&tmp).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp);
+            e
+        })?;
+        let bad = |e: String| {
+            let _ = std::fs::remove_dir_all(&tmp);
+            e
+        };
+        if manifest.runtime != PluginRuntime::Native {
+            return Err(bad(format!(
+                "仅支持安装 native（DLL）插件（清单 runtime 为其他类型）: {}",
+                manifest.id
+            )));
+        }
+        if manifest
+            .command
+            .as_ref()
+            .map(|c| c.is_empty())
+            .unwrap_or(true)
+        {
+            return Err(bad(format!(
+                "native 插件清单缺少 command（DLL 文件名）: {}",
+                manifest.id
+            )));
+        }
+        if !is_safe_plugin_id(&manifest.id) {
+            return Err(bad(format!("非法插件 id: {}", manifest.id)));
+        }
+        let id = manifest.id.clone();
+        let dst = core_root.join(&id);
+        if dst.exists() {
+            return Err(bad(format!(
+                "插件已存在: {id}（如需重装请先卸载）"
+            )));
+        }
+        copy_dir_recursive(&manifest_dir, &dst).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp);
+            e
+        })?;
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        // 3. 扫描 + 默认启用 + 启动
+        self.scan_plugin_dir(&dst);
+        self.enabled.insert(id.clone());
+        self.disabled.remove(&id);
+        save_state(app, &self.enabled, &self.disabled)?;
+        if let Some(idx) = self.records.iter().position(|r| r.manifest.id == id) {
+            if self.plugin_enabled(&id) {
+                self.start_record(idx).map_err(|e| {
+                    self.records[idx].error = Some(e.clone());
+                    e
+                })?;
+            }
+        }
+        Ok(id)
+    }
+
+    /// 重新安装已卸载的核心插件：从随应用分发的资源恢复目录 + 清"已卸载"标记 + 启用并启动。
+    pub fn reinstall_core(&mut self, app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+        if !is_safe_plugin_id(id) {
+            return Err(format!("非法插件 id: {id}"));
+        }
+        let src = core_plugin_source(app, id)?;
+        let cfg = app
+            .path()
+            .app_config_dir()
+            .map_err(|e| format!("定位配置目录失败: {e}"))?;
+        let dst = cfg.join("plugins").join(CORE_DIR).join(id);
+        if dst.exists() {
+            return Err(format!("插件已存在: {id}（如需重装请先卸载）"));
+        }
+        std::fs::create_dir_all(&dst)
+            .map_err(|e| format!("创建插件目录失败: {e}"))?;
+        copy_dir_recursive(&src, &dst)?;
+        // 清"已卸载"标记 + 默认启用
+        let mut removed = load_removed_core(app);
+        removed.remove(id);
+        save_removed_core(app, &removed)?;
+        self.enabled.insert(id.to_string());
+        self.disabled.remove(id);
+        save_state(app, &self.enabled, &self.disabled)?;
+        // 扫描并启动
+        self.scan_plugin_dir(&dst);
+        if let Some(idx) = self.records.iter().position(|r| r.manifest.id == id) {
+            if self.plugin_enabled(id) {
+                self.start_record(idx).map_err(|e| {
+                    self.records[idx].error = Some(e.clone());
+                    e
+                })?;
+            }
+        }
         Ok(())
     }
 
@@ -857,7 +1108,7 @@ pub async fn plugins_set_enabled(
     m.set_enabled(&app, &id, enabled)
 }
 
-/// 卸载插件：停进程 + 清启用状态 + 删除插件目录（进回收站）。
+/// 卸载插件：停进程 + 清启用状态 + 删除插件目录。
 #[tauri::command]
 pub async fn plugins_uninstall(
     app: tauri::AppHandle,
@@ -871,6 +1122,73 @@ pub async fn plugins_uninstall(
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
     m.uninstall(&app, &id)
+}
+
+/// 重新安装已卸载的核心插件（从随应用分发的资源恢复）。
+#[tauri::command]
+pub async fn plugins_reinstall_core(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<PluginManager>>,
+    vault: String,
+    id: String,
+) -> Result<(), String> {
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
+    if !is_safe_plugin_id(&id) {
+        return Err(format!("非法插件 id: {id}"));
+    }
+    let mut m = state.lock().map_err(|e| e.to_string())?;
+    ensure_refreshed(&mut m, &app, &vault)?;
+    m.reinstall_core(&app, &id)
+}
+
+/// 已卸载的核心插件 id 列表（前端"重新安装"入口用；全局状态，无需 vault）。
+#[tauri::command]
+pub async fn plugins_removed_core(app: tauri::AppHandle) -> Vec<String> {
+    let removed = load_removed_core(&app);
+    let mut v: Vec<String> = removed.into_iter().collect();
+    v.sort();
+    v
+}
+
+/// 界面安装 DLL 插件：source = 用户选择的 .zip 包路径或插件目录路径；kind = "zip" | "dir"。
+/// 返回安装后的插件 id。
+#[tauri::command]
+pub async fn plugins_install_native(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<PluginManager>>,
+    vault: String,
+    source: String,
+    kind: String,
+) -> Result<String, String> {
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
+    let mut m = state.lock().map_err(|e| e.to_string())?;
+    ensure_refreshed(&mut m, &app, &vault)?;
+    m.install_native(&app, &source, &kind)
+}
+
+/// 在解包目录中定位插件清单：根 plugin.json，或唯一子目录下的 plugin.json
+/// （常见打包结构 `<id>/plugin.json` + DLL）。
+fn find_plugin_manifest(root: &Path) -> Result<(PathBuf, PluginManifest), String> {
+    let read_manifest = |dir: &Path| -> Result<PluginManifest, String> {
+        let raw = std::fs::read_to_string(dir.join("plugin.json"))
+            .map_err(|e| format!("读取 plugin.json 失败: {e}"))?;
+        serde_json::from_str(&raw).map_err(|e| format!("plugin.json 解析失败: {e}"))
+    };
+    if root.join("plugin.json").is_file() {
+        let m = read_manifest(root)?;
+        return Ok((root.to_path_buf(), m));
+    }
+    let dirs: Vec<PathBuf> = std::fs::read_dir(root)
+        .map_err(|e| format!("读取插件包失败: {e}"))?
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.path())
+        .collect();
+    if dirs.len() == 1 && dirs[0].join("plugin.json").is_file() {
+        let m = read_manifest(&dirs[0])?;
+        return Ok((dirs[0].clone(), m));
+    }
+    Err("未找到 plugin.json（插件包应包含清单文件）".into())
 }
 
 #[tauri::command]
@@ -1195,16 +1513,27 @@ mod tests {
         std::fs::write(src.join("core-blog/plugin.json"), "{}").unwrap();
 
         let dst = base.join("dst/_core");
-        deploy_core_plugins(&src, &dst).unwrap();
+        // 已卸载的插件（removed_core）跳过部署
+        let removed = HashSet::from(["core-blog".to_string()]);
+        deploy_core_plugins(&src, &dst, &removed).unwrap();
         assert!(dst.join("core-notes/plugin.json").is_file());
         assert!(dst.join("core-notes/tb_notes.dll").is_file());
-        assert!(dst.join("core-blog/plugin.json").is_file());
+        assert!(!dst.join("core-blog/plugin.json").exists(), "已卸载插件应跳过部署");
 
-        // 重复部署：目标旧内容被清空（不留残留）
+        // 重复部署 + 手动安装的本地插件保留：
+        // 用户把 DLL 插件目录放入 _core 后，随包部署不清空它（重启后仍可用）
+        std::fs::write(dst.join("core-notes/plugin.json"), "{}").unwrap();
+        std::fs::create_dir_all(dst.join("core-mine")).unwrap();
+        std::fs::write(dst.join("core-mine/plugin.json"), "{}").unwrap();
+        std::fs::write(dst.join("core-mine/tb_mine.dll"), "dll").unwrap();
         std::fs::write(dst.join("stale.txt"), "old").unwrap();
-        deploy_core_plugins(&src, &dst).unwrap();
-        assert!(!dst.join("stale.txt").exists(), "应清空旧内容");
-        assert!(dst.join("core-notes/plugin.json").is_file());
+        deploy_core_plugins(&src, &dst, &HashSet::new()).unwrap();
+        assert!(
+            dst.join("core-mine/plugin.json").is_file(),
+            "用户手动安装的插件应保留（不清空 _core）"
+        );
+        assert!(dst.join("core-mine/tb_mine.dll").is_file());
+        assert!(dst.join("core-blog/plugin.json").is_file(), "清除标记后恢复部署");
         let _ = std::fs::remove_dir_all(&base);
     }
 
