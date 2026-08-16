@@ -4,7 +4,7 @@
 // 命令面（全部经 api.call，本插件 core-ai）：
 //   ai.chatStream { messages } —— 流式对话，增量经 ai-chunk 事件到达，流结束后 resolve
 //   ai.chat { messages } —— 非流式，返回完整回复字符串（如 AI 摘要场景，本视图未使用）
-// 跨插件：core-search search.query（RAG 检索）、core-notes notes.read（读取命中片段）。
+// 跨插件：core-notes notes.read（读取命中片段）；RAG 检索经宿主内嵌全文搜索（api.host.search）。
 import React, { useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -19,6 +19,8 @@ interface PluginBridgeApi {
   context: { vault: string | null } & Record<string, unknown>;
   /** 宿主导航（主窗口可用；浮窗等独立窗口为 undefined） */
   nav?: { go: (view: string) => void };
+  /** 宿主能力（搜索迁回本体后经此调用，含搜索提供者聚合） */
+  host?: { search: (query: string) => Promise<SearchHit[]> };
 }
 
 interface ChatEntry {
@@ -38,7 +40,7 @@ interface AiChunk {
   text: string;
 }
 
-/** core-search search.query 返回的命中（与宿主 SearchHit 同构） */
+/** 宿主内嵌全文搜索的命中（与宿主 SearchHit 同构） */
 interface SearchHit {
   path: string;
   filename: string;
@@ -218,12 +220,8 @@ export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
     push({ role: "user", content: `（基于笔记检索）${question}` });
     scrollToBottom();
     try {
-      // 跨插件：core-search 全文检索（含启用的搜索提供者），取前 3 个命中
-      const hits = (await api.call(
-        "search.query",
-        { query: question },
-        "core-search"
-      )) as SearchHit[];
+      // 宿主内嵌全文搜索（经统一桥 host.search，含搜索提供者聚合），取前 3 个命中
+      const hits = api.host ? await api.host.search(question) : [];
       const top = hits.slice(0, 3);
       const chunks: string[] = [];
       for (const h of top) {

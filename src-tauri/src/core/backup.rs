@@ -1,8 +1,8 @@
-//! 自动备份核心插件（cdylib，id: core-backup）。
-//!
-//! 由宿主 core/backup.rs 移植：vault 快照复制（排除 site/.git/备份自身/索引）+
+//! 自动备份（宿主内嵌）：vault 快照复制（排除 site/.git/备份自身/索引）+
 //! %APPDATA% 配置 json + 全局插件目录存档；恢复 = 覆盖合并（恢复前自动保存现场）。
-//! 配置存 config_dir/backup.json；后台自动备份线程由插件启动（进程内单例）。
+//!
+//! 由核心插件 core-backup 迁回本体（备份是数据安全兜底，不作为可装卸插件）。
+//! 配置存 config_dir/backup.json；后台自动备份线程由宿主 setup 启动（进程内单例）。
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -63,24 +63,6 @@ pub struct BackupEntry {
     pub size_bytes: u64,
     pub has_config: bool,
     pub has_plugins: bool,
-}
-
-pub struct BackupState {
-    config_dir: String,
-}
-
-fn state_from_cfg(cfg: &Value) -> Result<BackupState, String> {
-    let config_dir = cfg
-        .get("config_dir")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    if config_dir.is_empty() {
-        return Err("缺少 config_dir 配置".to_string());
-    }
-    // 后台自动备份线程（进程内单例，随插件加载启动）
-    spawn_auto(config_dir.clone());
-    Ok(BackupState { config_dir })
 }
 
 /* ---------------- 配置读写 ---------------- */
@@ -317,8 +299,8 @@ fn backup_now_impl(config_dir: &str, vault: &str, keep: usize) -> Result<BackupI
     })
 }
 
-/// 立即备份命令入口（更新计时后返回）。
-fn backup_now_cmd(config_dir: &str, vault: &str) -> Result<BackupInfo, String> {
+/// 立即备份命令入口（更新计时后返回）。宿主命令与自动备份线程共用。
+pub fn backup_now_cmd(config_dir: &str, vault: &str) -> Result<BackupInfo, String> {
     let keep = load_config(config_dir).keep.max(1);
     let info = backup_now(config_dir, vault, keep)?;
     let mut cfg = load_config(config_dir);
@@ -405,8 +387,8 @@ pub fn restore_backup(config_dir: &str, vault: &str, name: &str) -> Result<Backu
 /* ---------------- 后台自动备份 ---------------- */
 
 /// 启动后台自动备份线程（进程内单例，仅一次）：每 60s 检查配置；
-/// 启用且到期则备份当前工作区。
-fn spawn_auto(config_dir: String) {
+/// 启用且到期则备份当前工作区。宿主 setup 调用。
+pub fn spawn_auto(config_dir: String) {
     static STARTED: OnceLock<()> = OnceLock::new();
     let _ = STARTED.get_or_init(|| {
         std::thread::spawn(move || loop {
@@ -432,52 +414,6 @@ fn spawn_auto(config_dir: String) {
         });
     });
 }
-
-/* ---------------- 命令分发 ---------------- */
-
-fn call(
-    state: &mut BackupState,
-    _host: tb_sdk::TbHostApi,
-    _ctx: *mut std::ffi::c_void,
-    method: &str,
-    params: Value,
-) -> Result<Value, String> {
-    let config_dir = state.config_dir.clone();
-    let s = |k: &str| params.get(k).and_then(|v| v.as_str()).map(String::from);
-    match method {
-        "backup.now" => {
-            let vault = s("vault").ok_or("缺少 vault")?;
-            let info = backup_now_cmd(&config_dir, &vault)?;
-            serde_json::to_value(info).map_err(|e| e.to_string())
-        }
-        "backup.configGet" => {
-            let cfg = backup_config_get(&config_dir);
-            serde_json::to_value(cfg).map_err(|e| e.to_string())
-        }
-        "backup.configSet" => {
-            let cfg: BackupConfig = serde_json::from_value(
-                params.get("config").cloned().unwrap_or(Value::Null),
-            )
-            .map_err(|e| format!("配置非法: {e}"))?;
-            backup_config_set(&config_dir, cfg)?;
-            Ok(Value::Null)
-        }
-        "backup.list" => {
-            let vault = s("vault").ok_or("缺少 vault")?;
-            let list = backup_list(&vault);
-            serde_json::to_value(list).map_err(|e| e.to_string())
-        }
-        "backup.restore" => {
-            let vault = s("vault").ok_or("缺少 vault")?;
-            let name = s("name").ok_or("缺少 name")?;
-            let info = restore_backup(&config_dir, &vault, &name)?;
-            serde_json::to_value(info).map_err(|e| e.to_string())
-        }
-        _ => Err(format!("未知命令: {method}")),
-    }
-}
-
-tb_sdk::tb_plugin!(BackupState, state_from_cfg, call);
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,6 @@
 // core-notes 插件自带前端（组件模式）：文件树 + Vditor 编辑器 + 反链 + 全文搜索。
-// 数据全部经统一 api 桥：本插件命令（notes.*）+ 跨插件（core-search 搜索 /
-// core-checklists + core-records 反链 / core-ai 摘要）。宿主全局 CSS 生效，
+// 数据全部经统一 api 桥：本插件命令（notes.*）+ 宿主内嵌搜索（api.host.search）/
+// 跨插件（core-checklists + core-records 反链 / core-ai 摘要）。宿主全局 CSS 生效，
 // 仅新增少量样式在 style.css（Vite 提取，宿主注入）。
 // Vditor 依赖宿主同源 /vditor 静态资源（与宿主回退组件共享，离线可用）。
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +21,8 @@ interface PluginBridgeApi {
     openChecklist: (id: string) => void;
     openRecord: (id: string) => void;
   };
+  /** 宿主能力（搜索迁回本体后经此调用，含搜索提供者聚合） */
+  host?: { search: (query: string) => Promise<SearchHit[]> };
 }
 
 interface FileEntry {
@@ -300,7 +302,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* 全文搜索：防抖 + 序号丢弃过期响应（跨插件 core-search，文件全文命中） */
+  /* 全文搜索：防抖 + 序号丢弃过期响应（宿主内嵌搜索，经统一桥 host.search） */
   useEffect(() => {
     if (!vaultRef.current || !query.trim()) {
       setResults(null);
@@ -312,7 +314,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
     const seq = ++searchSeq.current;
     searchTimer.current = setTimeout(async () => {
       try {
-        const r = (await api.call("search.query", { query }, "core-search")) as SearchHit[];
+        const r = api.host ? await api.host.search(query) : [];
         if (seq !== searchSeq.current) return;
         setResults(r);
       } catch {
@@ -324,6 +326,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
   /* 反链索引：跨插件取清单 + 记录数据，按 [[笔记路径]] 建索引 */

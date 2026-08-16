@@ -4,7 +4,7 @@
 // - --release（pnpm build:core:release）：release DLL + ui → src-tauri/resources/_core/<id>/
 //   打进安装包（bundle.resources），安装后宿主 ensure_core_plugins 部署到 %APPDATA%
 import { execSync } from "node:child_process";
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -71,21 +71,10 @@ const PLUGINS = [
     ui: { entry: "ui/index.js" },
     nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", view: "AIChatView" }],
   },
-  {
-    id: "core-search",
-    name: "搜索",
-    dll: "tb_search.dll",
-    description: "系统插件：全文搜索（SQLite FTS5 索引，横切能力，不可禁用）",
-    system: true,
-  },
-  {
-    id: "core-backup",
-    name: "备份",
-    dll: "tb_backup.dll",
-    description: "系统插件：自动备份（快照 + 配置/插件存档 + 恢复，不可禁用）",
-    system: true,
-  },
 ];
+
+// 注：core-search / core-backup 已迁回宿主本体框架（core/search.rs + core/backup.rs，
+// 系统级横切能力不作为可装卸插件），不再在此构建部署。
 
 /** 插件 crate 名：core-blog → tb-blog */
 const crateName = (p) => `tb-${p.id.slice(5)}`;
@@ -136,6 +125,17 @@ if (isRelease) {
 } else {
   const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
   coreRoot = path.join(appData, "com.toolbox.desktop", "plugins", "_core");
+}
+mkdirSync(coreRoot, { recursive: true });
+// 清理已不在 PLUGINS 中的旧插件目录（如迁回宿主的 core-search / core-backup）
+{
+  const keep = new Set(PLUGINS.map((p) => p.id));
+  for (const name of readdirSync(coreRoot)) {
+    if (!keep.has(name)) {
+      rmSync(path.join(coreRoot, name), { recursive: true, force: true });
+      console.log(`[build-core] 清理已移除插件: ${name}`);
+    }
+  }
 }
 
 for (const p of PLUGINS) {

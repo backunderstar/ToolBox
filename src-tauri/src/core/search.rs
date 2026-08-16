@@ -1,11 +1,11 @@
-//! 全文搜索：SQLite FTS5（trigram 分词器）索引。
+//! 全文搜索（宿主内嵌）：SQLite FTS5（trigram 分词器）索引。
 //!
-//! 由宿主 core/search.rs 移植（自包含 collect_md；笔记目录 vault/notes）。
+//! 由核心插件 core-search 迁回本体（搜索是系统级横切能力，不作为可装卸插件）。
 //! 索引文件 `vault/.toolbox/search-fts.sqlite`；笔记是真源，索引可随时重建。
+//! 命令入口：宿主 `search_all`（文件全文命中 + 搜索提供者插件聚合）。
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
-use serde_json::Value;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -313,48 +313,6 @@ fn linear_content_scan(
         }
     }
 }
-
-/* ---------------- 插件入口 ---------------- */
-
-pub struct SearchState {
-    vault: String,
-}
-
-fn state_from_cfg(cfg: &Value) -> Result<SearchState, String> {
-    let vault = cfg
-        .get("vault")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    if vault.is_empty() {
-        return Err("缺少 vault 配置".to_string());
-    }
-    Ok(SearchState { vault })
-}
-
-/// search.query {query, limit?} → SearchHit[]（文件全文命中）
-fn call(
-    state: &mut SearchState,
-    _host: tb_sdk::TbHostApi,
-    _ctx: *mut std::ffi::c_void,
-    method: &str,
-    params: Value,
-) -> Result<Value, String> {
-    match method {
-        "search.query" => {
-            let query = params
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let hits = search(&state.vault, &query)?;
-            serde_json::to_value(hits).map_err(|e| e.to_string())
-        }
-        _ => Err(format!("未知命令: {method}")),
-    }
-}
-
-tb_sdk::tb_plugin!(SearchState, state_from_cfg, call);
 
 #[cfg(test)]
 mod tests {

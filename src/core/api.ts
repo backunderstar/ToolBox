@@ -255,7 +255,7 @@ export const projectsFiles = (vault: string, name: string, dir: string) =>
 export const projectsOpen = (vault: string, name: string, rel: string) =>
   pluginCall(vault, "core-projects", "projects.open", { name, rel }) as Promise<void>;
 
-/* ---- 自动备份（经 core-backup 原生插件） ---- */
+/* ---- 自动备份（宿主内嵌命令，原 core-backup 插件命令；搜索/备份已迁回本体框架） ---- */
 
 export interface BackupConfig {
   enabled: boolean;
@@ -283,20 +283,16 @@ export interface BackupEntry {
 }
 
 export const backupConfigGet = () =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-backup", "backup.configGet", {})
-  ) as Promise<BackupConfig>;
+  invoke<BackupConfig>("backup_config_get");
 export const backupConfigSet = (config: BackupConfig) =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-backup", "backup.configSet", { config })
-  ) as Promise<void>;
+  invoke<void>("backup_config_set", { config });
 export const backupNow = (vault: string) =>
-  pluginCall(vault, "core-backup", "backup.now", { vault }) as Promise<BackupInfo>;
+  invoke<BackupInfo>("backup_now", { vault });
 export const backupList = (vault: string) =>
-  pluginCall(vault, "core-backup", "backup.list", { vault }) as Promise<BackupEntry[]>;
+  invoke<BackupEntry[]>("backup_list", { vault });
 /** 恢复到备份点（恢复前自动保存当前状态；覆盖合并，保留新增文件） */
 export const backupRestore = (vault: string, name: string) =>
-  pluginCall(vault, "core-backup", "backup.restore", { vault, name }) as Promise<BackupInfo>;
+  invoke<BackupInfo>("backup_restore", { vault, name });
 
 /* ---- 浮窗快速待办（经 core-todos 原生插件；当前工作区来自 vault 配置） ---- */
 

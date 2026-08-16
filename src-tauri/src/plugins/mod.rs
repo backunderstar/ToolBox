@@ -916,7 +916,7 @@ pub async fn plugin_call(
     m.invoke(&id, &command, args)
 }
 
-/// 聚合搜索：core-search 插件文件全文命中（FTS）+ 所有启用的搜索提供者
+/// 聚合搜索：宿主内嵌全文搜索（FTS，core::search）+ 所有启用的搜索提供者
 /// 插件的 `search.provide` 命中（来源以 source 字段标记）。
 #[tauri::command]
 pub async fn search_all(
@@ -928,18 +928,17 @@ pub async fn search_all(
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
 
-    // 1. 文件全文搜索（core-search 原生插件，SQLite FTS5）
+    // 1. 文件全文搜索（宿主内嵌 core::search，SQLite FTS5；搜索已不是插件）
     let mut hits: Vec<Value> = Vec::new();
-    if let Ok(fh) = m.invoke(
-        "core-search",
-        "search.query",
-        serde_json::json!({ "query": query }),
-    ) {
-        if let Some(arr) = fh.as_array() {
-            for h in arr {
-                hits.push(h.clone());
+    match crate::core::search::search(&vault, &query) {
+        Ok(fts_hits) => {
+            for h in fts_hits {
+                if let Ok(v) = serde_json::to_value(h) {
+                    hits.push(v);
+                }
             }
         }
+        Err(e) => eprintln!("[search] 全文搜索失败: {e}"),
     }
 
     // 2. 插件提供者命中（启用且声明 searchProvider）
@@ -987,14 +986,14 @@ mod tests {
         std::fs::create_dir_all(src.join("core-notes")).unwrap();
         std::fs::write(src.join("core-notes/plugin.json"), "{}").unwrap();
         std::fs::write(src.join("core-notes/tb_notes.dll"), "dll-bytes").unwrap();
-        std::fs::create_dir_all(src.join("core-search")).unwrap();
-        std::fs::write(src.join("core-search/plugin.json"), "{}").unwrap();
+        std::fs::create_dir_all(src.join("core-blog")).unwrap();
+        std::fs::write(src.join("core-blog/plugin.json"), "{}").unwrap();
 
         let dst = base.join("dst/_core");
         deploy_core_plugins(&src, &dst).unwrap();
         assert!(dst.join("core-notes/plugin.json").is_file());
         assert!(dst.join("core-notes/tb_notes.dll").is_file());
-        assert!(dst.join("core-search/plugin.json").is_file());
+        assert!(dst.join("core-blog/plugin.json").is_file());
 
         // 重复部署：目标旧内容被清空（不留残留）
         std::fs::write(dst.join("stale.txt"), "old").unwrap();

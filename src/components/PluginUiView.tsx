@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { pluginsReadFile } from "../core/api";
+import { pluginsReadFile, searchAll } from "../core/api";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
 import {
@@ -52,6 +52,13 @@ export function PluginUiView({ pluginId }: { pluginId: string }) {
       context: {
         activePath: vault.activePath,
         activeContent: vault.content,
+      },
+      // 宿主能力：搜索迁回本体后插件界面经统一桥调用（含搜索提供者聚合）
+      host: {
+        search: (query: string) => {
+          if (!vault.path) return Promise.reject(new Error("工作区未设置"));
+          return searchAll(vault.path, query);
+        },
       },
     });
 

@@ -109,7 +109,7 @@ await waitFor(
 );
 const resCount = await ev(`document.querySelectorAll('.plugin-ui-view .result-item').length`);
 if (resCount < 1) throw new Error("搜索应有命中（E2E 笔记含关键词）");
-log(`PASS 自带搜索框命中 ${resCount} 条（跨插件 core-search）`);
+log(`PASS 自带搜索框命中 ${resCount} 条（宿主内嵌搜索经统一桥）`);
 
 log("\n========== NOTES_UI_E2E_PASS ==========");
 process.exit(0);

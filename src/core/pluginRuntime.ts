@@ -18,6 +18,12 @@ export interface PluginNavBridge {
   openRecord: (id: string) => void;
 }
 
+/** 宿主能力（主窗口插件 UI 可用；搜索迁回宿主本体后的统一入口） */
+export interface PluginHostApi {
+  /** 全文搜索（经宿主 search_all，含搜索提供者聚合；vault 取桥内当前工作区） */
+  search: (query: string) => Promise<import("./api").SearchHit[]>;
+}
+
 /** 注入给插件的统一 api 桥（webview 插件与插件自带前端同构） */
 export interface PluginBridgeApi {
   pluginId: string;
@@ -32,12 +38,15 @@ export interface PluginBridgeApi {
   context: { vault: string | null } & Record<string, unknown>;
   /** 宿主导航（主窗口可用；浮窗等独立窗口为 undefined） */
   nav?: PluginNavBridge;
+  /** 宿主能力（主窗口可用；搜索/系统级能力迁回本体后经此调用） */
+  host?: PluginHostApi;
 }
 
-/** buildBridgeApi 选项：nav（主窗口导航）+ context 扩展字段（host 状态快照） */
+/** buildBridgeApi 选项：nav（主窗口导航）+ context 扩展字段（host 状态快照）+ host 能力 */
 export interface BuildBridgeOptions {
   nav?: PluginNavBridge;
   context?: Record<string, unknown>;
+  host?: PluginHostApi;
 }
 
 /** 构造统一 api 桥（vault 由调用方提供 getter） */
@@ -69,6 +78,7 @@ export function buildBridgeApi(
     },
     context: { vault: vault(), ...(opts?.context ?? {}) },
     ...(opts?.nav ? { nav: opts.nav } : {}),
+    ...(opts?.host ? { host: opts.host } : {}),
   };
 }
 

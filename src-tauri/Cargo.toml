@@ -37,6 +37,8 @@ tauri-plugin-window-state = "2"
 libloading = "0.8"
 # 核心插件 C ABI 契约（宿主侧解析 tb_sdk 返回的 JSON）
 tb-sdk = { path = "../tb-sdk" }
+# 全文搜索（宿主内嵌）：SQLite FTS5 trigram 索引（bundled-full 免系统依赖）
+rusqlite = { version = "0.32", features = ["bundled-full"] }
 
 # Windows 上链接 WebView2 需要，Tauri 2 默认启用
 [target.'cfg(windows)'.dependencies]

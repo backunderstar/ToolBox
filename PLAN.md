@@ -212,6 +212,7 @@ Vault（用户自选的工作区目录，纯数据）
 | ✅ 已完成 | **插件前端迁移样板（core-projects）** | 数据层（core/projects.tsx）并入 `core-plugins/projects/ui/index.tsx`：api 桥替代 useProjects/useVault、本地 state 管导航、内联图标 + 复用宿主 ConfirmDialog/.projects-* CSS；build-core.mjs 声明 ui；App 路由优先 PluginUiView（宿主组件保留回退）；E2E 4/4 |
 | ✅ 已完成 | **插件自带前端全部迁移（阶段 5）** | 统一 api 桥升级：`buildBridgeApi` 增 `nav`（go/openNote/openChecklist/openRecord 跨视图跳转）+ context 扩展（activePath/activeContent 宿主快照）+ `on` 跨插件订阅；core-notes 写操作发 notes-changed（宿主 vault 监听刷新文件树）；跨视图"打开笔记"经 `tb:open-note` 同 document 事件 + 挂载期标记；笔记插件打开文件经 `tb:vault-active` 回写宿主 vault（AI 预设读取当前笔记）。**迁移 7/9**：记录/笔记/清单/AI/待办浮窗（+ 已完成的博客/项目），仅搜索/备份系统插件无界面。笔记插件含 Vditor（cdn 复用宿主 /vditor）；浮窗改为宿主外壳 + core-todos 插件 UI（拖拽/锁定/列表全在插件内）。dev E2E 8/8（NOTES/AI/RECORDS/CHECKLIST/TODOS/BLOG/PROJECTS/RUNTIME_REGRESS） |
 | ✅ 已完成 | **整体打包验收（阶段 6）** | `build:core:release`（release DLL + ui → resources/_core）→ `pnpm tauri build --debug` 打包版 exe + NSIS 安装包；打包版（release 资源部署到 %APPDATA%）E2E 8/8 全过；NSIS 静默安装到临时目录 → 运行已安装 exe：启动日志干净（插件部署/浮窗创建/无失败资源），%APPDATA% 插件含 ui 清单与文件；cargo 55 测试 + pnpm build 全绿 |
+| ✅ 已完成 | **搜索/备份迁回宿主本体（阶段 7，用户决策）** | 搜索与备份是系统级横切能力而非可装卸业务插件，从 core-plugins 迁回宿主框架：`src-tauri/src/core/search.rs`（SQLite FTS5 + 6 测试）+ `core/backup.rs`（快照/配置/插件存档/恢复 + 60s 后台线程 + 3 测试）；宿主命令 `search_all` 直调并仍聚合启用插件的 `search.provide`（记录）；新增 `backup_now/config_get/config_set/list/restore` 宿主命令，api.ts 备份段改 invoke；统一桥增 `host.search`（笔记/AI 插件界面复用宿主搜索）；`system` 锁定语义随迁回而消除（字段保留）；插件数 9 → 7（Cargo members、build-core.mjs、mock 同步）；dev E2E 8/8 + 宿主命令冒烟（插件列表 7 个/搜索含提供者聚合/备份建列恢复） |
 
 ---
 

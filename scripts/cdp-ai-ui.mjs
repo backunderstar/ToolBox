@@ -71,7 +71,7 @@ await sleep(200);
 await clickText(".plugin-ui-view .ai-input-row button", "笔记问答");
 await waitFor(`[...document.querySelectorAll('.plugin-ui-view .ai-msg.ai-msg-user')].some(m => m.textContent.includes('基于笔记检索'))`, "RAG 用户消息出现");
 await waitFor(`document.querySelectorAll('.plugin-ui-view .ai-msg.ai-msg-assistant.err').length >= 2`, "RAG 回复（错误路径）出现");
-log("PASS 笔记问答走跨插件检索 → 流式对话错误路径（无 Key）");
+log("PASS 笔记问答走宿主内嵌搜索 → 流式对话错误路径（无 Key）");
 
 log("\n========== AI_UI_E2E_PASS ==========");
 process.exit(0);

@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::vault;
+use core::{backup, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -67,6 +67,54 @@ fn open_in_explorer(path: String) -> Result<(), String> {
     }
 }
 
+/// 定位应用配置目录（%APPDATA%/com.toolbox.desktop，不存在则创建）。
+fn app_config_dir(app: &tauri::AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建配置目录失败: {e}"))?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/* ---- 自动备份（宿主内嵌 core::backup；原 core-backup 插件命令） ---- */
+
+#[tauri::command]
+fn backup_now(app: tauri::AppHandle, vault: String) -> Result<backup::BackupInfo, String> {
+    let cfg = app_config_dir(&app)?;
+    backup::backup_now_cmd(&cfg, &vault)
+}
+
+#[tauri::command]
+fn backup_config_get(app: tauri::AppHandle) -> Result<backup::BackupConfig, String> {
+    let cfg = app_config_dir(&app)?;
+    Ok(backup::backup_config_get(&cfg))
+}
+
+#[tauri::command]
+fn backup_config_set(
+    app: tauri::AppHandle,
+    config: backup::BackupConfig,
+) -> Result<(), String> {
+    let cfg = app_config_dir(&app)?;
+    backup::backup_config_set(&cfg, config)
+}
+
+#[tauri::command]
+fn backup_list(vault: String) -> Vec<backup::BackupEntry> {
+    backup::backup_list(&vault)
+}
+
+#[tauri::command]
+fn backup_restore(
+    app: tauri::AppHandle,
+    vault: String,
+    name: String,
+) -> Result<backup::BackupInfo, String> {
+    let cfg = app_config_dir(&app)?;
+    backup::restore_backup(&cfg, &vault, &name)
+}
+
 /// 启动应用。
 ///
 /// M1 已注册：`ping` + vault 工作区 + 笔记文件操作 + 文件夹选择对话框。
@@ -111,6 +159,11 @@ pub fn run() {
             plugins::plugins_invoke,
             plugins::plugin_call,
             plugins::search_all,
+            backup_now,
+            backup_config_get,
+            backup_config_set,
+            backup_list,
+            backup_restore,
             float_toggle,
             float_set_locked,
         ])
@@ -134,6 +187,10 @@ pub fn run() {
                 std::thread::sleep(std::time::Duration::from_millis(1500));
                 ensure_main_visible(&h);
             });
+            // 自动备份后台线程（宿主内嵌，进程内单例；配置存 %APPDATA%/backup.json）
+            if let Ok(dir) = app_config_dir(app.handle()) {
+                core::backup::spawn_auto(dir);
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -4420,15 +4420,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tb-backup"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tb-sdk",
-]
-
-[[package]]
 name = "tb-blog"
 version = "0.1.0"
 dependencies = [
@@ -4483,16 +4474,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "tb-search"
-version = "0.1.0"
-dependencies = [
- "rusqlite",
- "serde",
- "serde_json",
- "tb-sdk",
 ]
 
 [[package]]
@@ -4797,6 +4778,7 @@ dependencies = [
  "libloading 0.8.9",
  "pulldown-cmark",
  "reqwest 0.12.28",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",
