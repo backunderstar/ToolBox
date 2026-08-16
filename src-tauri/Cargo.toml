@@ -25,8 +25,6 @@ tauri-plugin-single-instance = "2"
 # M6 AI：OpenAI 兼容 API 调用（阻塞版 + rustls，避免系统 OpenSSL）
 # stream：流式响应（SSE 逐块读取）需要
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "stream"] }
-# M7 博客预览：内置静态文件服务器
-tiny_http = "0.12"
 # M7 博客生成：Markdown → HTML
 pulldown-cmark = "0.12"
 # M8 项目文件管理：删除项目进系统回收站
@@ -38,7 +36,7 @@ libloading = "0.8"
 # 核心插件 C ABI 契约（宿主侧解析 tb_sdk 返回的 JSON）
 tb-sdk = { path = "../tb-sdk" }
 # 全文搜索（宿主内嵌）：SQLite FTS5 trigram 索引（bundled-full 免系统依赖）
-rusqlite = { version = "0.32", features = ["bundled-full"] }
+rusqlite = { version = "0.40", features = ["bundled-full"] }
 
 # Windows 上链接 WebView2 需要，Tauri 2 默认启用
 [target.'cfg(windows)'.dependencies]

@@ -213,7 +213,11 @@ function AppInner() {
           results={vault.results}
           searching={vault.searching}
           onOpenResult={(p) => {
-            vault.openFile(p);
+            // 搜索结果 = 任意 vault 下 .md：必须走 openNote 全流程——笔记界面是
+            // 插件自带前端（独立 React 应用），只靠 host vault.openFile 更新宿主状态
+            // 不会让编辑器真正打开文件；要经 __TB_PENDING_NOTE__ + tb:open-note 事件
+            // 驱动插件 UI 打开（与 AI 整理跳转同一机制）
+            navValue.openNote(p);
             vault.setQuery("");
           }}
           vaultName={vaultName}

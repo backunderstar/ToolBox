@@ -127,6 +127,10 @@ def search_provide(args):
         return []
     hits = []
 
+    # 与宿主搜索索引相同的排除规则：隐藏目录 + 系统/依赖目录。
+    # 否则 .toolbox/backups 等备份副本会被枚举出来，搜索结果出现重复噪音。
+    SKIP_DIRS = {".git", ".toolbox", "node_modules", "target", "site"}
+
     def walk(rel):
         if len(hits) >= limit:
             return
@@ -139,6 +143,8 @@ def search_provide(args):
             if len(hits) >= limit:
                 return
             if e.get("isDir"):
+                if e["name"] in SKIP_DIRS or e["name"].startswith("."):
+                    continue
                 walk(e["path"])
             else:
                 if query in e["path"].lower() or query in e["name"].lower():

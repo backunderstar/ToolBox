@@ -54,20 +54,25 @@ const ftsHit = await ev(
 if (!ftsHit) throw new Error(`FTS 应命中 ${NAME}（全局索引）`);
 log("PASS 全局 FTS 命中 vault/projects/ 下的 md（不只 notes/）");
 
-// ---- 3. 搜索提供者（py-tools）命中：source 徽章 ----
+// ---- 3. 搜索提供者（py-tools）命中：source 徽章（且不包含 .toolbox 备份副本噪音）----
 const providerHit = await ev(
   `[...document.querySelectorAll('.search-dropdown .search-item')].some(i => i.textContent.includes('${NAME}') && i.textContent.includes('py-tools'))`,
 );
 if (!providerHit) throw new Error("py-tools 搜索提供者应命中（文件名匹配 + source 徽章）");
 log("PASS py-tools searchProvider 聚合命中（source 徽章）");
+const noBackupNoise = await ev(
+  `![...document.querySelectorAll('.search-dropdown .search-item')].some(i => i.textContent.includes('.toolbox'))`,
+);
+if (!noBackupNoise) throw new Error("搜索结果不应包含 .toolbox 备份副本（提供者排除规则）");
+log("PASS 搜索结果无 .toolbox 备份副本噪音");
 
-// ---- 4. 点击结果 → 打开文件（笔记视图） ----
+// ---- 4. 点击结果 → 切到笔记视图并真正打开目标文件 ----
 const clicked = await ev(
   `(() => { const item = [...document.querySelectorAll('.search-dropdown .search-item')].find(i => i.textContent.includes('${NAME}')); if (!item) return false; item.click(); return true; })()`,
 );
 if (!clicked) throw new Error("无法点击搜索结果");
 await waitFor(
-  `document.querySelector('.plugin-ui-view .vditor') !== null || document.body.textContent.includes('${TOKEN}')`,
+  `document.querySelector('.plugin-ui-view .editor-title')?.textContent === ${JSON.stringify(`projects/${NAME}`)}`,
   "笔记视图打开目标文件",
   20000,
 );
