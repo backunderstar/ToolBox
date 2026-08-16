@@ -1,43 +1,12 @@
 // cdp-plugin-ui.mjs — 插件自带前端（组件模式）E2E：core-blog ui/index.js 加载 + 功能
+import { findMainPage, connect, sleep } from "./cdp-lib.mjs";
 const PORT = process.argv[2] ?? "9226";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-const targets = await fetch(`http://localhost:${PORT}/json`).then((r) => r.json());
-const page =
-  targets.find((t) => t.type === "page" && /1420|tauri/.test(t.url)) ??
-  targets.find((t) => t.type === "page");
+const page = await findMainPage(PORT);
 if (!page) {
-  console.error("no page");
+  console.error("no main page");
   process.exit(1);
 }
-const ws = new WebSocket(page.webSocketDebuggerUrl);
-await new Promise((res, rej) => {
-  ws.onopen = res;
-  ws.onerror = rej;
-});
-let id = 0;
-const pending = new Map();
-ws.onmessage = (e) => {
-  const m = JSON.parse(e.data);
-  if (m.id) {
-    const cb = pending.get(m.id);
-    if (cb) {
-      pending.delete(m.id);
-      cb(m);
-    }
-  }
-};
-const send = (method, params = {}) =>
-  new Promise((res) => {
-    const i = ++id;
-    pending.set(i, res);
-    ws.send(JSON.stringify({ id: i, method, params }));
-  });
-const ev = async (expression) => {
-  const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-  if (r.result?.exceptionDetails) return "EXC:" + r.result.exceptionDetails.text;
-  return r.result?.result?.value;
-};
+const { ev } = await connect(page);
 const waitFor = async (expr, desc, timeoutMs = 25000, interval = 300) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -54,7 +23,6 @@ const clickText = async (selector, text) => {
 };
 const log = (s) => console.log(s);
 
-await send("Runtime.enable");
 await sleep(600);
 
 // ---- 1. 侧边栏 → 博客发布（core-blog 自带前端渲染）----
@@ -94,9 +62,9 @@ await waitFor(
 );
 log("PASS 生成站点经插件界面按钮 + 桥 + DLL");
 
-// ---- 4. 发布状态切换（桥跨插件调用 core-notes 读写；选有 status 的已发布笔记）----
-const firstTitle = await ev(`document.querySelector('.blog-ui-row .blog-ui-title')?.textContent`);
-const toggled = await ev(`(() => {
+// ---- 4. 发布状态切换（桥跨插件调用 core-notes 读写）----
+// 夹具自适应：若当前没有"已发布"笔记（此前测试已全部撤回），先发布一篇再撤回
+let toggled = await ev(`(() => {
   const rows = [...document.querySelectorAll('.blog-ui-row')];
   const row = rows.find(r => r.textContent.includes('已发布'));
   if (!row) return 'no published row';
@@ -104,12 +72,34 @@ const toggled = await ev(`(() => {
   if (!b) return 'no revoke btn';
   b.click(); return 'clicked';
 })()`);
-if (toggled !== "clicked") throw new Error("未找到已发布笔记行: " + toggled);
+if (toggled !== "clicked") {
+  const published = await ev(`(() => {
+    const rows = [...document.querySelectorAll('.blog-ui-row')];
+    const row = rows.find(r => r.textContent.includes('草稿'));
+    const b = row && [...row.querySelectorAll('button')].find(x => x.textContent.trim() === '发布');
+    if (!b) return false;
+    b.click(); return true;
+  })()`);
+  if (!published) throw new Error("无可发布的草稿笔记行");
+  await waitFor(
+    `[...document.querySelectorAll('.blog-ui-row')].some(r => r.textContent.includes('已发布'))`,
+    "发布成功（经桥跨插件调用）"
+  );
+  // 发布后再撤回（幂等验证双向切换）
+  toggled = await ev(`(() => {
+    const rows = [...document.querySelectorAll('.blog-ui-row')];
+    const row = rows.find(r => r.textContent.includes('已发布'));
+    const b = row && [...row.querySelectorAll('button')].find(x => x.textContent.trim() === '撤回草稿');
+    if (!b) return 'no revoke btn';
+    b.click(); return 'clicked';
+  })()`);
+  if (toggled !== "clicked") throw new Error("发布后找不到撤回按钮: " + toggled);
+}
 await waitFor(
   `[...document.querySelectorAll('.blog-plugin-ui .settings-message')].some(m => m.textContent.includes('已撤回'))`,
   "发布状态切换（经桥跨插件调用）"
 );
-log(`PASS 发布状态切换（${firstTitle}）`);
+log("PASS 发布状态切换（发布 ↔ 撤回，桥跨插件调用 core-notes 读写）");
 
 log("\n========== PLUGIN_UI_E2E_PASS ==========");
 process.exit(0);

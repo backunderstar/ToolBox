@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { pluginsReadFile } from "../core/api";
 import { useVault } from "../core/vault";
+import { useNav } from "../core/navigation";
 import {
   buildBridgeApi,
   injectPluginScript,
@@ -20,6 +21,7 @@ interface UiRegistry {
  */
 export function PluginUiView({ pluginId }: { pluginId: string }) {
   const vault = useVault();
+  const nav = useNav();
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,8 +31,29 @@ export function PluginUiView({ pluginId }: { pluginId: string }) {
     let styleEl: HTMLStyleElement | null = null;
     const w = window as unknown as Record<string, unknown>;
 
-    // 统一 api 桥（与 webview 插件同构：call → plugin_call / on → plugin-event）
-    const api: PluginBridgeApi = buildBridgeApi(pluginId, () => vault.path);
+    // 统一 api 桥（与 webview 插件同构：call → plugin_call / on → plugin-event）。
+    // nav：宿主导航（插件界面可跨视图跳转/双向链接）；
+    // context 扩展：宿主 vault 快照（AI 预设动作等需要"当前笔记"上下文）。
+    // openNote 额外广播 tb:open-note（同 document CustomEvent + 挂载期标记）：
+    // 目标视图是插件自带前端时（如 core-notes ui），它从标记/事件拿到要打开的笔记。
+    const api: PluginBridgeApi = buildBridgeApi(pluginId, () => vault.path, {
+      nav: {
+        // ViewId 为字符串字面量联合，插件侧按 string 使用
+        go: (view: string) => nav.go(view as Parameters<typeof nav.go>[0]),
+        openNote: (rel) => {
+          const w2 = window as unknown as Record<string, unknown>;
+          w2.__TB_PENDING_NOTE__ = rel;
+          window.dispatchEvent(new CustomEvent("tb:open-note", { detail: rel }));
+          nav.openNote(rel);
+        },
+        openChecklist: (id) => nav.openChecklist(id),
+        openRecord: (id) => nav.openRecord(id),
+      },
+      context: {
+        activePath: vault.activePath,
+        activeContent: vault.content,
+      },
+    });
 
     (async () => {
       try {

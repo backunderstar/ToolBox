@@ -308,6 +308,45 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     };
   }, [query, path]);
 
+  /* 插件自带前端（core-notes ui）写文件后推送 notes-changed：
+     本层监听刷新文件列表，保证顶栏/状态栏/其他视图读到一致的文件树 */
+  useEffect(() => {
+    let un: (() => void) | null = null;
+    import("@tauri-apps/api/event")
+      .then((m) =>
+        m.listen<{ pluginId: string; event: string }>("plugin-event", (e) => {
+          const payload = e.payload;
+          if (payload.pluginId === "core-notes" && payload.event === "notes-changed") {
+            void refresh();
+          }
+        })
+      )
+      .then((fn) => (un = fn))
+      .catch(() => {
+        /* 浏览器预览环境无事件桥 */
+      });
+    return () => un?.();
+  }, [refresh]);
+
+  /* 笔记视图为插件自带前端时，插件通过同 document 的 tb:vault-active 事件
+     同步当前打开的笔记（宿主 vault 不持有插件 UI 内部状态），
+     使 AI 预设动作等读取 context.activePath/activeContent 的插件拿到最新上下文 */
+  useEffect(() => {
+    const onActive = (e: Event) => {
+      const detail = (e as CustomEvent<{ rel?: string; content?: string }>).detail;
+      if (typeof detail?.rel === "string" && detail.rel) {
+        setActivePath(detail.rel);
+        if (typeof detail.content === "string") {
+          setContent(detail.content);
+        }
+        dirtyRef.current = false;
+        setDirty(false);
+      }
+    };
+    window.addEventListener("tb:vault-active", onActive);
+    return () => window.removeEventListener("tb:vault-active", onActive);
+  }, []);
+
   const value = useMemo<VaultContextValue>(
     () => ({
       path,

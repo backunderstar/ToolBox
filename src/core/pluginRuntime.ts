@@ -10,6 +10,14 @@
 import { listen } from "@tauri-apps/api/event";
 import { pluginCall } from "./api";
 
+/** 宿主导航桥（主窗口插件界面用：跨视图跳转 / 双向链接） */
+export interface PluginNavBridge {
+  go: (view: string) => void;
+  openNote: (rel: string) => void;
+  openChecklist: (id: string) => void;
+  openRecord: (id: string) => void;
+}
+
 /** 注入给插件的统一 api 桥（webview 插件与插件自带前端同构） */
 export interface PluginBridgeApi {
   pluginId: string;
@@ -18,15 +26,25 @@ export interface PluginBridgeApi {
    * 可指定 targetPluginId 跨插件调用（如博客界面改笔记 frontmatter）。
    */
   call: (command: string, args?: unknown, targetPluginId?: string) => Promise<unknown>;
-  /** 订阅本插件的 plugin-event（返回取消函数） */
-  on: (event: string, cb: (data: unknown) => void) => () => void;
-  context: { vault: string | null };
+  /** 订阅 plugin-event（默认本插件；可指定 targetPluginId 订阅其他插件的事件），返回取消函数 */
+  on: (event: string, cb: (data: unknown) => void, targetPluginId?: string) => () => void;
+  /** 宿主注入的上下文：vault 路径 + 扩展字段（如 activePath / activeContent） */
+  context: { vault: string | null } & Record<string, unknown>;
+  /** 宿主导航（主窗口可用；浮窗等独立窗口为 undefined） */
+  nav?: PluginNavBridge;
+}
+
+/** buildBridgeApi 选项：nav（主窗口导航）+ context 扩展字段（host 状态快照） */
+export interface BuildBridgeOptions {
+  nav?: PluginNavBridge;
+  context?: Record<string, unknown>;
 }
 
 /** 构造统一 api 桥（vault 由调用方提供 getter） */
 export function buildBridgeApi(
   pluginId: string,
-  getVault: () => string | null
+  getVault: () => string | null,
+  opts?: BuildBridgeOptions
 ): PluginBridgeApi {
   const vault = () => getVault();
   return {
@@ -37,10 +55,11 @@ export function buildBridgeApi(
       // args 缺省 {}（undefined 会被 invoke 序列化丢弃导致 Rust 侧缺参）
       return pluginCall(v, targetPluginId ?? pluginId, command, args ?? {});
     },
-    on: (event, cb) => {
+    on: (event, cb, targetPluginId) => {
       let un: (() => void) | null = null;
+      const pid = targetPluginId ?? pluginId;
       listen<{ pluginId: string; event: string; data: unknown }>("plugin-event", (e) => {
-        if (e.payload.pluginId === pluginId && e.payload.event === event) {
+        if (e.payload.pluginId === pid && e.payload.event === event) {
           cb(e.payload.data);
         }
       })
@@ -48,7 +67,8 @@ export function buildBridgeApi(
         .catch(() => undefined);
       return () => un?.();
     },
-    context: { vault: vault() },
+    context: { vault: vault(), ...(opts?.context ?? {}) },
+    ...(opts?.nav ? { nav: opts.nav } : {}),
   };
 }
 

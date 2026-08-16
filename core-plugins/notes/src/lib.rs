@@ -29,8 +29,8 @@ fn state_from_cfg(cfg: &Value) -> Result<NotesState, String> {
 
 fn call(
     state: &mut NotesState,
-    _host: TbHostApi,
-    _ctx: *mut c_void,
+    host: TbHostApi,
+    ctx: *mut c_void,
     method: &str,
     params: Value,
 ) -> Result<Value, String> {
@@ -40,6 +40,10 @@ fn call(
             .get(k)
             .and_then(|v| v.as_str())
             .map(String::from)
+    };
+    // 写操作后发 notes-changed（主窗 vault / 插件前端刷新文件列表，多窗口一致）
+    let changed = |rel: &str| {
+        tb_sdk::emit(host, ctx, "notes-changed", serde_json::json!({ "rel": rel }));
     };
     match method {
         "notes.list" => {
@@ -56,20 +60,28 @@ fn call(
         "notes.write" => {
             let rel = s("rel").ok_or("缺少 rel")?;
             let content = s("content").unwrap_or_default();
-            fs::write(&vault, &rel, &content)
+            fs::write(&vault, &rel, &content)?;
+            changed(&rel);
+            Ok(Value::Null)
         }
         "notes.create" => {
             let rel = s("rel").ok_or("缺少 rel")?;
-            fs::create(&vault, &rel)
+            fs::create(&vault, &rel)?;
+            changed(&rel);
+            Ok(Value::Null)
         }
         "notes.delete" => {
             let rel = s("rel").ok_or("缺少 rel")?;
-            fs::delete(&vault, &rel)
+            fs::delete(&vault, &rel)?;
+            changed(&rel);
+            Ok(Value::Null)
         }
         "notes.rename" => {
             let from = s("from").ok_or("缺少 from")?;
             let to = s("to").ok_or("缺少 to")?;
-            fs::rename(&vault, &from, &to)
+            fs::rename(&vault, &from, &to)?;
+            changed(&to);
+            Ok(Value::Null)
         }
         _ => Err(format!("未知命令: {method}")),
     }

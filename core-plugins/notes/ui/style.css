@@ -1,0 +1,29 @@
+/* core-notes 插件前端补充样式（宿主全局 CSS 之外的少量新增）：
+   文件面板内的搜索框；用宿主 CSS 变量，自动适配亮/暗主题 */
+
+.files-search {
+  flex-shrink: 0;
+  padding: 6px 10px 8px;
+}
+
+.files-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  outline: none;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.files-search-input::placeholder {
+  color: var(--fg-faint);
+}
+
+.files-search-input:focus {
+  border-color: var(--accent);
+  background: var(--bg-elevated);
+}

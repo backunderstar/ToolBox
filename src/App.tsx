@@ -156,6 +156,9 @@ function AppInner() {
       openNote: (rel: string) => {
         setView("notes");
         setViewParams({});
+        // 笔记视图是插件自带前端时，插件从标记/事件拿到要打开的笔记（宿主 vault 不持有插件 UI 状态）
+        (window as unknown as Record<string, unknown>).__TB_PENDING_NOTE__ = rel;
+        window.dispatchEvent(new CustomEvent("tb:open-note", { detail: rel }));
         void openFileRef.current(rel);
       },
       openChecklist: (id: string) => {
@@ -178,7 +181,10 @@ function AppInner() {
           onToggleTheme={toggleThemeMode}
           query={vault.query}
           onQueryChange={vault.setQuery}
-          searchEnabled={view === "notes" && !!vault.path}
+          // 笔记视图为插件自带前端时，顶栏搜索停用（插件界面内有自己的搜索框）
+          searchEnabled={
+            view === "notes" && !!vault.path && !hasPluginUi(pluginCtx.plugins, "core-notes")
+          }
           vaultName={vaultName}
           onPickVault={vault.pickVault}
           navCollapsed={navCollapsed}
@@ -212,13 +218,21 @@ function AppInner() {
               <ToolsView />
             ) : view === "checklist" ? (
               corePluginEnabled(pluginCtx.plugins, "core-checklists") ? (
-                <ChecklistView />
+                hasPluginUi(pluginCtx.plugins, "core-checklists") ? (
+                  <PluginUiView pluginId="core-checklists" />
+                ) : (
+                  <ChecklistView />
+                )
               ) : (
                 <CoreDisabled name="清单" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
             ) : view === "records" ? (
               corePluginEnabled(pluginCtx.plugins, "core-records") ? (
-                <RecordsView />
+                hasPluginUi(pluginCtx.plugins, "core-records") ? (
+                  <PluginUiView pluginId="core-records" />
+                ) : (
+                  <RecordsView />
+                )
               ) : (
                 <CoreDisabled name="记录" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
@@ -234,7 +248,11 @@ function AppInner() {
               )
             ) : view === "ai" ? (
               corePluginEnabled(pluginCtx.plugins, "core-ai") ? (
-                <AIChatView />
+                hasPluginUi(pluginCtx.plugins, "core-ai") ? (
+                  <PluginUiView pluginId="core-ai" />
+                ) : (
+                  <AIChatView />
+                )
               ) : (
                 <CoreDisabled name="AI 整理" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
@@ -258,13 +276,17 @@ function AppInner() {
               />
             ) : view === "notes" ? (
               corePluginEnabled(pluginCtx.plugins, "core-notes") ? (
-                <NotesView
-                  dark={themeMode === "dark"}
-                  filesCollapsed={filesCollapsed}
-                  focusMode={focusMode}
-                  onToggleFiles={() => setFilesCollapsed((c) => !c)}
-                  onToggleFocus={() => setFocusMode((f) => !f)}
-                />
+                hasPluginUi(pluginCtx.plugins, "core-notes") ? (
+                  <PluginUiView pluginId="core-notes" />
+                ) : (
+                  <NotesView
+                    dark={themeMode === "dark"}
+                    filesCollapsed={filesCollapsed}
+                    focusMode={focusMode}
+                    onToggleFiles={() => setFilesCollapsed((c) => !c)}
+                    onToggleFocus={() => setFocusMode((f) => !f)}
+                  />
+                )
               ) : (
                 <CoreDisabled name="笔记" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )

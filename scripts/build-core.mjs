@@ -20,6 +20,7 @@ const PLUGINS = [
     name: "记录",
     dll: "tb_records.dll",
     description: "核心插件：工作记录（data/records CRUD + 搜索提供者）",
+    ui: { entry: "ui/index.js" },
     searchProvider: true,
     nav: [{ id: "records", label: "记录", icon: "notebook", group: "工作区", view: "RecordsView" }],
   },
@@ -28,6 +29,7 @@ const PLUGINS = [
     name: "笔记",
     dll: "tb_notes.dll",
     description: "核心插件：笔记文件操作（notes/ 列表/读写/新建/删除/重命名）",
+    ui: { entry: "ui/index.js" },
     nav: [{ id: "notes", label: "笔记", icon: "file-text", group: "工作区", view: "NotesView" }],
   },
   {
@@ -35,12 +37,14 @@ const PLUGINS = [
     name: "待办",
     dll: "tb_todos.dll",
     description: "核心插件：快速待办（vault/data/todos/todos.json，浮窗数据层）",
+    ui: { entry: "ui/index.js" },
   },
   {
     id: "core-checklists",
     name: "清单",
     dll: "tb_checklists.dll",
     description: "核心插件：清单（data/checklists CRUD）",
+    ui: { entry: "ui/index.js" },
     nav: [{ id: "checklist", label: "清单", icon: "check", group: "工作区", view: "ChecklistView" }],
   },
   {
@@ -64,6 +68,7 @@ const PLUGINS = [
     name: "AI",
     dll: "tb_ai.dll",
     description: "核心插件：AI 整理（OpenAI 兼容对话 + SSE 流式 + keyring 凭据）",
+    ui: { entry: "ui/index.js" },
     nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", view: "AIChatView" }],
   },
   {
