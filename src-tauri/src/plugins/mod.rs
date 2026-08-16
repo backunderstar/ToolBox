@@ -54,6 +54,8 @@ pub struct PluginInfo {
     pub provider: bool,
     /// 系统插件（数据安全/横切能力，前端不可禁用）
     pub system: bool,
+    /// 插件自带前端入口（相对插件目录；缺省用宿主内置视图组件）
+    pub ui: Option<String>,
     /// 插件声明的导航入口（启用时并入侧边栏）
     pub nav: Vec<NavDecl>,
 }
@@ -128,7 +130,8 @@ pub const CORE_DIR: &str = "_core";
 /// 打包版随应用分发核心插件：从资源目录（`resource_dir/resources/_core`，安装包内）
 /// 部署到 `%APPDATA%/com.toolbox.desktop/plugins/_core`（清空后整体复制，
 /// 保证与应用版本一致；核心插件是随应用分发的信任代码）。
-/// dev 模式资源目录无 `_core` → 跳过（由 `pnpm build:core` 部署 debug DLL）。
+/// 仅在**打包构建**（release，无 dev cfg）执行；dev 由 `pnpm build:core` 部署。
+#[cfg(not(dev))]
 pub fn ensure_core_plugins(app: &tauri::AppHandle) {
     let Ok(res) = app.path().resource_dir() else {
         return;
@@ -424,6 +427,7 @@ impl PluginManager {
                         config: Value::Null,
                         search_provider: false,
                         system: false,
+                        ui: None,
                         nav: vec![],
                     },
                     dir: dir.to_path_buf(),
@@ -507,6 +511,7 @@ impl PluginManager {
                 builtin: r.manifest.runtime == PluginRuntime::Native,
                 provider: r.manifest.search_provider,
                 system: r.manifest.system,
+                ui: r.manifest.ui.as_ref().map(|u| u.entry.clone()),
                 nav: r.manifest.nav.clone(),
             })
             .collect()
@@ -846,15 +851,21 @@ pub async fn plugins_reload(
     m.reload(&id)
 }
 
-/// 读取全局插件目录内的文件（前端加载 webview 插件入口用）。
-/// 限定在插件目录内：拒绝绝对路径与 `..` 段。
+/// 读取插件目录内的文件（前端加载 webview 插件入口 / 核心插件自带 ui 用）。
+/// 限定在插件目录内：拒绝绝对路径与 `..` 段。核心插件在 `_core/<id>` 子目录。
 #[tauri::command]
 pub async fn plugins_read_file(
     app: tauri::AppHandle,
     id: String,
     rel: String,
 ) -> Result<String, String> {
-    let root = global_plugins_dir(&app)?.join(&id);
+    let base = global_plugins_dir(&app)?;
+    let candidates = [base.join(CORE_DIR).join(&id), base.join(&id)];
+    let root = candidates
+        .iter()
+        .find(|p| p.is_dir())
+        .ok_or("插件不存在")?
+        .clone();
     let rel_path = Path::new(&rel);
     let bad = rel_path.is_absolute()
         || rel_path.components().any(|c| {

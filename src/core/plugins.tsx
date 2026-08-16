@@ -250,6 +250,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: false,
           provider: false,
           system: false,
+          ui: null,
           nav: [],
         },
         {
@@ -266,6 +267,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: false,
           provider: false,
           system: false,
+          ui: null,
           nav: [],
         },
         {
@@ -282,6 +284,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: true,
           provider: true,
           system: false,
+          ui: null,
           nav: [{ id: "records", label: "记录", icon: "notebook", group: "工作区", view: "RecordsView" }],
         },
         {
@@ -298,6 +301,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: true,
           provider: false,
           system: false,
+          ui: null,
           nav: [{ id: "notes", label: "笔记", icon: "file-text", group: "工作区", view: "NotesView" }],
         },
         {
@@ -314,6 +318,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: true,
           provider: false,
           system: false,
+          ui: null,
           nav: [{ id: "checklist", label: "清单", icon: "check", group: "工作区", view: "ChecklistView" }],
         },
         {
@@ -330,6 +335,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: true,
           provider: false,
           system: false,
+          ui: null,
           nav: [{ id: "projects", label: "项目", icon: "folder", group: "工作区", view: "ProjectsView" }],
         },
         {
@@ -346,6 +352,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: true,
           provider: false,
           system: false,
+          ui: null,
           nav: [{ id: "blog", label: "博客发布", icon: "globe", group: "系统", view: "BlogView" }],
         },
         {
@@ -362,6 +369,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: true,
           provider: false,
           system: false,
+          ui: null,
           nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", view: "AIChatView" }],
         },
         {
@@ -378,6 +386,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: true,
           provider: false,
           system: true,
+          ui: null,
           nav: [],
         },
         {
@@ -394,6 +403,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           builtin: true,
           provider: false,
           system: true,
+          ui: null,
           nav: [],
         },
       ];

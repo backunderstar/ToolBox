@@ -11,6 +11,15 @@ pub enum PluginRuntime {
     Native,
 }
 
+/// 前端界面声明（插件自带页面，宿主经 iframe + tb-plugin:// 协议加载）。
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UiDecl {
+    /// 入口 HTML（相对插件目录），如 "ui/index.html"
+    #[serde(default)]
+    pub entry: String,
+}
+
 /// 导航入口声明（插件启用时并入侧边栏；仅内容型插件使用）。
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -59,6 +68,9 @@ pub struct PluginManifest {
     /// 系统插件：数据安全/横切能力（如备份、搜索），前端不可禁用。
     #[serde(default)]
     pub system: bool,
+    /// 插件自带前端界面（宿主经 iframe 加载；缺省则用宿主内置视图组件）。
+    #[serde(default)]
+    pub ui: Option<UiDecl>,
     /// 导航入口（启用时并入侧边栏）。
     #[serde(default)]
     pub nav: Vec<NavDecl>,

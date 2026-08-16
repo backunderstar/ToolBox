@@ -25,6 +25,7 @@ import { RecordsView } from "./components/RecordsView";
 import { ProjectsView } from "./components/ProjectsView";
 import { AIChatView } from "./components/AIChatView";
 import { BlogView } from "./components/BlogView";
+import { PluginUiView } from "./components/PluginUiView";
 import { SettingsView } from "./components/SettingsView";
 import { FloatApp } from "./components/FloatApp";
 import "./styles/tokens.css";
@@ -235,7 +236,11 @@ function AppInner() {
               )
             ) : view === "blog" ? (
               corePluginEnabled(pluginCtx.plugins, "core-blog") ? (
-                <BlogView />
+                hasPluginUi(pluginCtx.plugins, "core-blog") ? (
+                  <PluginUiView pluginId="core-blog" />
+                ) : (
+                  <BlogView />
+                )
               ) : (
                 <CoreDisabled name="博客发布" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
@@ -285,6 +290,12 @@ function AppInner() {
 function corePluginEnabled(plugins: { id: string; enabled: boolean }[], id: string): boolean {
   const p = plugins.find((x) => x.id === id);
   return p ? p.enabled : true;
+}
+
+/** 插件是否自带前端（声明 ui → 用 PluginUiView 渲染插件页面）。 */
+function hasPluginUi(plugins: { id: string; ui: string | null }[], id: string): boolean {
+  const p = plugins.find((x) => x.id === id);
+  return !!p?.ui;
 }
 
 /** 核心插件被禁用时的占位（引导去插件页启用）。 */
