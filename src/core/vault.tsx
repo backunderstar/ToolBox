@@ -15,8 +15,8 @@ import {
   fsList,
   fsRead,
   fsRename,
-  fsSearch,
   fsWrite,
+  searchAll,
   vaultGet,
   vaultSet,
 } from "./api";
@@ -293,7 +293,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     const seq = ++searchSeq.current;
     searchTimer.current = setTimeout(async () => {
       try {
-        const r = await fsSearch(path, query);
+        const r = await searchAll(path, query);
         if (seq !== searchSeq.current) return; // 过期响应
         setResults(r);
       } catch {

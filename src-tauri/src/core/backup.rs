@@ -12,6 +12,10 @@ use tauri::Manager;
 
 /// 备份根目录（相对 vault）
 const BACKUP_DIR: &str = ".toolbox/backups";
+/// 配置存档子目录（备份根内：%APPDATA% 配置 json 副本）
+const CONFIG_ARCHIVE: &str = "_config";
+/// 插件存档子目录（备份根内：全局插件目录副本，排除核心插件 _core）
+const PLUGINS_ARCHIVE: &str = "_plugins";
 /// 默认备份间隔（分钟）
 const DEFAULT_INTERVAL_MIN: u64 = 30;
 /// 默认保留份数
@@ -61,6 +65,10 @@ pub struct BackupEntry {
     /// unix 秒（从目录名解析）
     pub timestamp: i64,
     pub size_bytes: u64,
+    /// 备份含配置存档（%APPDATA% json）
+    pub has_config: bool,
+    /// 备份含插件存档（全局插件目录）
+    pub has_plugins: bool,
 }
 
 /* ---------------- 配置读写 ---------------- */
@@ -107,6 +115,10 @@ fn backups_root(vault: &str) -> PathBuf {
 /// - 临时文件
 fn is_skipped(parent: &Path, name: &str, at_root: bool) -> bool {
     if at_root && (name == "site" || name == ".git") {
+        return true;
+    }
+    // 配置/插件存档只在备份根（恢复 vault 内容时排除，避免覆盖当前环境）
+    if at_root && (name == CONFIG_ARCHIVE || name == PLUGINS_ARCHIVE) {
         return true;
     }
     if parent.file_name().map(|n| n == ".toolbox").unwrap_or(false) {
@@ -208,6 +220,24 @@ fn dir_size(dir: &Path) -> u64 {
 pub fn backup_now(app: &tauri::AppHandle, vault: &str) -> Result<BackupInfo, String> {
     // 整个复制 + prune 持锁：并发备份会混写同一目录 / 互相打断 prune
     let _guard = BACKUP_LOCK.lock().map_err(|_| "备份正在进行中".to_string())?;
+    let keep = load_config(app).keep.max(1);
+    let cfg_dir = app.path().app_config_dir().ok();
+    let info = backup_now_impl(vault, keep, cfg_dir.as_deref())?;
+    // 手动/自动备份成功后都更新计时，避免手动备份后自动备份仍按旧计时触发
+    let mut cfg = load_config(app);
+    cfg.last_backup_at = Some(unix_now());
+    let _ = save_config(app, &cfg);
+    Ok(info)
+}
+
+/// 备份实现（调用方持锁）。
+/// `keep`：保留份数（0 = 不清理，恢复流程为现场备份跳过 prune，
+/// 避免误删正在恢复的备份点）；`cfg_dir`：应用配置目录（None = 无存档，测试用）。
+fn backup_now_impl(
+    vault: &str,
+    keep: usize,
+    cfg_dir: Option<&Path>,
+) -> Result<BackupInfo, String> {
     let root = PathBuf::from(vault);
     if !root.is_dir() {
         return Err(format!("工作区不存在: {vault}"));
@@ -216,18 +246,132 @@ pub fn backup_now(app: &tauri::AppHandle, vault: &str) -> Result<BackupInfo, Str
     std::fs::create_dir_all(&backups).map_err(|e| format!("创建备份目录失败: {e}"))?;
     let ts = unix_now();
     let dir = unique_backup_dir(&backups, ts);
-    let (size, count) = copy_dir_all(&root, &dir, true)?;
-    let keep = load_config(app).keep.max(1);
-    prune(&backups, keep);
-    // 手动/自动备份成功后都更新计时，避免手动备份后自动备份仍按旧计时触发
-    let mut cfg = load_config(app);
-    cfg.last_backup_at = Some(unix_now());
-    let _ = save_config(app, &cfg);
+    let (mut size, mut count) = copy_dir_all(&root, &dir, true)?;
+
+    // 存档：应用配置（%APPDATA% 下 json） + 全局插件（排除核心 _core）
+    if let Some(cfg) = cfg_dir {
+        if let Ok((sz, c)) = copy_config_archive(cfg, &dir.join(CONFIG_ARCHIVE)) {
+            size += sz;
+            count += c;
+        }
+        if let Ok((sz, c)) = copy_plugins_archive(&cfg.join("plugins"), &dir.join(PLUGINS_ARCHIVE))
+        {
+            size += sz;
+            count += c;
+        }
+    }
+
+    if keep > 0 {
+        prune(&backups, keep);
+    }
     Ok(BackupInfo {
         path: dir.to_string_lossy().to_string(),
         size_bytes: size,
         file_count: count,
     })
+}
+
+/// 复制应用配置存档：app_config_dir 顶层所有 *.json（vault.json/ai.json/backup.json 等）。
+fn copy_config_archive(src: &Path, dst: &Path) -> Result<(u64, usize), String> {
+    std::fs::create_dir_all(dst).map_err(|e| format!("创建配置存档失败: {e}"))?;
+    let mut total = 0u64;
+    let mut count = 0usize;
+    let Ok(read) = std::fs::read_dir(src) else {
+        return Ok((total, count));
+    };
+    for e in read.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".json") {
+            continue;
+        }
+        let sz = std::fs::copy(e.path(), dst.join(&name))
+            .map_err(|err| format!("复制配置 {name} 失败: {err}"))?;
+        total += sz;
+        count += 1;
+    }
+    Ok((total, count))
+}
+
+/// 复制全局插件目录存档（排除核心插件 _core——随应用分发，不占备份空间）。
+fn copy_plugins_archive(src: &Path, dst: &Path) -> Result<(u64, usize), String> {
+    if !src.is_dir() {
+        return Ok((0, 0));
+    }
+    std::fs::create_dir_all(dst).map_err(|e| format!("创建插件存档失败: {e}"))?;
+    let mut total = 0u64;
+    let mut count = 0usize;
+    let Ok(read) = std::fs::read_dir(src) else {
+        return Ok((total, count));
+    };
+    for e in read.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if name == crate::plugins::CORE_DIR {
+            continue; // 核心插件随应用分发，不备份
+        }
+        let s = e.path();
+        let d = dst.join(&name);
+        if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            let (sz, c) = copy_dir_all(&s, &d, false)?;
+            total += sz;
+            count += c;
+        } else {
+            let sz = std::fs::copy(&s, &d)
+                .map_err(|err| format!("复制插件 {name} 失败: {err}"))?;
+            total += sz;
+            count += 1;
+        }
+    }
+    Ok((total, count))
+}
+
+/// 恢复到备份点：先自动保存当前现场（可反悔），再把备份内容复制回 vault。
+/// 配置/插件存档不随恢复覆盖当前环境（仅存档防丢失）。
+pub fn restore_backup(app: &tauri::AppHandle, vault: &str, name: &str) -> Result<BackupInfo, String> {
+    let _guard = BACKUP_LOCK.lock().map_err(|_| "备份正在进行中".to_string())?;
+    let cfg_dir = app.path().app_config_dir().ok();
+    let info = restore_impl(vault, name, cfg_dir.as_deref())?;
+    // 现场备份产生后更新计时，避免自动备份紧接着又触发
+    let mut cfg = load_config(app);
+    cfg.last_backup_at = Some(unix_now());
+    let _ = save_config(app, &cfg);
+    Ok(info)
+}
+
+/// 恢复实现（调用方持锁）。`cfg_dir`：应用配置目录（None = 无存档，测试用）。
+fn restore_impl(vault: &str, name: &str, cfg_dir: Option<&Path>) -> Result<BackupInfo, String> {
+    if name.is_empty()
+        || !name.starts_with("backup-")
+        || name.contains("..")
+        || name.contains('/')
+        || name.contains('\\')
+    {
+        return Err("非法备份名称".to_string());
+    }
+    let root = PathBuf::from(vault);
+    if !root.is_dir() {
+        return Err(format!("工作区不存在: {vault}"));
+    }
+    let src = backups_root(vault).join(name);
+    if !src.is_dir() {
+        return Err(format!("备份不存在: {name}"));
+    }
+    // 恢复前自动保存当前状态（恢复后可反悔；keep=0 跳过 prune 保护目标备份点）
+    backup_now_impl(vault, 0, cfg_dir)?;
+    // 备份内容复制回 vault（覆盖；_config/_plugins 存档被 is_skipped 排除）
+    let (size, count) = copy_dir_all(&src, &root, true)?;
+    Ok(BackupInfo {
+        path: src.to_string_lossy().to_string(),
+        size_bytes: size,
+        file_count: count,
+    })
+}
+
+/// 恢复命令：async + spawn_blocking（大 vault 复制不冻结 UI 主线程）。
+#[tauri::command]
+pub async fn backup_restore(app: tauri::AppHandle, vault: String, name: String) -> Result<BackupInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || restore_backup(&app, &vault, &name))
+        .await
+        .map_err(|e| format!("恢复任务失败: {e}"))?
 }
 
 /// 立即备份命令：async + spawn_blocking，大 vault 复制不再冻结 UI 主线程。
@@ -277,6 +421,8 @@ pub fn backup_list(vault: String) -> Result<Vec<BackupEntry>, String> {
             name,
             timestamp: ts,
             size_bytes: dir_size(&e.path()),
+            has_config: e.path().join(CONFIG_ARCHIVE).is_dir(),
+            has_plugins: e.path().join(PLUGINS_ARCHIVE).is_dir(),
         });
     }
     out.sort_by_key(|b| b.timestamp);
@@ -388,6 +534,8 @@ mod tests {
         assert!(!is_skipped(Path::new("vault/projects/foo"), "site", false), "项目内 site 应备份");
         assert!(is_skipped(Path::new("vault"), ".git", true), "根级 .git 不进备份");
         assert!(!is_skipped(Path::new("vault/projects/foo"), ".git", false), "项目内 .git 是用户数据");
+        assert!(is_skipped(Path::new("vault"), "_config", true), "配置存档不随 vault 恢复");
+        assert!(is_skipped(Path::new("vault"), "_plugins", true), "插件存档不随 vault 恢复");
         assert!(is_skipped(Path::new("vault/.toolbox"), "backups", false));
         assert!(is_skipped(Path::new("vault/.toolbox"), "search-fts.sqlite", false));
         assert!(is_skipped(Path::new("vault/.toolbox"), "search-fts.sqlite-wal", false), "WAL 派生文件不进备份");
@@ -395,5 +543,52 @@ mod tests {
         assert!(!is_skipped(Path::new("vault"), "search-fts.sqlite", true), "根目录下的同名文件不该被误排除");
         assert!(is_skipped(Path::new("vault"), "a.tmp", true));
         assert!(!is_skipped(Path::new("vault"), "notes", true));
+    }
+
+    /// 恢复 = 把备份中的文件还原到 vault（覆盖合并：备份中存在的路径被还原，
+    /// 备份点之后新增的文件保留，不做镜像删除）；恢复前自动保存现场；
+    /// 配置/插件存档不随恢复覆盖当前环境。
+    #[test]
+    fn restore_restores_vault_and_skips_archives() {
+        let v = tmp_vault("restore");
+        let vault = v.to_str().unwrap();
+        // 造备份点 backup-100（含存档目录）
+        let backups = v.join(".toolbox/backups");
+        std::fs::create_dir_all(backups.join("backup-100/notes")).unwrap();
+        std::fs::write(backups.join("backup-100/notes/a.md"), "# 恢复版").unwrap();
+        std::fs::create_dir_all(backups.join("backup-100/_config")).unwrap();
+        std::fs::write(backups.join("backup-100/_config/vault.json"), "{}").unwrap();
+        std::fs::create_dir_all(backups.join("backup-100/_plugins/demo")).unwrap();
+        // 当前状态：a.md 被改、extra.md 为备份后新增
+        std::fs::create_dir_all(v.join("notes")).unwrap();
+        std::fs::write(v.join("notes/a.md"), "# v2").unwrap();
+        std::fs::write(v.join("notes/extra.md"), "# extra").unwrap();
+
+        restore_impl(vault, "backup-100", None).unwrap();
+
+        // 内容还原为备份点状态（覆盖合并：备份中存在的文件被还原）
+        assert_eq!(
+            std::fs::read_to_string(v.join("notes/a.md")).unwrap(),
+            "# 恢复版"
+        );
+        // 覆盖合并语义：备份后新增的文件保留（不做镜像删除，避免误删当前数据）
+        assert!(v.join("notes/extra.md").exists(), "覆盖合并恢复保留新增文件");
+        // 存档不复制回 vault
+        assert!(!v.join("_config").exists(), "配置存档不随恢复覆盖");
+        assert!(!v.join("_plugins").exists(), "插件存档不随恢复覆盖");
+        // 恢复前自动保存了现场（除 backup-100 外应有一个新备份）
+        let names: Vec<_> = std::fs::read_dir(&backups)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            names.iter().any(|n| n.starts_with("backup-") && n != "backup-100"),
+            "恢复前应保存现场: {names:?}"
+        );
+        // 非法名称拒绝
+        assert!(restore_impl(vault, "../evil", None).is_err());
+        assert!(restore_impl(vault, "backup-not-exist", None).is_err());
+        std::fs::remove_dir_all(&v).ok();
     }
 }

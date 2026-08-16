@@ -66,6 +66,9 @@ export const fsRename = (vault: string, from: string, to: string) =>
   invoke<void>("fs_rename", { vault, from, to });
 export const fsSearch = (vault: string, query: string) =>
   invoke<SearchHit[]>("fs_search", { vault, query });
+/** 聚合搜索：文件全文 + 启用的搜索提供者插件命中（source 字段标记来源） */
+export const searchAll = (vault: string, query: string) =>
+  invoke<SearchHit[]>("search_all", { vault, query });
 
 /* ---- 插件系统 ---- */
 

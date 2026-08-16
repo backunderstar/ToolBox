@@ -798,6 +798,53 @@ pub async fn plugin_call(
     m.invoke(&id, &command, args)
 }
 
+/// 聚合搜索：文件全文命中（现有 FTS）+ 所有启用的搜索提供者插件的
+/// `search.provide` 命中（来源以 source 字段标记，path 为 vault 相对路径）。
+/// 外部插件声明 `searchProvider: true` 并实现该命令即自动接入。
+#[tauri::command]
+pub async fn search_all(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<PluginManager>>,
+    vault: String,
+    query: String,
+) -> Result<serde_json::Value, String> {
+    let mut m = state.lock().map_err(|e| e.to_string())?;
+    ensure_refreshed(&mut m, &app, &vault)?;
+
+    // 1. 文件全文搜索（现有 FTS 索引，覆盖 notes/ 等）
+    let mut hits: Vec<Value> = crate::core::search::search(&vault, &query)
+        .map_err(|e| format!("搜索失败: {e}"))?
+        .into_iter()
+        .filter_map(|h| serde_json::to_value(h).ok())
+        .collect();
+
+    // 2. 插件提供者命中（启用且声明 searchProvider）
+    let providers: Vec<String> = m
+        .records
+        .iter()
+        .filter(|r| r.manifest.search_provider && m.enabled.contains(&r.manifest.id))
+        .map(|r| r.manifest.id.clone())
+        .collect();
+    for pid in providers {
+        let params = serde_json::json!({ "query": query, "limit": 20 });
+        if let Ok(mut ph) = m.invoke(&pid, "search.provide", params) {
+            if let Some(arr) = ph.as_array_mut() {
+                for h in arr {
+                    // 统一结构：provider 的 title 作为 filename；source 标记来源
+                    if h.get("filename").is_none() {
+                        if let Some(t) = h.get("title").and_then(|v| v.as_str()) {
+                            h["filename"] = Value::String(t.to_string());
+                        }
+                    }
+                    h["source"] = Value::String(pid.clone());
+                    hits.push(h.clone());
+                }
+            }
+        }
+    }
+    Ok(Value::Array(hits))
+}
+
 /* ---------------- 测试 ---------------- */
 
 #[cfg(test)]
