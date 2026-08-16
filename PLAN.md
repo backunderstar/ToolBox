@@ -207,6 +207,7 @@ Vault（用户自选的工作区目录，纯数据）
 | ✅ 已完成 | **核心插件 cdylib 化（阶段 0）** | Cargo workspace（宿主 + tb-sdk + core-plugins/*）；tb-sdk 定义 C ABI 契约（tb_abi_version/tb_create/tb_call/tb_free_string/tb_destroy + TbHostApi 宿主回灌含 ctx）；libloading 加载器 + `_core` 目录 + 统一 plugin_call 路由；records（记录）下沉为原生插件（CRUD/事件/搜索提供者，真实 DLL 集成测试）；备份改造（恢复到备份点 + %APPDATA% 配置/插件存档）；搜索提供者机制（manifest searchProvider，search_all 聚合命中）；删除版本历史 |
 | ⏳ 进行中 | **核心插件 cdylib 化（阶段 1）** | 迁移 笔记（最大）+ 待办清单 + 项目 为原生核心插件；侧边栏/视图注册表完全动态化（禁用即消失） |
 | ✅ 已完成 | **核心插件 cdylib 化（阶段 1）** | 笔记/待办/清单/项目 全部迁移为原生核心插件（5 个 cdylib 插件：records/notes/todos/checklists/projects）；宿主 core/ 只余 ai/blog/backup/search/vault；核心插件**默认启用**（显式禁用记入 disabled 集合，旧格式兼容）；侧边栏/视图注册表完全动态化（入口由插件 nav 声明提供，按 group 归组，禁用即消失 + 守卫占位）；api.ts fs*/todos*/projects* 透明转发 plugin_call；E2E 9/9 |
+| ✅ 已完成 | **核心插件 cdylib 化（阶段 2）** | 博客/AI/搜索/备份 全部迁移为原生核心插件（共 **9 个 cdylib**：records/notes/todos/checklists/projects/blog/ai/search/backup）；宿主 core/ 只余 vault + path（**核心就留框架**）；博客预览服务器移入插件（tiny_http 进程内单例）；AI 插件内自建 tokio runtime + keyring 凭据 + SSE 流式（ai-chunk 经事件桥）；搜索插件（SQLite FTS5）+ search_all 聚合 providers；备份插件（自动备份线程移入插件）；manifest `system` 锁定（backup/search 不可禁用）；侧边栏彻底插件化（AI/博客入口由插件 nav 提供）；E2E 8/8 |
 
 ---
 
@@ -216,12 +217,16 @@ Vault（用户自选的工作区目录，纯数据）
 ToolBox/
 ├── Cargo.toml              # Rust workspace（宿主 + tb-sdk + core-plugins/*）
 ├── tb-sdk/                 # 核心插件 SDK：C ABI 契约 + tb_plugin! 样板宏 + 路径安全
-├── core-plugins/           # 核心插件（cdylib，随应用分发；共 5 个）
+├── core-plugins/           # 核心插件（cdylib，随应用分发；共 9 个）
 │   ├── records/            # 记录（data/records CRUD + 搜索提供者）
 │   ├── notes/              # 笔记（notes/ 文件操作）
 │   ├── todos/              # 待办（浮窗数据层 + todos-changed）
 │   ├── checklists/         # 清单（data/checklists CRUD）
-│   └── projects/           # 项目（projects/ 目录 + 归档 + 打开）
+│   ├── projects/           # 项目（projects/ 目录 + 归档 + 打开）
+│   ├── blog/               # 博客（frontmatter + 站点生成 + 预览服务器）
+│   ├── ai/                 # AI（OpenAI 兼容 + SSE 流式 + keyring）
+│   ├── search/             # 搜索（SQLite FTS5，系统锁定）
+│   └── backup/             # 备份（快照/存档/恢复，系统锁定）
 ├── src-tauri/              # Tauri 主进程（宿主框架 + 插件宿主）
 │   ├── src/
 │   │   ├── main.rs / lib.rs
