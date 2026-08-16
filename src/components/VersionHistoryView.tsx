@@ -12,7 +12,7 @@ import {
   type HistoryStatus,
 } from "../core/history";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { IconHistory, IconRefresh } from "./icons";
+import { IconChevronRight, IconHistory, IconRefresh } from "./icons";
 
 /**
  * 版本历史视图：vault 内嵌 git 仓库（libgit2）。
@@ -121,7 +121,7 @@ export function VersionHistoryView() {
 
   if (!vault.path) {
     return (
-      <div className="view">
+      <div className="history-view">
         <div className="tree-empty">
           <p>先选择工作区，再启用版本历史</p>
           <p className="tree-empty-hint">在工作区设置里选择 vault 文件夹</p>
@@ -133,7 +133,7 @@ export function VersionHistoryView() {
   const last = status?.lastCommit ?? null;
 
   return (
-    <div className="view">
+    <div className="history-view">
       <div className="view-header">
         <div>
           <h1>版本历史</h1>
@@ -178,7 +178,9 @@ export function VersionHistoryView() {
 
       {!status?.initialized ? (
         <div className="history-init-card">
-          <IconHistory width={28} height={28} />
+          <span className="history-init-icon">
+            <IconHistory width={28} height={28} />
+          </span>
           <h2>为当前工作区启用版本历史</h2>
           <p>
             在你的 vault 文件夹里创建 <code>.git</code> 仓库（内嵌 git，无需安装
@@ -219,6 +221,11 @@ export function VersionHistoryView() {
                 <span className="history-msg">{c.message}</span>
                 <span className="history-files">{c.files} 个文件</span>
                 <span className="history-hash">{c.short}</span>
+                <IconChevronRight
+                  width={14}
+                  height={14}
+                  className={`history-chevron${expanded === c.short ? " open" : ""}`}
+                />
               </button>
               {expanded === c.short && (
                 <div className="history-commit-body">

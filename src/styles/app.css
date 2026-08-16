@@ -3066,6 +3066,11 @@
 }
 
 /* ============ 版本历史视图 ============ */
+.history-view {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-8);
+}
 .history-pending {
   align-self: center;
   padding: 3px 10px;
@@ -3096,6 +3101,16 @@
   gap: var(--space-3);
   color: var(--fg-muted);
 }
+.history-init-icon {
+  display: inline-flex;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.history-init-icon svg {
+  display: block;
+}
 .history-init-card h2 {
   margin: 0;
   color: var(--fg);
@@ -3124,7 +3139,7 @@
 }
 .history-commit {
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   overflow: hidden;
 }
@@ -3143,6 +3158,14 @@
 }
 .history-commit-head:hover {
   background: var(--bg-soft);
+}
+.history-chevron {
+  flex-shrink: 0;
+  color: var(--fg-faint);
+  transition: transform var(--dur) var(--ease);
+}
+.history-chevron.open {
+  transform: rotate(90deg);
 }
 .history-dot {
   width: 8px;
