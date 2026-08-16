@@ -94,6 +94,7 @@ extern "system" {
 
 #[cfg(windows)]
 #[repr(C)]
+#[allow(non_snake_case)] // Win32 SYSTEMTIME 字段名（wYear 等）保持原样
 struct SYSTEMTIME {
     wYear: u16,
     wMonth: u16,
