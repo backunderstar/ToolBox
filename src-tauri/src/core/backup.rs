@@ -105,7 +105,8 @@ fn backups_root(vault: &str) -> PathBuf {
 }
 
 /// 排除规则：根级 site/.git；备份根内的 _config/_plugins（存档不随 vault 恢复）；
-/// .toolbox 下的 backups 与 FTS 派生文件；临时文件。
+/// .toolbox 下的 backups 与 FTS 派生文件；备份流程自身的临时/暂存目录（原子性实现，
+/// 崩溃残留应被忽略、不参与恢复候选）；临时文件。
 fn is_skipped(parent: &Path, name: &str, at_root: bool) -> bool {
     if at_root && (name == "site" || name == ".git") {
         return true;
@@ -117,6 +118,11 @@ fn is_skipped(parent: &Path, name: &str, at_root: bool) -> bool {
         if name == "backups" || name.starts_with("search-fts.sqlite") {
             return true;
         }
+    }
+    // 备份/恢复的中间目录：.backup-*.tmp（快照暂存，rename 前）、
+    // .restore-stage-*（恢复暂存，覆盖前校验用）。崩溃残留也被忽略。
+    if name.starts_with(".backup-") || name.starts_with(".restore-stage") {
+        return true;
     }
     name.ends_with(".tmp") || name.ends_with('~') || name == "desktop.ini"
 }
@@ -150,6 +156,14 @@ fn copy_dir_all(src: &Path, dst: &Path, at_root: bool) -> Result<(u64, usize), S
     Ok((total, count))
 }
 
+/// 解析备份目录名时间戳：`backup-<ts>` 或 `backup-<ts>-<n>`（同名冲突后缀）→ ts。
+/// 失败返回 None（不匹配的目录名/损坏）。
+fn parse_backup_ts(name: &str) -> Option<i64> {
+    name.strip_prefix("backup-")
+        .and_then(|s| s.split('-').next())
+        .and_then(|s| s.parse::<i64>().ok())
+}
+
 /// 目录名去重：`backup-<ts>` 已存在则追加 `-2`、`-3`…
 fn unique_backup_dir(backups: &Path, ts: i64) -> PathBuf {
     let mut dir = backups.join(format!("backup-{ts}"));
@@ -162,6 +176,11 @@ fn unique_backup_dir(backups: &Path, ts: i64) -> PathBuf {
 }
 
 /// 清理最旧的备份，只保留最近 `keep` 份。
+///
+/// **排序必须按时间戳**：按文件名字符串排序会在跨位数边界删错——
+/// `"backup-999999999"`（9 位，较早）字符串序排在 `"backup-1700000000"`（10 位）
+/// 之后，会被误当作"较新"而保留。当前时间戳为 10 位不触发，但这是定时炸弹
+/// （且 2286 年时间戳转 11 位时再次触发）。
 fn prune(backups: &Path, keep: usize) {
     let Ok(read) = std::fs::read_dir(backups) else {
         return;
@@ -170,10 +189,12 @@ fn prune(backups: &Path, keep: usize) {
         .flatten()
         .filter(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            name.starts_with("backup-") && e.file_type().map(|t| t.is_dir()).unwrap_or(false)
+            // 只认正式备份目录（.backup-*.tmp 等中间目录不参与清理）
+            e.file_type().map(|t| t.is_dir()).unwrap_or(false)
+                && parse_backup_ts(&name).is_some()
         })
         .collect();
-    dirs.sort_by_key(|e| e.file_name());
+    dirs.sort_by_key(|e| parse_backup_ts(&e.file_name().to_string_lossy()).unwrap_or(i64::MIN));
     let mut excess = dirs.len().saturating_sub(keep);
     for d in dirs {
         if excess == 0 {
@@ -274,26 +295,39 @@ fn backup_now_impl(config_dir: &str, vault: &str, keep: usize) -> Result<BackupI
     let backups = backups_root(vault);
     std::fs::create_dir_all(&backups).map_err(|e| format!("创建备份目录失败: {e}"))?;
     let ts = unix_now();
-    let dir = unique_backup_dir(&backups, ts);
-    let (mut size, mut count) = copy_dir_all(&root, &dir, true)?;
+    let final_dir = unique_backup_dir(&backups, ts);
+    // 原子性（重要）：先复制到隐藏临时目录，全部成功后再 rename 为最终名。
+    // 若在复制中途崩溃（托盘退出/断电），只留下 .backup-*.tmp 残留——
+    // 它被 is_skipped 排除、不被 backup_list 列出、不参与 prune，
+    // 绝不会出现"名字看起来完整、内容却半截"的备份被用户恢复覆盖线上数据。
+    let tmp_dir = backups.join(format!(".backup-{ts}.tmp"));
+    if tmp_dir.exists() {
+        // 清理上一次崩溃留下的同名残留
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+    let (mut size, mut count) = copy_dir_all(&root, &tmp_dir, true)?;
 
     // 存档：应用配置（%APPDATA% 下 json） + 全局插件（排除核心 _core）
     let cfg_dir = PathBuf::from(config_dir);
-    if let Ok((sz, c)) = copy_config_archive(&cfg_dir, &dir.join(CONFIG_ARCHIVE)) {
+    if let Ok((sz, c)) = copy_config_archive(&cfg_dir, &tmp_dir.join(CONFIG_ARCHIVE)) {
         size += sz;
         count += c;
     }
-    if let Ok((sz, c)) = copy_plugins_archive(&cfg_dir.join("plugins"), &dir.join(PLUGINS_ARCHIVE))
+    if let Ok((sz, c)) = copy_plugins_archive(&cfg_dir.join("plugins"), &tmp_dir.join(PLUGINS_ARCHIVE))
     {
         size += sz;
         count += c;
     }
 
+    // rename 提交（同目录同盘，目标不存在时原子）
+    std::fs::rename(&tmp_dir, &final_dir)
+        .map_err(|e| format!("提交备份目录失败: {e}"))?;
+
     if keep > 0 {
         prune(&backups, keep);
     }
     Ok(BackupInfo {
-        path: dir.to_string_lossy().to_string(),
+        path: final_dir.to_string_lossy().to_string(),
         size_bytes: size,
         file_count: count,
     })
@@ -315,11 +349,25 @@ pub fn backup_config_get(config_dir: &str) -> BackupConfig {
 
 pub fn backup_config_set(config_dir: &str, config: BackupConfig) -> Result<(), String> {
     let mut cfg = config;
+    // 保持"0 = 用默认值"的既有语义
     if cfg.interval_minutes == 0 {
         cfg.interval_minutes = DEFAULT_INTERVAL_MIN;
     }
     if cfg.keep == 0 {
         cfg.keep = DEFAULT_KEEP;
+    }
+    // 范围钳制（防手改配置/异常输入引发灾难）：
+    // - interval 上限 7 天：超大值会让后台线程 `(x as i64) * 60` 溢出 panic（debug）
+    //   或行为异常（release）；- keep 上限 100：防止误配导致磁盘被备份堆满
+    cfg.interval_minutes = cfg.interval_minutes.clamp(1, 7 * 24 * 60);
+    cfg.keep = cfg.keep.clamp(1, 100);
+    // last_backup_at 只接受合理值：非负且不超前超过 1 天
+    // （异常值会让 `now - last` 溢出或永久不触发自动备份）
+    if let Some(l) = cfg.last_backup_at {
+        let now = unix_now();
+        if l < 0 || l > now + 86_400 {
+            cfg.last_backup_at = None;
+        }
     }
     save_config(config_dir, &cfg)
 }
@@ -332,14 +380,13 @@ pub fn backup_list(vault: &str) -> Vec<BackupEntry> {
     let mut out = Vec::new();
     for e in read.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
-        if !name.starts_with("backup-") || !e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if !e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             continue;
         }
-        let ts = name
-            .strip_prefix("backup-")
-            .and_then(|s| s.split('-').next())
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0);
+        // 只列正式备份（.backup-*.tmp 等中间目录不列出）
+        let Some(ts) = parse_backup_ts(&name) else {
+            continue;
+        };
         out.push(BackupEntry {
             name,
             timestamp: ts,
@@ -353,6 +400,11 @@ pub fn backup_list(vault: &str) -> Vec<BackupEntry> {
 }
 
 /// 恢复到备份点：先自动保存当前现场（可反悔），再把备份内容复制回 vault。
+///
+/// **两阶段恢复（尽力事务）**：先完整复制到 vault 内暂存目录（此阶段只读备份源、
+/// 写暂存，vault 不受影响——备份源损坏/IO 失败时线上数据安然无恙），
+/// 成功后再覆盖合并到 vault 根，最后清理暂存。若覆盖阶段失败（概率低），
+/// 暂存目录与恢复前的现场备份（backup-<ts>）都还在，可手工补救。
 pub fn restore_backup(config_dir: &str, vault: &str, name: &str) -> Result<BackupInfo, String> {
     let _guard = BACKUP_LOCK.lock().map_err(|_| "备份正在进行中".to_string())?;
     if name.is_empty()
@@ -373,7 +425,18 @@ pub fn restore_backup(config_dir: &str, vault: &str, name: &str) -> Result<Backu
     }
     // 恢复前自动保存当前状态（keep=0 跳过 prune 保护目标备份点）
     backup_now_impl(config_dir, vault, 0)?;
-    let (size, count) = copy_dir_all(&src, &root, true)?;
+
+    // 阶段 1：完整复制到暂存目录（读源失败 → vault 未动，直接返回错误）
+    let backups = backups_root(vault);
+    let stage = backups.join(format!(".restore-stage-{}", unix_now()));
+    if stage.exists() {
+        let _ = std::fs::remove_dir_all(&stage);
+    }
+    let (size, count) = copy_dir_all(&src, &stage, true)?;
+    // 阶段 2：覆盖合并（at_root=true：同样跳过 site/.git 与存档目录）
+    copy_dir_all(&stage, &root, true)?;
+    let _ = std::fs::remove_dir_all(&stage);
+
     let mut cfg = load_config(config_dir);
     cfg.last_backup_at = Some(unix_now());
     let _ = save_config(config_dir, &cfg);
@@ -397,10 +460,13 @@ pub fn spawn_auto(config_dir: String) {
             if !cfg.enabled {
                 continue;
             }
-            let interval = (cfg.interval_minutes.max(1) as i64) * 60;
+            // clamp + saturating_sub 双保险：配置可能被手改出异常值
+            // （backup_config_set 已钳制，但 backup.json 文件可被外部编辑），
+            // 防止 `(x as i64) * 60` / `now - last` 整数溢出 panic 杀死后台线程。
+            let interval = (cfg.interval_minutes.clamp(1, 7 * 24 * 60) as i64) * 60;
             let last = cfg.last_backup_at.unwrap_or(0);
             let now = unix_now();
-            if now - last < interval {
+            if now.saturating_sub(last) < interval {
                 continue;
             }
             let Some(vault) = read_current_vault(&config_dir) else {
@@ -469,6 +535,88 @@ mod tests {
         assert!(left.contains(&"backup-3".to_string()));
         assert!(!left.contains(&"backup-1".to_string()));
         std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn prune_sorts_by_timestamp_not_name() {
+        // 回归：字符串排序会在跨位数边界删错（"backup-999999999" 9 位早于
+        // "backup-1700000000" 10 位，但字符串序排在其后）。按时间戳排序后
+        // 应保留 10 位的（较新）。
+        let v = tmp_dir("prune-ts");
+        let backups = v.join(".toolbox/backups");
+        std::fs::create_dir_all(&backups).unwrap();
+        std::fs::create_dir_all(backups.join("backup-999999999")).unwrap();
+        std::fs::create_dir_all(backups.join("backup-1700000000")).unwrap();
+        prune(&backups, 1);
+        let left: Vec<_> = std::fs::read_dir(&backups)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            left.iter().any(|n| n == "backup-1700000000"),
+            "应保留时间戳更大的备份: {left:?}"
+        );
+        assert!(!left.iter().any(|n| n == "backup-999999999"), "应删掉更旧的: {left:?}");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn backup_is_atomic_no_tmp_residue() {
+        // 原子性：backup_now 完成后不应残留 .backup-*.tmp 中间目录，
+        // 且 backup_list 不列出中间目录（崩溃残留会被忽略，不参与恢复候选）。
+        let v = tmp_dir("atomic");
+        let vault = v.to_str().unwrap();
+        let config_dir = tmp_dir("atomic-cfg");
+        std::fs::create_dir_all(v.join("notes")).unwrap();
+        std::fs::write(v.join("notes/a.md"), "# a").unwrap();
+        let info = backup_now(config_dir.to_str().unwrap(), vault, 5).unwrap();
+        assert!(Path::new(&info.path).is_dir(), "最终备份目录应存在");
+        let backups = v.join(".toolbox/backups");
+        let names: Vec<_> = std::fs::read_dir(&backups)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            !names.iter().any(|n| n.starts_with('.')),
+            "不应有中间/残留目录: {names:?}"
+        );
+        let listed: Vec<_> = backup_list(vault).iter().map(|b| b.name.clone()).collect();
+        assert_eq!(listed.len(), 1, "backup_list 只列正式备份: {listed:?}");
+        std::fs::remove_dir_all(&v).ok();
+        std::fs::remove_dir_all(&config_dir).ok();
+    }
+
+    #[test]
+    fn config_set_clamps_extremes() {
+        // 溢出钳制：异常大值/异常 last_backup_at 被钳到安全范围，
+        // 后台线程不会因整数溢出 panic（debug）或行为异常（release）。
+        let config_dir = tmp_dir("cfg-clamp");
+        let cfg = BackupConfig {
+            enabled: true,
+            interval_minutes: 1 << 40, // 极大值
+            keep: usize::MAX,
+            last_backup_at: Some(i64::MIN),
+        };
+        backup_config_set(config_dir.to_str().unwrap(), cfg).unwrap();
+        let saved = load_config(config_dir.to_str().unwrap());
+        assert!(saved.interval_minutes <= 7 * 24 * 60, "interval 应被钳制");
+        assert!(saved.keep <= 100, "keep 应被钳制");
+        assert!(saved.last_backup_at.is_none(), "异常 last_backup_at 应被清空");
+
+        // 0 = 默认值语义保留
+        let cfg2 = BackupConfig {
+            enabled: true,
+            interval_minutes: 0,
+            keep: 0,
+            last_backup_at: None,
+        };
+        backup_config_set(config_dir.to_str().unwrap(), cfg2).unwrap();
+        let saved2 = load_config(config_dir.to_str().unwrap());
+        assert_eq!(saved2.interval_minutes, DEFAULT_INTERVAL_MIN);
+        assert_eq!(saved2.keep, DEFAULT_KEEP);
+        std::fs::remove_dir_all(&config_dir).ok();
     }
 
     #[test]
