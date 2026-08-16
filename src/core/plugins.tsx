@@ -20,6 +20,7 @@ import {
   pluginsUninstall,
 } from "./api";
 import type { PluginInfo, PluginNav } from "./api";
+import { buildBridgeApi, injectPluginScript, type PluginBridgeApi } from "./pluginRuntime";
 import { useVault } from "./vault";
 
 /**
@@ -55,6 +56,12 @@ export interface PluginApi {
     emit: (event: string, data?: unknown) => void;
   };
   log: (...args: unknown[]) => void;
+  /** 统一桥：调用插件命令（默认本插件，可跨插件） */
+  call: PluginBridgeApi["call"];
+  /** 统一桥：订阅本插件的 plugin-event */
+  on: PluginBridgeApi["on"];
+  /** 统一桥：当前工作区上下文 */
+  context: PluginBridgeApi["context"];
 }
 
 interface PluginContextValue {
@@ -118,6 +125,8 @@ export function PluginProvider({ children }: { children: ReactNode }) {
     (pluginId: string): PluginApi => {
       const rt = getRuntime(pluginId);
       const vaultPath = () => vaultRef.current;
+      // 统一桥（与核心插件自带前端同构）：call → plugin_call / on → plugin-event
+      const bridge = buildBridgeApi(pluginId, vaultPath);
       return {
         app: {
           registerCommand: (cmd) => {
@@ -157,6 +166,9 @@ export function PluginProvider({ children }: { children: ReactNode }) {
         },
         log: (...args) =>
           console.log(`[plugin:${pluginId}]`, ...args),
+        call: bridge.call,
+        on: bridge.on,
+        context: bridge.context,
       };
     },
     [getRuntime]
@@ -172,14 +184,11 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       rt.listeners.clear();
       try {
         // 插件装在全局目录（%APPDATA%/com.toolbox.desktop/plugins/），
-        // 由 Rust 侧限定在插件目录内读取入口文件
+        // 由 Rust 侧限定在插件目录内读取入口文件。
+        // 用 Blob URL <script> 注入执行（公共加载器，CSP script-src blob: 允许），
+        // 而非 new Function：打包版 CSP 会拦截 eval / Function 构造器。
+        // api 句柄用**按插件独立**的全局键（Promise.all 并发加载时不会串台）。
         const code = await pluginsReadFile(plugin.id, plugin.entry);
-        // 用 Blob URL <script> 注入执行，而非 new Function：
-        // 打包版 CSP（script-src 'self' blob:）会拦截 eval / Function 构造器。
-        // 保持原 api 参数契约：包一层 IIFE 传入全局句柄，运行期异常回写全局标记。
-        //
-        // api 句柄用**按插件独立**的全局键（Promise.all 并发加载时不会串台：
-        // 共享同一个键会被后加载者覆盖 / 被先完成者 delete，导致注册错插件或崩溃）。
         const w = window as unknown as Record<string, unknown>;
         const apiKey = `__TB_PLUGIN_API_${plugin.id}__`;
         w[apiKey] = buildApi(plugin.id);
@@ -192,28 +201,15 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           "  }",
           `})(window[${JSON.stringify(apiKey)}]);`,
         ].join("\n");
-        const url = URL.createObjectURL(
-          new Blob([wrapped], { type: "text/javascript" })
-        );
         try {
-          await new Promise<void>((resolve, reject) => {
-            const script = document.createElement("script");
-            script.src = url;
-            script.onload = () => {
-              const err = w.__TB_PLUGIN_ERROR__;
-              delete w.__TB_PLUGIN_ERROR__;
-              if (typeof err === "string") reject(new Error(err));
-              else resolve();
-            };
-            script.onerror = () =>
-              reject(new Error("插件脚本加载失败（可能被 CSP 拦截）"));
-            document.head.appendChild(script);
-          });
+          await injectPluginScript(wrapped);
+          const err = w.__TB_PLUGIN_ERROR__;
+          delete w.__TB_PLUGIN_ERROR__;
+          if (typeof err === "string") throw new Error(err);
         } finally {
-          // 无论成功/失败（含 onerror reject）都清理句柄与 Blob URL，防泄漏
+          // 无论成功/失败都清理句柄，防泄漏
           delete w[apiKey];
           delete w.__TB_PLUGIN_ERROR__;
-          URL.revokeObjectURL(url);
         }
         setRuntimeErrors((prev) => {
           const next = { ...prev };

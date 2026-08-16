@@ -1,0 +1,73 @@
+/**
+ * 统一插件前端运行时：webview 插件（命令注册）与核心插件自带前端（ui 挂载）
+ * 共用同一套"读入口 → Blob script 注入 → api 桥"机制。
+ *
+ * 加载链路：
+ *   plugins_read_file 读入口 JS → Blob URL <script> 注入（CSP script-src blob: 允许）
+ *   → 插件顶层代码执行（注册命令 / 注册 __TB_PLUGIN_UI__[id]）
+ *   → 宿主注入统一 api 桥（call → plugin_call；on → plugin-event 过滤；context）
+ */
+import { listen } from "@tauri-apps/api/event";
+import { pluginCall } from "./api";
+
+/** 注入给插件的统一 api 桥（webview 插件与插件自带前端同构） */
+export interface PluginBridgeApi {
+  pluginId: string;
+  /**
+   * 调用插件命令：默认调本插件（native → FFI / process → JSON-RPC）；
+   * 可指定 targetPluginId 跨插件调用（如博客界面改笔记 frontmatter）。
+   */
+  call: (command: string, args?: unknown, targetPluginId?: string) => Promise<unknown>;
+  /** 订阅本插件的 plugin-event（返回取消函数） */
+  on: (event: string, cb: (data: unknown) => void) => () => void;
+  context: { vault: string | null };
+}
+
+/** 构造统一 api 桥（vault 由调用方提供 getter） */
+export function buildBridgeApi(
+  pluginId: string,
+  getVault: () => string | null
+): PluginBridgeApi {
+  const vault = () => getVault();
+  return {
+    pluginId,
+    call: (command, args, targetPluginId) => {
+      const v = vault();
+      if (!v) return Promise.reject(new Error("工作区未设置"));
+      // args 缺省 {}（undefined 会被 invoke 序列化丢弃导致 Rust 侧缺参）
+      return pluginCall(v, targetPluginId ?? pluginId, command, args ?? {});
+    },
+    on: (event, cb) => {
+      let un: (() => void) | null = null;
+      listen<{ pluginId: string; event: string; data: unknown }>("plugin-event", (e) => {
+        if (e.payload.pluginId === pluginId && e.payload.event === event) {
+          cb(e.payload.data);
+        }
+      })
+        .then((fn) => (un = fn))
+        .catch(() => undefined);
+      return () => un?.();
+    },
+    context: { vault: vault() },
+  };
+}
+
+/**
+ * 注入插件脚本：Blob URL <script>（CSP script-src blob: 允许），onload 后 resolve。
+ * 返回清理函数（移除 <script> 节点）。
+ */
+export async function injectPluginScript(code: string): Promise<() => void> {
+  const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+  const script = document.createElement("script");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      script.src = url;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("插件脚本加载失败（可能被 CSP 拦截）"));
+      document.head.appendChild(script);
+    });
+    return () => script.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
