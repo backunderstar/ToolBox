@@ -74,8 +74,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState("就绪");
 
   /* 最新状态引用：供保存/切换等回调读取，避免闭包过期 */
-  const stateRef = useRef({ path, activePath, content });
-  stateRef.current = { path, activePath, content };
+  const stateRef = useRef({ path, activePath, content, files });
+  stateRef.current = { path, activePath, content, files };
   const dirtyRef = useRef(false);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -216,6 +216,20 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       if (isMockRef.current) return;
       const p = stateRef.current.path;
       if (!p || from === to) return;
+      // 前端校验（后端也会兜底）：非法字符 / 目标已存在
+      const name = to.slice(to.lastIndexOf("/") + 1);
+      if (/[\\/:*?"<>|]/.test(name)) {
+        flash(`文件名包含非法字符: ${name}`);
+        return;
+      }
+      if (
+        stateRef.current.files.some(
+          (f) => f.path === to && f.path !== from
+        )
+      ) {
+        flash(`同名文件已存在: ${to}`);
+        return;
+      }
       try {
         await fsRename(p, from, to);
         await refresh(p);
@@ -243,7 +257,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isMock) {
       setPath("mock-vault");
-      setFiles([{ name: "示例笔记.md", path: "notes/示例笔记.md", isDir: false }]);
+      setFiles([{ name: "示例笔记.md", path: "notes/示例笔记.md", isDir: false, size: null }]);
       setActivePath("notes/示例笔记.md");
       setContent(
         "# 示例笔记\n\n欢迎使用 ToolBox。\n\n- 列表一\n- 列表二\n\n```js\nconsole.log(1)\n```\n\n> 引用内容\n\n**加粗** 与 $E=mc^2$"

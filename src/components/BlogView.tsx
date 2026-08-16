@@ -31,12 +31,16 @@ export function BlogView() {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
     null
   );
+  const [staleCount, setStaleCount] = useState(0);
+  const [siteGeneratedAt, setSiteGeneratedAt] = useState<number | null>(null);
 
   const refresh = async () => {
     if (!vault.path) return;
     try {
       const r = await blogList(vault.path);
       setPosts(r.posts);
+      setStaleCount(r.staleCount);
+      setSiteGeneratedAt(r.siteGeneratedAt);
       setSelected((cur) => {
         if (!cur) return cur;
         return r.posts.find((p) => p.path === cur.path) ?? cur;
@@ -147,6 +151,15 @@ export function BlogView() {
           {message && (
             <p className={`settings-message ${message.ok ? "ok" : "err"}`}>{message.text}</p>
           )}
+          {staleCount > 0 && (
+            <p className="settings-message warn">
+              有 {staleCount} 篇已发布笔记在站点生成后更新过，
+              {siteGeneratedAt
+                ? `（站点生成于 ${fmtTime(siteGeneratedAt)}）`
+                : "站点尚未生成"}
+              ——点击"生成站点"发布最新内容
+            </p>
+          )}
         </div>
 
         <div className="blog-list-label">文章（{posts.length}）</div>
@@ -232,4 +245,10 @@ export function BlogView() {
       </section>
     </div>
   );
+}
+
+function fmtTime(unixSec: number): string {
+  const d = new Date(unixSec * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

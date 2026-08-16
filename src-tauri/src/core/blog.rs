@@ -22,12 +22,18 @@ pub struct PostMeta {
     pub date: String,
     pub tags: Vec<String>,
     pub status: String,
+    /// 笔记文件最后修改时间（unix 秒）——用于"站点是否过期"提示
+    pub mtime: Option<i64>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlogListResult {
     pub posts: Vec<PostMeta>,
+    /// 站点最后生成时间（site/public/index.html 的 mtime；未生成过为 None）
+    pub site_generated_at: Option<i64>,
+    /// 站点生成后又被修改过的已发布笔记数（>0 提示重新生成）
+    pub stale_count: usize,
 }
 
 #[derive(Serialize)]
@@ -72,6 +78,7 @@ fn meta_from(path: &str, fm: &BTreeMap<String, String>) -> PostMeta {
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default()
         }),
+        mtime: None, // scan_posts 里按文件实际修改时间填充
         date: fm.get("date").cloned().unwrap_or_default(),
         tags: fm
             .get("tags")
@@ -134,17 +141,49 @@ fn scan_posts(vault: &str) -> Vec<PostMeta> {
             continue;
         };
         let (fm, _) = parse_frontmatter(&content);
-        posts.push(meta_from(&rel, &fm));
+        let mut meta = meta_from(&rel, &fm);
+        meta.mtime = abs.metadata().ok().and_then(|m| m.modified().ok()).map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        });
+        posts.push(meta);
     }
     posts.sort_by(|a, b| b.date.cmp(&a.date));
     posts
+}
+
+/// 站点最后生成时间：取 site/public/index.html 的 mtime（生成必有该文件）。
+fn site_generated_at(vault: &str) -> Option<i64> {
+    let idx = PathBuf::from(vault).join("site/public/index.html");
+    idx.metadata().ok().and_then(|m| m.modified().ok()).map(|t| {
+        t.duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+    })
 }
 
 /* ---------------- 命令 ---------------- */
 
 #[tauri::command]
 pub async fn blog_list(vault: String) -> BlogListResult {
-    BlogListResult { posts: scan_posts(&vault) }
+    let posts = scan_posts(&vault);
+    let site_generated_at = site_generated_at(&vault);
+    // 已发布且修改时间晚于站点生成的笔记 = 站点过期
+    let stale_count = site_generated_at
+        .map(|gen| {
+            posts
+                .iter()
+                .filter(|p| p.status == "published")
+                .filter(|p| p.mtime.is_some_and(|m| m > gen))
+                .count()
+        })
+        .unwrap_or(0);
+    BlogListResult {
+        posts,
+        site_generated_at,
+        stale_count,
+    }
 }
 
 /// 生成站点到 vault/site/（Zola 兼容 content/ + 渲染后的 public/）。

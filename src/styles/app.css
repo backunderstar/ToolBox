@@ -1908,6 +1908,10 @@
   background: var(--pastel-red-bg);
   color: var(--pastel-red-fg);
 }
+.settings-message.warn {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
 
 /* ============ M7 博客视图 ============ */
 .blog-view {

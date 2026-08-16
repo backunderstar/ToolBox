@@ -18,7 +18,13 @@ pub struct FileEntry {
     pub name: String,
     pub path: String, // vault 相对路径，/ 分隔
     pub is_dir: bool,
+    /// 文件字节数（目录为 None）——前端可据此做超大文件提示
+    pub size: Option<u64>,
 }
+
+/// 前端编辑器一次读取的最大字节数：超过则拒绝并提示用外部编辑器
+/// （避免超大文件把 IPC/编辑器/内存卡死）。
+const MAX_READ_BYTES: u64 = 8 * 1024 * 1024;
 
 /// 确保 notes/ 目录存在；首次使用时把旧布局（vault 根下的 .md）迁移进去。
 /// 幂等：目录已存在时直接返回。
@@ -73,10 +79,21 @@ fn walk(root: &Path, dir: &Path, base: &str, out: &mut Vec<FileEntry>) {
         };
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
         if is_dir {
-            out.push(FileEntry { name, path: rel.clone(), is_dir: true });
+            out.push(FileEntry {
+                name,
+                path: rel.clone(),
+                is_dir: true,
+                size: None,
+            });
             walk(root, &entry.path(), &rel, out);
         } else if name.ends_with(".md") {
-            out.push(FileEntry { name, path: rel, is_dir: false });
+            let size = entry.metadata().ok().map(|m| m.len());
+            out.push(FileEntry {
+                name,
+                path: rel,
+                is_dir: false,
+                size,
+            });
         }
     }
 }
@@ -103,6 +120,11 @@ pub async fn fs_list_dir(vault: String, dir: String) -> Result<Vec<FileEntry>, S
     for entry in entries {
         let name = entry.file_name().to_string_lossy().to_string();
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let size = if is_dir {
+            None
+        } else {
+            entry.metadata().ok().map(|m| m.len())
+        };
         out.push(FileEntry {
             name: name.clone(),
             path: if base.is_empty() {
@@ -111,15 +133,25 @@ pub async fn fs_list_dir(vault: String, dir: String) -> Result<Vec<FileEntry>, S
                 format!("{base}/{name}")
             },
             is_dir,
+            size,
         });
     }
     Ok(out)
 }
 
-/// 读取笔记内容。
+/// 读取笔记内容。超大文件拒绝（防卡死），提示用外部编辑器。
 #[tauri::command]
 pub fn fs_read(vault: String, rel: String) -> Result<String, String> {
     let p = resolve_safe(&vault, &rel)?;
+    let size = std::fs::metadata(&p)
+        .map_err(|e| format!("读取失败: {e}"))?
+        .len();
+    if size > MAX_READ_BYTES {
+        let mb = size as f64 / (1024.0 * 1024.0);
+        return Err(format!(
+            "文件过大（{mb:.1} MB，上限 8 MB），请用外部编辑器打开"
+        ));
+    }
     std::fs::read_to_string(&p).map_err(|e| format!("读取失败: {e}"))
 }
 
@@ -276,6 +308,27 @@ mod tests {
         assert!(paths.contains(&"notes/工作"));
         let dir = list.iter().find(|f| f.path == "notes/工作").unwrap();
         assert!(dir.is_dir);
+
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    /// 超大文件：fs_read 应拒绝并提示用外部编辑器（防前端卡死）。
+    #[test]
+    fn fs_read_rejects_oversized_file() {
+        let v = tmp_vault("big");
+        std::fs::create_dir_all(v.join("notes")).unwrap();
+        let big = vec![b'a'; (MAX_READ_BYTES + 1) as usize];
+        std::fs::write(v.join("notes/big.md"), &big).unwrap();
+        let err = fs_read(
+            v.to_string_lossy().to_string(),
+            "notes/big.md".to_string(),
+        )
+        .unwrap_err();
+        assert!(err.contains("文件过大"), "应提示文件过大: {err}");
+        // 正常文件不受影响
+        std::fs::write(v.join("notes/small.md"), "ok").unwrap();
+        let ok = fs_read(v.to_string_lossy().to_string(), "notes/small.md".to_string()).unwrap();
+        assert_eq!(ok, "ok");
 
         std::fs::remove_dir_all(&v).ok();
     }

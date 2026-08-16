@@ -16,6 +16,8 @@ export interface FileEntry {
   name: string;
   path: string; // vault 相对路径，/ 分隔
   isDir: boolean;
+  /** 文件字节数（目录为 null） */
+  size: number | null;
 }
 
 export interface SearchHit {
@@ -131,10 +133,16 @@ export interface PostMeta {
   date: string;
   tags: string[];
   status: string;
+  /** 笔记文件最后修改时间（unix 秒） */
+  mtime: number | null;
 }
 
 export interface BlogListResult {
   posts: PostMeta[];
+  /** 站点最后生成时间（未生成过为 null） */
+  siteGeneratedAt: number | null;
+  /** 站点生成后又被修改过的已发布笔记数 */
+  staleCount: number;
 }
 
 export interface BlogGenerateResult {
