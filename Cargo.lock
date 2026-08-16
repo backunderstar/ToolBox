@@ -4406,6 +4406,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tb-ai"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "keyring",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tb-sdk",
+ "tokio",
+]
+
+[[package]]
 name = "tb-blog"
 version = "0.1.0"
 dependencies = [
@@ -4761,9 +4775,6 @@ checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 name = "toolbox"
 version = "0.1.0"
 dependencies = [
- "bytes",
- "futures-util",
- "keyring",
  "libloading 0.8.9",
  "pulldown-cmark",
  "reqwest 0.12.28",

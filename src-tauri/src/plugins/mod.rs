@@ -63,6 +63,8 @@ pub struct PluginManager {
     pub enabled: HashSet<String>,
     /// 核心插件（native）默认启用，显式禁用后记入此集合
     pub disabled: HashSet<String>,
+    /// 应用配置目录（%APPDATA%/com.toolbox.desktop，refresh 时记录，插件配置用）
+    pub config_dir: Option<String>,
     /// 最近一次扫描的 plugins 目录快照（目录名 + 有清单），
     /// 用于检测"目录增删但 vault 路径未变"的情况
     pub last_snapshot: Option<Vec<String>>,
@@ -75,6 +77,7 @@ impl Default for PluginManager {
             records: Vec::new(),
             enabled: HashSet::new(),
             disabled: HashSet::new(),
+            config_dir: None,
             last_snapshot: None,
         }
     }
@@ -279,6 +282,11 @@ impl PluginManager {
         }
         self.records.clear();
         self.vault = Some(vault.to_path_buf());
+        self.config_dir = app
+            .path()
+            .app_config_dir()
+            .map(|d| d.to_string_lossy().to_string())
+            .ok();
         // 旧版状态迁移（vault/.toolbox/plugins.json → 全局）后读全局启用集合
         migrate_legacy_enabled(app, vault);
         let (enabled, disabled) = load_state(app);
@@ -668,7 +676,7 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 启动 native 插件：加载 DLL + 创建实例（配置含 vault 路径）。
+    /// 启动 native 插件：加载 DLL + 创建实例（配置含 vault 路径与配置目录）。
     fn start_native(&mut self, idx: usize) -> Result<(), String> {
         let (id, cmd, dir, vault) = {
             let rec = &self.records[idx];
@@ -684,7 +692,12 @@ impl PluginManager {
             return Err("native 插件 command 为空".to_string());
         }
         let vault = vault.ok_or("vault 未设置")?;
-        let config = serde_json::json!({ "vault": vault.to_string_lossy() }).to_string();
+        let config_dir = self.config_dir.clone().unwrap_or_default();
+        let config = serde_json::json!({
+            "vault": vault.to_string_lossy(),
+            "config_dir": config_dir,
+        })
+        .to_string();
         let plugin = NativePlugin::load(&dir.join(&cmd[0]), &id, &config)?;
         self.records[idx].native = Some(plugin);
         // native 命令由插件内部分发，无握手声明

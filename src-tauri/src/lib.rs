@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{ai, backup, vault};
+use core::{backup, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -111,13 +111,6 @@ pub fn run() {
             plugins::plugins_invoke,
             plugins::plugin_call,
             plugins::search_all,
-            ai::ai_config_get,
-            ai::ai_config_set,
-            ai::ai_config_set_key,
-            ai::ai_config_clear_key,
-            ai::ai_chat,
-            ai::ai_chat_stream,
-            ai::ai_test,
             backup::backup_now_cmd,
             backup::backup_config_get,
             backup::backup_config_set,

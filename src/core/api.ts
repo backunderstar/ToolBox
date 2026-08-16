@@ -131,7 +131,7 @@ export const openUrl = (url: string) => {
   return Promise.resolve();
 };
 
-/* ---- M6 AI ---- */
+/* ---- M6 AI（经 core-ai 原生插件；无显式 vault 用当前工作区） ---- */
 
 export interface AiConfig {
   baseUrl: string;
@@ -145,23 +145,40 @@ export interface ChatMessage {
   content: string;
 }
 
-export const aiConfigGet = () => invoke<AiConfig>("ai_config_get");
+export const aiConfigGet = () =>
+  currentVault().then((v) =>
+    pluginCall(v, "core-ai", "ai.configGet", {})
+  ) as Promise<AiConfig>;
 export const aiConfigSet = (config: { baseUrl: string; model: string }) =>
-  invoke<void>("ai_config_set", { config });
+  currentVault().then((v) =>
+    pluginCall(v, "core-ai", "ai.configSet", { config })
+  ) as Promise<void>;
 /** 保存 API Key 到系统凭据管理器（Windows 凭据管理器 / Keychain） */
 export const aiConfigSetKey = (key: string) =>
-  invoke<void>("ai_config_set_key", { key });
-export const aiConfigClearKey = () => invoke<void>("ai_config_clear_key");
+  currentVault().then((v) =>
+    pluginCall(v, "core-ai", "ai.configSetKey", { key })
+  ) as Promise<void>;
+export const aiConfigClearKey = () =>
+  currentVault().then((v) =>
+    pluginCall(v, "core-ai", "ai.configClearKey", {})
+  ) as Promise<void>;
 export const aiChat = (messages: ChatMessage[]) =>
-  invoke<string>("ai_chat", { messages });
-/** 流式对话：增量经 `ai-chunk` 事件推送（见 AIChatView），本调用在流结束后 resolve */
+  currentVault().then((v) =>
+    pluginCall(v, "core-ai", "ai.chat", { messages })
+  ) as Promise<string>;
+/** 流式对话：增量经 core-ai 的 ai-chunk（经 plugin-event 转发），本调用在流结束后 resolve */
 export const aiChatStream = (messages: ChatMessage[]) =>
-  invoke<void>("ai_chat_stream", { messages });
-/** `ai-chunk` 事件载荷 */
+  currentVault().then((v) =>
+    pluginCall(v, "core-ai", "ai.chatStream", { messages })
+  ) as Promise<void>;
+/** `ai-chunk` 事件载荷（plugin-event 的 data 字段） */
 export interface AiChunk {
   text: string;
 }
-export const aiTest = () => invoke<string>("ai_test");
+export const aiTest = () =>
+  currentVault().then((v) =>
+    pluginCall(v, "core-ai", "ai.test", {})
+  ) as Promise<string>;
 
 /* ---- M7 博客发布（经 core-blog 原生插件） ---- */
 

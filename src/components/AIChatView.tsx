@@ -59,17 +59,22 @@ export function AIChatView() {
     streamRef.current = { idx, text: "" };
     let un: (() => void) | null = null;
     try {
-      un = await listen<AiChunk>("ai-chunk", (e) => {
-        const s = streamRef.current;
-        if (!s) return;
-        s.text += e.payload.text;
-        setEntries((prev) => {
-          const next = [...prev];
-          next[s.idx] = { role: "assistant", content: s.text };
-          return next;
-        });
-        scrollToBottom();
-      });
+      un = await listen<{ pluginId: string; event: string; data: AiChunk }>(
+        "plugin-event",
+        (e) => {
+          // core-ai 插件流式增量经事件桥转发（与 ai-chunk 同载荷）
+          if (e.payload.pluginId !== "core-ai" || e.payload.event !== "ai-chunk") return;
+          const s = streamRef.current;
+          if (!s) return;
+          s.text += e.payload.data.text;
+          setEntries((prev) => {
+            const next = [...prev];
+            next[s.idx] = { role: "assistant", content: s.text };
+            return next;
+          });
+          scrollToBottom();
+        }
+      );
       await aiChatStream(messages);
     } catch (e) {
       const msg = String(e);
