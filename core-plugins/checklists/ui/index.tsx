@@ -230,6 +230,31 @@ export function ChecklistsPluginUi({ api }: { api: PluginBridgeApi }) {
     }
   };
 
+  /* ---- 宿主反链跳转：tb:open-checklist 事件 + 挂载期标记 ---- */
+  // 宿主 PluginUiView 的 nav.openChecklist 会把清单 id 广播为
+  // CustomEvent("tb:open-checklist") 并写 window.__TB_PENDING_CHECKLIST__ 标记
+  // （与 tb:open-note 同机制）。宿主回退 ChecklistView 走 viewParams.openChecklistId，
+  // 插件自带前端收不到 viewParams，只能走事件。
+  // open 每次渲染重建，用 ref 持有最新实现，事件回调不因闭包过期而失效。
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    const handle = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (id) void openRef.current(id);
+    };
+    window.addEventListener("tb:open-checklist", handle);
+    // 挂载期标记：视图切换是异步的，本组件可能晚于标记写入才挂载
+    const pending = (window as unknown as Record<string, unknown>)
+      .__TB_PENDING_CHECKLIST__;
+    if (typeof pending === "string" && pending) {
+      delete (window as unknown as Record<string, unknown>)
+        .__TB_PENDING_CHECKLIST__;
+      void openRef.current(pending);
+    }
+    return () => window.removeEventListener("tb:open-checklist", handle);
+  }, []);
+
   const create = async (title: string) => {
     const t = title.trim();
     if (!t || !vault) return;

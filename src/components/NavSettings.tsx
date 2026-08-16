@@ -106,7 +106,10 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
     delete order[groupId];
     for (const id of moved) {
       const def = defById.get(id);
-      const fallback = def?.groupId ?? builtinIds.has(groupId) ? "work" : "system";
+      // 注意优先级：`??` 先于 `?:`，必须用括号把三元包住，否则解析成
+      // `(def?.groupId ?? builtinIds.has(groupId)) ? "work" : "system"`，
+      // 只要 def 存在就恒取 "work"，把默认组为 system 的项（blog/ai）误移入 work。
+      const fallback = def?.groupId ?? (builtinIds.has(groupId) ? "work" : "system");
       const list = order[fallback] ?? (order[fallback] = []);
       if (!list.includes(id)) list.push(id);
     }

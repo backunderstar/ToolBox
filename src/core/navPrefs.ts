@@ -80,8 +80,10 @@ export function normalizeNav(cfg: NavConfig | null, defs: NavItemDef[]): NavConf
   // 1. 内置组（始终存在）
   for (const g of BUILTIN_GROUPS) ensureGroup(g.id, g.label);
 
-  // 2. 用户配置的组（自定义组保留改名；内置组 label 固定）
-  const raw = cfg?.groups ?? [];
+  // 2. 用户配置的组（自定义组保留改名；内置组 label 固定）。
+  //    Array.isArray 防御：loadNavConfig 已做结构校验，这里再兜一层，
+  //    即使 cfg 来源异常（测试/手改）也不会因 for..of 不可迭代而崩。
+  const raw = Array.isArray(cfg?.groups) ? cfg!.groups : [];
   for (const g of raw) {
     const builtin = BUILTIN_GROUPS.find((b) => b.id === g.id);
     if (builtin) {
@@ -167,7 +169,18 @@ export function loadNavConfig(): NavConfig | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed?.version === VERSION) return parsed as NavConfig;
+    // v2 快路径结构校验：只信任形状完整的配置。历史 bug/手改损坏的配置
+    // （如 groups 被写成对象、order/meta 缺失）会让 normalizeNav 抛
+    // TypeError 导致整应用白屏，这里提前挡掉——返回 null 由 normalizeNav
+    // 以代码定义重建默认配置（"恢复默认"等价行为，用户配置可再编辑）。
+    if (parsed?.version === VERSION) {
+      const isRecord = (v: unknown): v is Record<string, unknown> =>
+        !!v && typeof v === "object" && !Array.isArray(v);
+      if (Array.isArray(parsed.groups) && isRecord(parsed.order) && isRecord(parsed.meta)) {
+        return parsed as NavConfig;
+      }
+      return null;
+    }
     if (parsed && typeof parsed === "object" && "order" in parsed) return migrateV1(parsed);
     return null;
   } catch {

@@ -65,15 +65,27 @@ export function buildBridgeApi(
     },
     on: (event, cb, targetPluginId) => {
       let un: (() => void) | null = null;
+      // 取消竞态防护：listen() 是异步 promise，取消函数可能在它 resolve 之前
+      // 就被调用（插件 UI 快速卸载/重挂载）。若直接返回 un?.()，此时 un 仍为
+      // null，取消是 no-op → 监听器永久泄漏。用 cancelled 标志记住"已取消"，
+      // promise resolve 后立即注销（fn() 即取消函数，这里直接调用）。
+      let cancelled = false;
       const pid = targetPluginId ?? pluginId;
-      listen<{ pluginId: string; event: string; data: unknown }>("plugin-event", (e) => {
+      void listen<{ pluginId: string; event: string; data: unknown }>("plugin-event", (e) => {
+        if (cancelled) return;
         if (e.payload.pluginId === pid && e.payload.event === event) {
           cb(e.payload.data);
         }
       })
-        .then((fn) => (un = fn))
+        .then((fn) => {
+          if (cancelled) fn();
+          else un = fn;
+        })
         .catch(() => undefined);
-      return () => un?.();
+      return () => {
+        cancelled = true;
+        un?.();
+      };
     },
     context: { vault: vault(), ...(opts?.context ?? {}) },
     ...(opts?.nav ? { nav: opts.nav } : {}),

@@ -2,7 +2,8 @@
 // 依赖 React（构建进 IIFE）；宿主注入统一 api 桥；CSS 复用宿主全局样式
 // （.ai-view/.view-header/.ai-body 等 class 在宿主 app.css 中，组件注入宿主 React 树内直接生效）。
 // 命令面（全部经 api.call，本插件 core-ai）：
-//   ai.chatStream { messages } —— 流式对话，增量经 ai-chunk 事件到达，流结束后 resolve
+//   ai.chatStream { messages } —— 流式对话：立即返回（Rust 侧独立线程执行），
+//                              增量经 ai-chunk 事件到达，结束/失败经 ai-done 事件
 //   ai.chat { messages } —— 非流式，返回完整回复字符串（如 AI 摘要场景，本视图未使用）
 // 跨插件：core-notes notes.read（读取命中片段）；RAG 检索经宿主内嵌全文搜索（api.host.search）。
 import React, { useRef, useState } from "react";
@@ -117,13 +118,18 @@ export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
 
   /**
    * 流式对话公共流程：建占位 assistant 消息 → 订阅 ai-chunk 逐段累积 →
-   * ai.chatStream 结束（或出错）后清理。调用方负责先 push user 消息并构造 messages。
+   * 等待 ai-done 结束事件后收尾。调用方负责先 push user 消息并构造 messages。
+   *
+   * 注意：`ai.chatStream` 现在**立即返回**（Rust 侧把流式请求派发到独立线程，
+   * 避免宿主 tokio 线程上 block_on 嵌套 panic），所以"流结束"的判定从
+   * "call resolve"改为订阅 `ai-done` 事件（载荷 `{ok, error?}`）。
    */
   const runChatStream = async (messages: ChatMessage[]) => {
     const idx = countRef.current;
     push({ role: "assistant", content: "" });
     streamRef.current = { idx, text: "" };
     let un: (() => void) | null = null;
+    let unDone: (() => void) | null = null;
     try {
       // api.on 已按本插件（core-ai）+ 事件名过滤，回调直接收到 { text }
       un = api.on("ai-chunk", (data) => {
@@ -137,8 +143,15 @@ export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
         });
         scrollToBottom();
       });
-      // 流结束后 resolve（增量经 ai-chunk 事件先到达）
+      // 先订阅 ai-done 再 call：事件在 call resolve 前后到达都不会丢
+      const done = new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        unDone = api.on("ai-done", (data) => {
+          resolve(data as { ok: boolean; error?: string });
+        });
+      });
       await api.call("ai.chatStream", { messages });
+      const outcome = await done;
+      if (!outcome.ok) throw new Error(outcome.error ?? "流式对话失败");
     } catch (e) {
       const msg = String(e);
       const friendly = msg.includes("未配置 API Key")
@@ -156,6 +169,7 @@ export function AiPluginUi({ api }: { api: PluginBridgeApi }) {
       });
     } finally {
       un?.();
+      unDone?.();
       streamRef.current = null;
       busyRef.current = false;
       setBusy(false);

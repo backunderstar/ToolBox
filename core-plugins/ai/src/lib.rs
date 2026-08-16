@@ -29,6 +29,37 @@ fn rt() -> &'static tokio::runtime::Runtime {
     })
 }
 
+/// 跨线程安全包装（std::thread::spawn / rt().spawn 要求捕获的变量实现 Send）：
+/// - 宿主回调表 `TbHostApi` 含函数指针 + `*mut c_void`，本身不是 Send；
+/// - 上下文指针 `*mut c_void` 同理。
+/// 这里只把它们**原样透传**到流式任务（不解引用、不释放、不改写），
+/// 实际使用方（emit 回调 → 宿主 mpsc Sender）是线程安全的，故 unsafe impl Send
+/// 是安全的。这是 FFI 边界常见的"指针搬运"模式，务必保持"只透传"约定。
+///
+/// 注意：解包必须经 `get()` 方法（借用 self 返回 Copy 值）——若在闭包里直接写
+/// `host.0`，Rust 的分离捕获（RFC 2229）会捕获解包后的 `TbHostApi`（非 Send）
+/// 而非包装本身，Send 检查照样失败；而按值的方法（self 按值）在 FnMut 闭包里
+/// 又会被禁止（不能 move 捕获变量），所以这里用 &self 借用 + Copy 返回值。
+#[derive(Clone, Copy)]
+struct SendHost(TbHostApi);
+// Send：包装值可 move 跨线程；Sync：&SendHost 可共享（闭包经 &self 借用 get() 时需要）
+unsafe impl Send for SendHost {}
+unsafe impl Sync for SendHost {}
+impl SendHost {
+    fn get(&self) -> TbHostApi {
+        self.0
+    }
+}
+#[derive(Clone, Copy)]
+struct SendCtx(*mut c_void);
+unsafe impl Send for SendCtx {}
+unsafe impl Sync for SendCtx {}
+impl SendCtx {
+    fn get(&self) -> *mut c_void {
+        self.0
+    }
+}
+
 /// 非流式对话复用单一 blocking 客户端
 static BLOCKING_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
 
@@ -238,8 +269,64 @@ fn chat(state: &AiState, params: &Value) -> Result<Value, String> {
     Ok(Value::String(content.to_string()))
 }
 
+/// 流式请求主体（async）：发请求 + 消费 SSE + 逐段推 `ai-chunk`。
+/// 提取为独立 async 函数：future 只捕获函数参数（SendHost/SendCtx 为 Send 包装，
+/// url/api_key/body 为 owned），满足 `rt().spawn` 的 `Future: Send + 'static` 约束。
+async fn chat_stream_inner(
+    host: SendHost,
+    ctx: SendCtx,
+    url: String,
+    api_key: String,
+    body: Value,
+) -> Result<Value, String> {
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| format!("创建客户端失败: {e}"))?;
+    let resp = client
+        .post(&url)
+        .bearer_auth(api_key.trim())
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败（检查网络或 API 地址）: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("读取响应失败: {e}"))?;
+        let detail = chat::extract_error(&text);
+        return Err(format!("API 返回 {status}: {detail}"));
+    }
+    // 逐块读取 SSE 流，增量推 ai-chunk（经事件桥转发 plugin-event）。
+    // 闭包内必须用 get() 解包（见 SendHost/SendCtx 注释：分离捕获 + FnMut 限制）。
+    let stream = resp.bytes_stream();
+    chat::consume_sse(stream, |text| {
+        emit(
+            host.get(),
+            ctx.get(),
+            "ai-chunk",
+            json!({ "text": text }),
+        );
+    })
+    .await?;
+    Ok(Value::Null)
+}
+
 /// 流式对话：SSE 增量经 host.emit_event 推 `ai-chunk`（前端打字机）。
+///
+/// **为什么这里必须派发独立线程（重要）**：宿主 `plugin_call` 是 async 命令，
+/// 运行在 tauri 的 tokio worker 线程上。若在本线程直接 `rt().block_on(...)`
+/// 嵌套另一个 tokio Runtime，tokio 会检测到"运行时内再 block_on"并直接 panic
+/// （被 tb_plugin! 宏 catch_unwind 吞成"插件 panic（已隔离）"，流式对话静默全坏）。
+/// 这里改用插件自建的多线程 runtime `rt().spawn` 派发：future 在 runtime 的
+/// worker 线程上执行，`emit` 走宿主事件桥（mpsc channel，线程安全），合法且不阻塞调用方。
+///
+/// **契约变化**：本函数现在立即返回（仅表示"流式任务已派发"），流式增量经
+/// `ai-chunk` 事件到达，流结束/失败经 `ai-done` 事件通知（`{ok, error?}`）。
+/// 前端 `runChatStream` 相应改为等待 `ai-done` 而不是等待 call resolve。
 fn chat_stream(state: &AiState, host: TbHostApi, ctx: *mut c_void, params: &Value) -> Result<Value, String> {
+    // 同步部分：先解析参数/配置/凭据（失败直接返回给 call 调用方，无需起线程）
     let messages: Vec<ChatMessage> =
         serde_json::from_value(params.get("messages").cloned().unwrap_or(Value::Null))
             .map_err(|e| format!("messages 非法: {e}"))?;
@@ -257,34 +344,30 @@ fn chat_stream(state: &AiState, host: TbHostApi, ctx: *mut c_void, params: &Valu
         "stream": true
     });
 
-    rt().block_on(async move {
-        let client = reqwest::Client::builder()
-            .build()
-            .map_err(|e| format!("创建客户端失败: {e}"))?;
-        let resp = client
-            .post(&url)
-            .bearer_auth(api_key.trim())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("请求失败（检查网络或 API 地址）: {e}"))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp
-                .text()
-                .await
-                .map_err(|e| format!("读取响应失败: {e}"))?;
-            let detail = chat::extract_error(&text);
-            return Err(format!("API 返回 {status}: {detail}"));
+    // 裸指针/TbHostApi 不是 Send，用 SendHost/SendCtx 包装后再跨线程传递
+    // （包装语义见结构体注释：只透传不解引用，故 unsafe impl Send 安全）。
+    let host_send = SendHost(host);
+    let ctx_send = SendCtx(ctx);
+    // fire-and-forget：不 await JoinHandle；任务完成/失败统一发 ai-done 通知前端。
+    // 注意：task 内部失败都会经 Err 走 ai-done，不会静默悬挂。
+    rt().spawn(async move {
+        let result = chat_stream_inner(host_send, ctx_send, url, api_key, body).await;
+        match result {
+            Ok(_) => emit(
+                host_send.get(),
+                ctx_send.get(),
+                "ai-done",
+                json!({ "ok": true }),
+            ),
+            Err(e) => emit(
+                host_send.get(),
+                ctx_send.get(),
+                "ai-done",
+                json!({ "ok": false, "error": e }),
+            ),
         }
-        // 逐块读取 SSE 流，增量推 ai-chunk（经事件桥转发 plugin-event）
-        let stream = resp.bytes_stream();
-        chat::consume_sse(stream, |text| {
-            emit(host, ctx, "ai-chunk", json!({ "text": text }));
-        })
-        .await?;
-        Ok(Value::Null)
-    })
+    });
+    Ok(Value::Null)
 }
 
 fn test(state: &AiState) -> Result<Value, String> {
@@ -297,7 +380,8 @@ fn test(state: &AiState) -> Result<Value, String> {
     chat(state, &params)
 }
 
-/// 命令分发。流式/对话是宿主线程上的同步调用（blocking reqwest / tokio block_on）。
+/// 命令分发。ai.chat 非流式 = 宿主线程上同步阻塞调用（blocking reqwest，120s 超时）；
+/// ai.chatStream 流式 = 派发独立线程执行（见 chat_stream 注释，防 tokio block_on 嵌套 panic）。
 fn call(
     state: &mut AiState,
     host: TbHostApi,

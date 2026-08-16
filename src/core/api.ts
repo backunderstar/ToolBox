@@ -167,7 +167,12 @@ export const aiChat = (messages: ChatMessage[]) =>
   currentVault().then((v) =>
     pluginCall(v, "core-ai", "ai.chat", { messages })
   ) as Promise<string>;
-/** 流式对话：增量经 core-ai 的 ai-chunk（经 plugin-event 转发），本调用在流结束后 resolve */
+/**
+ * 流式对话：core-ai 将请求派发到独立线程后**立即返回**（防宿主 tokio 线程
+ * block_on 嵌套 panic）。增量经 `ai-chunk`（plugin-event 转发）到达，
+ * 结束/失败经 `ai-done`（{ok, error?}）通知——调用方应监听该事件收尾，
+ * 不能依赖本调用 resolve 表示"流结束"。
+ */
 export const aiChatStream = (messages: ChatMessage[]) =>
   currentVault().then((v) =>
     pluginCall(v, "core-ai", "ai.chatStream", { messages })

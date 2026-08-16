@@ -51,13 +51,18 @@ export function AIChatView() {
 
   /**
    * 流式对话公共流程：建占位 assistant 消息 → 监听 ai-chunk 逐段累积 →
-   * invoke 结束（或出错）后清理。调用方负责先 push user 消息并构造 messages。
+   * 等待 ai-done 结束事件后收尾。调用方负责先 push user 消息并构造 messages。
+   *
+   * 注意：`ai.chatStream` 现在**立即返回**（core-ai 把流式请求派发到独立线程，
+   * 避免宿主 tokio 线程 block_on 嵌套 panic），流结束/失败改由 `ai-done`
+   * 事件（`{ok, error?}`）通知，不再以 invoke resolve 为准。
    */
   const runChatStream = async (messages: ChatMessage[]) => {
     const idx = countRef.current;
     push({ role: "assistant", content: "" });
     streamRef.current = { idx, text: "" };
     let un: (() => void) | null = null;
+    let unDone: (() => void) | null = null;
     try {
       un = await listen<{ pluginId: string; event: string; data: AiChunk }>(
         "plugin-event",
@@ -75,7 +80,24 @@ export function AIChatView() {
           scrollToBottom();
         }
       );
+      // 先订阅 ai-done 再 call：事件在 call resolve 前后到达都不会丢。
+      // 注意：不要用"闭包里给 unDone 赋值"的写法——TS 对闭包赋值 +
+      // finally 读取会推断成 never 报错，这里直接 await listen 拿取消函数。
+      let resolveDone: ((v: { ok: boolean; error?: string }) => void) | null = null;
+      const done = new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        resolveDone = resolve;
+      });
+      unDone = await listen<{
+        pluginId: string;
+        event: string;
+        data: { ok: boolean; error?: string };
+      }>("plugin-event", (e) => {
+        if (e.payload.pluginId !== "core-ai" || e.payload.event !== "ai-done") return;
+        resolveDone?.(e.payload.data);
+      });
       await aiChatStream(messages);
+      const outcome = await done;
+      if (!outcome.ok) throw new Error(outcome.error ?? "流式对话失败");
     } catch (e) {
       const msg = String(e);
       const friendly = msg.includes("未配置 API Key")
@@ -93,6 +115,7 @@ export function AIChatView() {
       });
     } finally {
       un?.();
+      unDone?.();
       streamRef.current = null;
       busyRef.current = false;
       setBusy(false);
