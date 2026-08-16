@@ -125,6 +125,34 @@ fn global_plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// 以下划线开头，与外部插件 id（仅小写字母/数字/连字符）不可能冲突。
 pub const CORE_DIR: &str = "_core";
 
+/// 打包版随应用分发核心插件：从资源目录（`resource_dir/_core`，安装包内）
+/// 部署到 `%APPDATA%/com.toolbox.desktop/plugins/_core`（清空后整体复制，
+/// 保证与应用版本一致；核心插件是随应用分发的信任代码）。
+/// dev 模式资源目录无 `_core` → 跳过（由 `pnpm build:core` 部署 debug DLL）。
+pub fn ensure_core_plugins(app: &tauri::AppHandle) {
+    let Ok(res) = app.path().resource_dir() else {
+        return;
+    };
+    let src = res.join(CORE_DIR);
+    if !src.is_dir() {
+        return;
+    }
+    let Ok(cfg) = app.path().app_config_dir() else {
+        return;
+    };
+    let dst = cfg.join("plugins").join(CORE_DIR);
+    match deploy_core_plugins(&src, &dst) {
+        Ok(()) => eprintln!("[plugin] 已部署随应用分发的核心插件到 {:?}", dst),
+        Err(e) => eprintln!("[plugin] 核心插件资源部署失败: {e}"),
+    }
+}
+
+/// 部署实现（可测）：清空目标后从 src 整体复制。
+fn deploy_core_plugins(src: &Path, dst: &Path) -> Result<(), String> {
+    let _ = std::fs::remove_dir_all(dst);
+    copy_dir_recursive(src, dst)
+}
+
 fn state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
@@ -938,11 +966,36 @@ mod tests {
     use serde_json::json;
     use std::sync::mpsc::channel;
 
+    /// 打包资源部署：src（模拟 resource_dir/_core）→ dst，清空后整体复制。
+    #[test]
+    fn deploy_core_plugins_copies_tree() {
+        let base = std::env::temp_dir().join(format!("tb-deploy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let src = base.join("src/_core");
+        std::fs::create_dir_all(src.join("core-notes")).unwrap();
+        std::fs::write(src.join("core-notes/plugin.json"), "{}").unwrap();
+        std::fs::write(src.join("core-notes/tb_notes.dll"), "dll-bytes").unwrap();
+        std::fs::create_dir_all(src.join("core-search")).unwrap();
+        std::fs::write(src.join("core-search/plugin.json"), "{}").unwrap();
+
+        let dst = base.join("dst/_core");
+        deploy_core_plugins(&src, &dst).unwrap();
+        assert!(dst.join("core-notes/plugin.json").is_file());
+        assert!(dst.join("core-notes/tb_notes.dll").is_file());
+        assert!(dst.join("core-search/plugin.json").is_file());
+
+        // 重复部署：目标旧内容被清空（不留残留）
+        std::fs::write(dst.join("stale.txt"), "old").unwrap();
+        deploy_core_plugins(&src, &dst).unwrap();
+        assert!(!dst.join("stale.txt").exists(), "应清空旧内容");
+        assert!(dst.join("core-notes/plugin.json").is_file());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     /// 原生核心插件全链路：真实 DLL 加载 → create → records CRUD。
     /// 需要先构建核心插件（`cargo build -p tb-records`），DLL 不存在时跳过。
     #[test]
-    fn native_plugin_load_and_call() {
-        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_records.dll");
+    fn native_plugin_load_and_call() {        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_records.dll");
         if !dll.exists() {
             eprintln!("[skip] 请先构建核心插件: cargo build -p tb-records");
             return;

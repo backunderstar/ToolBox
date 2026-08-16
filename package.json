@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:core": "node scripts/build-core.mjs",
+    "build:core:release": "node scripts/build-core.mjs --release",
     "sync:vditor": "node scripts/sync-vditor.mjs"
   },
   "dependencies": {

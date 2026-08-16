@@ -115,6 +115,8 @@ pub fn run() {
             float_set_locked,
         ])
         .setup(|app| {
+            // 打包版：把安装包资源里的核心插件部署到 %APPDATA%（dev 无资源则跳过）
+            plugins::ensure_core_plugins(app.handle());
             // 插件事件桥：进程插件事件 → 前端 plugin-event 事件
             plugins::events::spawn_event_forwarder(app.handle().clone());
             // 原生插件事件回调需要 AppHandle（host 回调）

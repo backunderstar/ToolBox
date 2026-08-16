@@ -1,13 +1,16 @@
-// 构建全部核心插件（cdylib）并部署到 %APPDATA%/com.toolbox.desktop/plugins/_core/<id>/
-// 供宿主 PluginManager 扫描（_core 子目录）与 E2E 使用。
-// 用法：pnpm build:core
+// 构建全部核心插件（cdylib）：
+// - 默认（pnpm build:core）：debug DLL → %APPDATA%/com.toolbox.desktop/plugins/_core/<id>/
+//   供 dev 运行与 E2E 使用
+// - --release（pnpm build:core:release）：release DLL → src-tauri/resources/_core/<id>/
+//   打进安装包（bundle.resources），安装后宿主 ensure_core_plugins 部署到 %APPDATA%
 import { execSync } from "node:child_process";
-import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const isRelease = process.argv.includes("--release");
 
 const PLUGINS = [
   {
@@ -75,16 +78,29 @@ const PLUGINS = [
   },
 ];
 
-console.log("[build-core] 构建核心插件...");
-execSync(`cargo build --manifest-path "${path.join(root, "Cargo.toml")}"`, { stdio: "inherit" });
+const profile = isRelease ? "release" : "debug";
+// 打包资源目录始终存在（tauri build.rs 检查 resources/_core；release 填充 DLL）
+mkdirSync(path.join(root, "src-tauri", "resources", "_core"), { recursive: true });
+console.log(`[build-core] 构建核心插件（${profile}）...`);
+execSync(
+  `cargo build --manifest-path "${path.join(root, "Cargo.toml")}"${isRelease ? " --release" : ""}`,
+  { stdio: "inherit" }
+);
 
-const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
-const coreRoot = path.join(appData, "com.toolbox.desktop", "plugins", "_core");
+// 输出目录：release → 打包资源（src-tauri/resources/_core）；debug → %APPDATA%
+let coreRoot;
+if (isRelease) {
+  coreRoot = path.join(root, "src-tauri", "resources", "_core");
+  rmSync(coreRoot, { recursive: true, force: true });
+} else {
+  const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
+  coreRoot = path.join(appData, "com.toolbox.desktop", "plugins", "_core");
+}
 
 for (const p of PLUGINS) {
   const target = path.join(coreRoot, p.id);
   mkdirSync(target, { recursive: true });
-  cpSync(path.join(root, "target", "debug", p.dll), path.join(target, p.dll));
+  cpSync(path.join(root, "target", profile, p.dll), path.join(target, p.dll));
   const manifest = {
     id: p.id,
     name: p.name,
@@ -97,5 +113,5 @@ for (const p of PLUGINS) {
     nav: p.nav ?? [],
   };
   writeFileSync(path.join(target, "plugin.json"), JSON.stringify(manifest, null, 2), "utf8");
-  console.log(`[build-core] 已部署: ${p.id}`);
+  console.log(`[build-core] 已部署: ${p.id} → ${target}`);
 }
