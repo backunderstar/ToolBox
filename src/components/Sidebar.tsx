@@ -5,6 +5,7 @@ import {
   IconGear,
   IconGlobe,
   IconGrid,
+  IconHistory,
   IconNotebook,
   IconPuzzle,
   IconSliders,
@@ -21,6 +22,7 @@ export type ViewId =
   | "checklist"
   | "records"
   | "projects"
+  | "history"
   | "ai"
   | "blog"
   | "settings";
@@ -45,6 +47,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { id: "checklist", label: "清单", icon: IconCheckSquare, now: true },
       { id: "records", label: "记录", icon: IconNotebook, now: true },
       { id: "projects", label: "项目", icon: IconFolder, now: true },
+      { id: "history", label: "版本历史", icon: IconHistory, now: true },
     ],
   },
   {
@@ -92,6 +95,7 @@ export function Sidebar({ activeView, onSelect, collapsed, prefs }: SidebarProps
                 item.id === "checklist" ||
                 item.id === "records" ||
                 item.id === "projects" ||
+                item.id === "history" ||
                 item.id === "ai" ||
                 item.id === "blog" ||
                 item.id === "settings";

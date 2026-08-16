@@ -178,6 +178,14 @@ export const IconClock = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const IconHistory = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M4 12a8 8 0 1 0 2.4-5.7" />
+    <path d="M4 3.5V7.5h4" />
+    <path d="M12 8v4l2.8 1.8" />
+  </svg>
+);
+
 export const IconHash = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}>
     <path d="M5 9h14M5 15h14M10 4l-2.4 16M16.4 4L14 20" />

@@ -102,10 +102,11 @@ fn backups_root(vault: &str) -> PathBuf {
 /// 排除规则：
 /// - `site`：仅排除 vault **根级**的博客生成物（可重建）；
 ///   项目内同名目录（projects/x/site/）是用户数据，必须备份
+/// - `.git`：仅排除 vault 根级的版本历史仓库（独立图层，不必重复备份）
 /// - 备份目录自身防递归；FTS 搜索索引及其 WAL/SHM 派生文件（派生数据，可从笔记重建）
 /// - 临时文件
 fn is_skipped(parent: &Path, name: &str, at_root: bool) -> bool {
-    if at_root && name == "site" {
+    if at_root && (name == "site" || name == ".git") {
         return true;
     }
     if parent.file_name().map(|n| n == ".toolbox").unwrap_or(false) {
@@ -385,6 +386,8 @@ mod tests {
         // 根级 site 排除，项目内 site 保留
         assert!(is_skipped(Path::new("vault"), "site", true));
         assert!(!is_skipped(Path::new("vault/projects/foo"), "site", false), "项目内 site 应备份");
+        assert!(is_skipped(Path::new("vault"), ".git", true), "根级 .git 不进备份");
+        assert!(!is_skipped(Path::new("vault/projects/foo"), ".git", false), "项目内 .git 是用户数据");
         assert!(is_skipped(Path::new("vault/.toolbox"), "backups", false));
         assert!(is_skipped(Path::new("vault/.toolbox"), "search-fts.sqlite", false));
         assert!(is_skipped(Path::new("vault/.toolbox"), "search-fts.sqlite-wal", false), "WAL 派生文件不进备份");

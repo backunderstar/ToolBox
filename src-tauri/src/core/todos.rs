@@ -183,6 +183,7 @@ pub fn todos_add(app: AppHandle, text: String) -> Result<Vec<TodosItem>, String>
     });
     save(&path, &items)?;
     emit_changed(&app);
+    crate::core::history::mark_dirty(&vault);
     Ok(items)
 }
 
@@ -196,6 +197,7 @@ pub fn todos_toggle(app: AppHandle, id: String) -> Result<Vec<TodosItem>, String
     }
     save(&path, &items)?;
     emit_changed(&app);
+    crate::core::history::mark_dirty(&vault);
     Ok(items)
 }
 
@@ -209,6 +211,7 @@ pub fn todos_delete(app: AppHandle, id: String) -> Result<Vec<TodosItem>, String
         .collect::<Vec<_>>();
     save(&path, &items)?;
     emit_changed(&app);
+    crate::core::history::mark_dirty(&vault);
     Ok(items)
 }
 
@@ -222,6 +225,7 @@ pub fn todos_clear_done(app: AppHandle) -> Result<Vec<TodosItem>, String> {
         .collect::<Vec<_>>();
     save(&path, &items)?;
     emit_changed(&app);
+    crate::core::history::mark_dirty(&vault);
     Ok(items)
 }
 

@@ -155,7 +155,9 @@ pub async fn projects_create(vault: String, name: String) -> Result<(), String> 
     if p.exists() {
         return Err(format!("项目已存在: {}", name.trim()));
     }
-    std::fs::create_dir_all(&p).map_err(|e| format!("创建项目失败: {e}"))
+    std::fs::create_dir_all(&p).map_err(|e| format!("创建项目失败: {e}"))?;
+    crate::core::history::mark_dirty(&vault);
+    Ok(())
 }
 
 /// 归档：`projects/<name>/` → `projects/archive/<name>/`（重名自动加 `-2` 后缀）。
@@ -168,7 +170,9 @@ pub async fn projects_archive(vault: String, name: String) -> Result<(), String>
     let archive = projects_root(&vault).join(ARCHIVE_DIR);
     std::fs::create_dir_all(&archive).map_err(|e| format!("创建归档目录失败: {e}"))?;
     let dst = unique_name(&archive, name.trim());
-    std::fs::rename(&src, &dst).map_err(|e| format!("归档失败: {e}"))
+    std::fs::rename(&src, &dst).map_err(|e| format!("归档失败: {e}"))?;
+    crate::core::history::mark_dirty(&vault);
+    Ok(())
 }
 
 /// 还原：`projects/archive/<name>/` → `projects/<name>/`。
@@ -180,18 +184,23 @@ pub async fn projects_unarchive(vault: String, name: String) -> Result<(), Strin
     }
     let root = projects_root(&vault);
     let dst = unique_name(&root, name.trim());
-    std::fs::rename(&src, &dst).map_err(|e| format!("还原失败: {e}"))
+    std::fs::rename(&src, &dst).map_err(|e| format!("还原失败: {e}"))?;
+    crate::core::history::mark_dirty(&vault);
+    Ok(())
 }
 
 /// 删除项目：默认进系统回收站；`permanent=true` 物理删除。
 #[tauri::command]
 pub async fn projects_delete(vault: String, name: String, permanent: bool) -> Result<(), String> {
     let target = find_project(&vault, &name)?;
-    if permanent {
+    let res = if permanent {
         std::fs::remove_dir_all(&target).map_err(|e| format!("删除失败: {e}"))
     } else {
         trash::delete(&target).map_err(|e| format!("移入回收站失败: {e}"))
-    }
+    };
+    res?;
+    crate::core::history::mark_dirty(&vault);
+    Ok(())
 }
 
 /// 项目内文件列表（一层；`dir` 相对项目根，空串 = 项目根）。目录优先、按名排序。

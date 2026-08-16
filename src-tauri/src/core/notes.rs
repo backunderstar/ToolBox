@@ -133,7 +133,9 @@ pub fn fs_write(vault: String, rel: String, content: String) -> Result<(), Strin
     }
     let tmp = p.with_extension("md.tmp");
     std::fs::write(&tmp, content).map_err(|e| format!("写入失败: {e}"))?;
-    std::fs::rename(&tmp, &p).map_err(|e| format!("写入失败: {e}"))
+    std::fs::rename(&tmp, &p).map_err(|e| format!("写入失败: {e}"))?;
+    crate::core::history::mark_dirty(&vault);
+    Ok(())
 }
 
 /// 新建空笔记。原子写同 fs_write。
@@ -148,7 +150,9 @@ pub fn fs_create(vault: String, rel: String) -> Result<(), String> {
     }
     let tmp = p.with_extension("md.tmp");
     std::fs::write(&tmp, "").map_err(|e| format!("创建失败: {e}"))?;
-    std::fs::rename(&tmp, &p).map_err(|e| format!("创建失败: {e}"))
+    std::fs::rename(&tmp, &p).map_err(|e| format!("创建失败: {e}"))?;
+    crate::core::history::mark_dirty(&vault);
+    Ok(())
 }
 
 /// 删除文件或目录（**进系统回收站**，可恢复）。
@@ -162,7 +166,9 @@ pub fn fs_delete(vault: String, rel: String) -> Result<(), String> {
     if p == root || p == notes {
         return Err(format!("不能删除目录本身: {rel}"));
     }
-    trash::delete(&p).map_err(|e| format!("删除失败（移入回收站失败）: {e}"))
+    trash::delete(&p).map_err(|e| format!("删除失败（移入回收站失败）: {e}"))?;
+    crate::core::history::mark_dirty(&vault);
+    Ok(())
 }
 
 /// 重命名 / 移动。目标已存在时拒绝（Windows rename 会静默覆盖，内容不可恢复）。
@@ -173,7 +179,9 @@ pub fn fs_rename(vault: String, from: String, to: String) -> Result<(), String> 
     if b.exists() {
         return Err(format!("目标已存在: {to}"));
     }
-    std::fs::rename(&a, &b).map_err(|e| format!("重命名失败: {e}"))
+    std::fs::rename(&a, &b).map_err(|e| format!("重命名失败: {e}"))?;
+    crate::core::history::mark_dirty(&vault);
+    Ok(())
 }
 
 /// 搜索笔记：转发到 FTS5 索引实现（`core::search`）。
