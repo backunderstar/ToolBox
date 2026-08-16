@@ -115,6 +115,11 @@ export function PluginsView() {
               {RUNTIME_LABEL[p.runtime] ?? p.runtime}
             </span>
             {p.builtin && <span className="badge badge-builtin">核心</span>}
+            {p.system && (
+              <span className="badge badge-provider" title="数据安全/横切能力，不可禁用">
+                系统
+              </span>
+            )}
             {p.provider && (
               <span className="badge badge-provider" title="实现 search.provide，启用后进入全局搜索">
                 搜索提供者
@@ -125,13 +130,15 @@ export function PluginsView() {
             </span>
           </div>
           <div className="plugin-actions">
-            <button
-              className="btn btn-sm"
-              onClick={() => toggle(p.id, !p.enabled)}
-              disabled={busy[p.id] || p.status === "error"}
-            >
-              {p.enabled ? "禁用" : "启用"}
-            </button>
+            {!p.system && (
+              <button
+                className="btn btn-sm"
+                onClick={() => toggle(p.id, !p.enabled)}
+                disabled={busy[p.id] || p.status === "error"}
+              >
+                {p.enabled ? "禁用" : "启用"}
+              </button>
+            )}
             <button
               className="btn btn-sm"
               onClick={() => doReload(p.id)}

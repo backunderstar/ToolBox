@@ -45,6 +45,34 @@ const PLUGINS = [
     description: "核心插件：项目文件管理（projects/ 目录/归档/默认应用打开）",
     nav: [{ id: "projects", label: "项目", icon: "folder", group: "工作区", view: "ProjectsView" }],
   },
+  {
+    id: "core-blog",
+    name: "博客",
+    dll: "tb_blog.dll",
+    description: "核心插件：博客发布（frontmatter/站点生成/内置预览服务器）",
+    nav: [{ id: "blog", label: "博客发布", icon: "globe", group: "系统", view: "BlogView" }],
+  },
+  {
+    id: "core-ai",
+    name: "AI",
+    dll: "tb_ai.dll",
+    description: "核心插件：AI 整理（OpenAI 兼容对话 + SSE 流式 + keyring 凭据）",
+    nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", view: "AIChatView" }],
+  },
+  {
+    id: "core-search",
+    name: "搜索",
+    dll: "tb_search.dll",
+    description: "系统插件：全文搜索（SQLite FTS5 索引，横切能力，不可禁用）",
+    system: true,
+  },
+  {
+    id: "core-backup",
+    name: "备份",
+    dll: "tb_backup.dll",
+    description: "系统插件：自动备份（快照 + 配置/插件存档 + 恢复，不可禁用）",
+    system: true,
+  },
 ];
 
 console.log("[build-core] 构建核心插件...");

@@ -49,7 +49,7 @@ const ICON_MAP: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
 };
 
 /** 导航分组定义（设置页的"导航栏"配置也基于它渲染）。
- *  笔记/记录/清单/项目入口由核心插件 nav 声明提供（禁用即消失）。 */
+ *  笔记/记录/清单/项目/AI/博客入口由核心插件 nav 声明提供（禁用即消失）。 */
 export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "工作区",
@@ -61,11 +61,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
   {
     label: "系统",
-    items: [
-      { id: "ai", label: "AI 整理", icon: IconSparkle, now: true },
-      { id: "blog", label: "博客发布", icon: IconGlobe, now: true },
-      { id: "settings", label: "设置", icon: IconGear, now: true },
-    ],
+    items: [{ id: "settings", label: "设置", icon: IconGear, now: true }],
   },
 ];
 

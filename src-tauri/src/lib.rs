@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{backup, vault};
+use core::vault;
 use plugins::PluginManager;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -111,17 +111,10 @@ pub fn run() {
             plugins::plugins_invoke,
             plugins::plugin_call,
             plugins::search_all,
-            backup::backup_now_cmd,
-            backup::backup_config_get,
-            backup::backup_config_set,
-            backup::backup_list,
-            backup::backup_restore,
             float_toggle,
             float_set_locked,
         ])
         .setup(|app| {
-            // 后台自动备份线程（随应用常驻，读取配置按间隔执行）
-            backup::spawn_auto(app.handle().clone());
             // 插件事件桥：进程插件事件 → 前端 plugin-event 事件
             plugins::events::spawn_event_forwarder(app.handle().clone());
             // 原生插件事件回调需要 AppHandle（host 回调）

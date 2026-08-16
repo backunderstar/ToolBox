@@ -52,6 +52,8 @@ pub struct PluginInfo {
     pub builtin: bool,
     /// 搜索提供者（实现 search.provide 命令，启用后进入全局搜索）
     pub provider: bool,
+    /// 系统插件（数据安全/横切能力，前端不可禁用）
+    pub system: bool,
     /// 插件声明的导航入口（启用时并入侧边栏）
     pub nav: Vec<NavDecl>,
 }
@@ -392,6 +394,7 @@ impl PluginManager {
                         description: String::new(),
                         config: Value::Null,
                         search_provider: false,
+                        system: false,
                         nav: vec![],
                     },
                     dir: dir.to_path_buf(),
@@ -474,6 +477,7 @@ impl PluginManager {
                 commands: r.commands.clone(),
                 builtin: r.manifest.runtime == PluginRuntime::Native,
                 provider: r.manifest.search_provider,
+                system: r.manifest.system,
                 nav: r.manifest.nav.clone(),
             })
             .collect()
@@ -485,6 +489,9 @@ impl PluginManager {
             .iter()
             .position(|r| r.manifest.id == id)
             .ok_or("插件不存在")?;
+        if !enabled && self.records[idx].manifest.system {
+            return Err("系统插件不可禁用（数据安全/横切能力）".to_string());
+        }
         // 核心插件（native）默认启用：禁用记入 disabled，重新启用移除
         let is_native = self.records[idx].manifest.runtime == PluginRuntime::Native;
         if enabled {

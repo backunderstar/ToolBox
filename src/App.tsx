@@ -228,9 +228,17 @@ function AppInner() {
                 <CoreDisabled name="项目" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
             ) : view === "ai" ? (
-              <AIChatView />
+              corePluginEnabled(pluginCtx.plugins, "core-ai") ? (
+                <AIChatView />
+              ) : (
+                <CoreDisabled name="AI 整理" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+              )
             ) : view === "blog" ? (
-              <BlogView />
+              corePluginEnabled(pluginCtx.plugins, "core-blog") ? (
+                <BlogView />
+              ) : (
+                <CoreDisabled name="博客发布" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+              )
             ) : view === "settings" ? (
               <SettingsView
                 themeId={themeId}

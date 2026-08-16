@@ -56,6 +56,9 @@ pub struct PluginManifest {
     /// 命令，启用后自动进入全局搜索范围（任何 runtime 均可声明）。
     #[serde(default)]
     pub search_provider: bool,
+    /// 系统插件：数据安全/横切能力（如备份、搜索），前端不可禁用。
+    #[serde(default)]
+    pub system: bool,
     /// 导航入口（启用时并入侧边栏）。
     #[serde(default)]
     pub nav: Vec<NavDecl>,
