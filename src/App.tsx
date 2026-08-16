@@ -210,27 +210,23 @@ function AppInner() {
             ) : view === "tools" ? (
               <ToolsView />
             ) : view === "checklist" ? (
-              <ChecklistView />
+              corePluginEnabled(pluginCtx.plugins, "core-checklists") ? (
+                <ChecklistView />
+              ) : (
+                <CoreDisabled name="清单" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+              )
             ) : view === "records" ? (
-              coreRecordsEnabled(pluginCtx.plugins) ? (
+              corePluginEnabled(pluginCtx.plugins, "core-records") ? (
                 <RecordsView />
               ) : (
-                <div className="empty-state">
-                  <h2>记录功能已禁用</h2>
-                  <p>记录是核心插件（core-records），可在插件页重新启用</p>
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      setView("plugins");
-                      setViewParams({});
-                    }}
-                  >
-                    去插件页
-                  </button>
-                </div>
+                <CoreDisabled name="记录" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
             ) : view === "projects" ? (
-              <ProjectsView />
+              corePluginEnabled(pluginCtx.plugins, "core-projects") ? (
+                <ProjectsView />
+              ) : (
+                <CoreDisabled name="项目" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+              )
             ) : view === "ai" ? (
               <AIChatView />
             ) : view === "blog" ? (
@@ -243,6 +239,18 @@ function AppInner() {
                 navPrefs={navPrefs}
                 onNavPrefsChange={setNavPrefs}
               />
+            ) : view === "notes" ? (
+              corePluginEnabled(pluginCtx.plugins, "core-notes") ? (
+                <NotesView
+                  dark={themeMode === "dark"}
+                  filesCollapsed={filesCollapsed}
+                  focusMode={focusMode}
+                  onToggleFiles={() => setFilesCollapsed((c) => !c)}
+                  onToggleFocus={() => setFocusMode((f) => !f)}
+                />
+              ) : (
+                <CoreDisabled name="笔记" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
+              )
             ) : (
               <NotesView
                 dark={themeMode === "dark"}
@@ -265,8 +273,21 @@ function AppInner() {
   );
 }
 
-/** records 视图守卫：core-records 核心插件启用才渲染（未知/未加载时默认放行）。 */
-function coreRecordsEnabled(plugins: { id: string; enabled: boolean }[]): boolean {
-  const p = plugins.find((x) => x.id === "core-records");
+/** 核心插件视图守卫：插件启用才渲染（未知/未加载时默认放行）。 */
+function corePluginEnabled(plugins: { id: string; enabled: boolean }[], id: string): boolean {
+  const p = plugins.find((x) => x.id === id);
   return p ? p.enabled : true;
+}
+
+/** 核心插件被禁用时的占位（引导去插件页启用）。 */
+function CoreDisabled({ name, onGoPlugins }: { name: string; onGoPlugins: () => void }) {
+  return (
+    <div className="empty-state">
+      <h2>{name}功能已禁用</h2>
+      <p>该功能是核心插件，可在插件页重新启用</p>
+      <button className="btn" onClick={onGoPlugins}>
+        去插件页
+      </button>
+    </div>
+  );
 }

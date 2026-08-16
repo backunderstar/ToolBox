@@ -59,7 +59,10 @@ pub struct PluginInfo {
 pub struct PluginManager {
     pub vault: Option<PathBuf>,
     pub records: Vec<PluginRecord>,
+    /// 外部插件启用集合（`{"enabled": [...]}`）
     pub enabled: HashSet<String>,
+    /// 核心插件（native）默认启用，显式禁用后记入此集合
+    pub disabled: HashSet<String>,
     /// 最近一次扫描的 plugins 目录快照（目录名 + 有清单），
     /// 用于检测"目录增删但 vault 路径未变"的情况
     pub last_snapshot: Option<Vec<String>>,
@@ -71,6 +74,7 @@ impl Default for PluginManager {
             vault: None,
             records: Vec::new(),
             enabled: HashSet::new(),
+            disabled: HashSet::new(),
             last_snapshot: None,
         }
     }
@@ -142,35 +146,53 @@ fn save_state_map(app: &tauri::AppHandle, map: &serde_json::Map<String, Value>) 
     std::fs::write(&p, raw).map_err(|e| format!("保存启用状态失败: {e}"))
 }
 
-/// 读取全局启用集合。新格式 `{"enabled": [...]}`；旧格式（按 vault 分键的
-/// map）首次读取时并集迁移并重写。
-fn load_enabled(app: &tauri::AppHandle) -> HashSet<String> {
+/// 读取全局启用/禁用集合。新格式 `{"enabled": [...], "disabled": [...]}`；
+/// 旧格式（按 vault 分键的 map）首次读取时并集迁移并重写。
+fn load_state(app: &tauri::AppHandle) -> (HashSet<String>, HashSet<String>) {
     let map = load_state_map(app);
+    let mut enabled = HashSet::new();
+    let mut disabled = HashSet::new();
     if let Some(Value::Array(arr)) = map.get("enabled") {
-        return arr
+        enabled = arr
             .iter()
             .filter_map(|x| x.as_str().map(String::from))
             .collect();
     }
-    // 旧格式：所有 vault 键的数组并集
-    let merged: HashSet<String> = map
-        .values()
-        .filter_map(|v| v.as_array())
-        .flat_map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)))
-        .collect();
-    if !merged.is_empty() {
-        let _ = save_enabled(app, &merged);
+    if let Some(Value::Array(arr)) = map.get("disabled") {
+        disabled = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
     }
-    merged
+    // 旧格式（无 enabled 键）：所有 vault 键的数组并集（disabled 键除外）
+    if !map.contains_key("enabled") {
+        for (k, v) in &map {
+            if k == "disabled" {
+                continue;
+            }
+            if let Some(arr) = v.as_array() {
+                for x in arr.iter().filter_map(|x| x.as_str()) {
+                    enabled.insert(x.to_string());
+                }
+            }
+        }
+    }
+    (enabled, disabled)
 }
 
-fn save_enabled(app: &tauri::AppHandle, enabled: &HashSet<String>) -> Result<(), String> {
+fn save_state(app: &tauri::AppHandle, enabled: &HashSet<String>, disabled: &HashSet<String>) -> Result<(), String> {
     let mut arr: Vec<String> = enabled.iter().cloned().collect();
     arr.sort();
+    let mut dis: Vec<String> = disabled.iter().cloned().collect();
+    dis.sort();
     let mut map = serde_json::Map::new();
     map.insert(
         "enabled".to_string(),
         Value::Array(arr.into_iter().map(Value::String).collect()),
+    );
+    map.insert(
+        "disabled".to_string(),
+        Value::Array(dis.into_iter().map(Value::String).collect()),
     );
     save_state_map(app, &map)
 }
@@ -184,11 +206,11 @@ fn migrate_legacy_enabled(app: &tauri::AppHandle, vault: &Path) {
     if let Ok(raw) = std::fs::read_to_string(&legacy) {
         if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(&raw) {
             if let Some(Value::Array(arr)) = obj.get("enabled") {
-                let mut set = load_enabled(app);
+                let (mut enabled, disabled) = load_state(app);
                 for x in arr.iter().filter_map(|x| x.as_str()) {
-                    set.insert(x.to_string());
+                    enabled.insert(x.to_string());
                 }
-                let _ = save_enabled(app, &set);
+                let _ = save_state(app, &enabled, &disabled);
             }
         }
     }
@@ -259,7 +281,9 @@ impl PluginManager {
         self.vault = Some(vault.to_path_buf());
         // 旧版状态迁移（vault/.toolbox/plugins.json → 全局）后读全局启用集合
         migrate_legacy_enabled(app, vault);
-        self.enabled = load_enabled(app);
+        let (enabled, disabled) = load_state(app);
+        self.enabled = enabled;
+        self.disabled = disabled;
 
         // 旧布局迁移：vault/plugins/* → 全局目录（复制后回收站清理）
         let global = global_plugins_dir(app)?;
@@ -298,22 +322,41 @@ impl PluginManager {
             }
             self.scan_plugin_dir(&dir);
         }
-        // 失效 id 清理：插件目录已删除后，enabled 里的残留 id 会导致
-        // 重新放回同名插件时自动启用（可能意外）。发现即移除并持久化。
+        // 失效 id 清理：插件目录已删除后，enabled/disabled 里的残留 id
+        // 会导致重新放回同名插件时自动启用（可能意外）。发现即移除并持久化。
         let valid: HashSet<String> = self.records.iter().map(|r| r.manifest.id.clone()).collect();
         let stale: Vec<String> = self
             .enabled
             .iter()
+            .chain(self.disabled.iter())
             .filter(|id| !valid.contains(*id))
             .cloned()
             .collect();
         if !stale.is_empty() {
-            for id in stale {
-                self.enabled.remove(&id);
+            for id in &stale {
+                self.enabled.remove(id);
+                self.disabled.remove(id);
             }
-            save_enabled(app, &self.enabled)?;
+            save_state(app, &self.enabled, &self.disabled)?;
         }
         Ok(())
+    }
+
+    /// 插件是否启用：核心插件（native）默认启用，显式禁用后记入 disabled；
+    /// 外部插件按 enabled 集合。
+    fn plugin_enabled(&self, id: &str) -> bool {
+        if self.disabled.contains(id) {
+            return false;
+        }
+        let is_native = self
+            .records
+            .iter()
+            .any(|r| r.manifest.id == id && r.manifest.runtime == PluginRuntime::Native);
+        if is_native {
+            true
+        } else {
+            self.enabled.contains(id)
+        }
     }
 
     /// 扫描单个插件目录并入注册表；已启用则启动（process/native）。
@@ -368,7 +411,7 @@ impl PluginManager {
             return;
         }
         let id = manifest.id.clone();
-        let is_enabled = self.enabled.contains(&id);
+        let is_enabled = self.plugin_enabled(&id);
         let idx = self.records.len();
         self.records.push(PluginRecord {
             manifest,
@@ -401,7 +444,7 @@ impl PluginManager {
                     PluginRuntime::Native => "native",
                 },
                 entry: r.manifest.entry.clone(),
-                enabled: self.enabled.contains(&r.manifest.id),
+                enabled: self.plugin_enabled(&r.manifest.id),
                 // 状态语义：
                 // - error 优先（清单/启动/崩溃等错误）
                 // - process 插件：进程存活才算 ready
@@ -414,7 +457,7 @@ impl PluginManager {
                     if r.process.is_some() { "ready" } else { "stopped" }
                 } else if r.manifest.runtime == PluginRuntime::Native {
                     if r.native.is_some() { "ready" } else { "stopped" }
-                } else if self.enabled.contains(&r.manifest.id) {
+                } else if self.plugin_enabled(&r.manifest.id) {
                     "ready"
                 } else {
                     "stopped"
@@ -434,8 +477,14 @@ impl PluginManager {
             .iter()
             .position(|r| r.manifest.id == id)
             .ok_or("插件不存在")?;
+        // 核心插件（native）默认启用：禁用记入 disabled，重新启用移除
+        let is_native = self.records[idx].manifest.runtime == PluginRuntime::Native;
         if enabled {
-            self.enabled.insert(id.to_string());
+            if is_native {
+                self.disabled.remove(id);
+            } else {
+                self.enabled.insert(id.to_string());
+            }
             // webview 插件由前端加载入口，无后端进程/库需要启动
             let need_start = match self.records[idx].manifest.runtime {
                 PluginRuntime::Webview => false,
@@ -446,16 +495,24 @@ impl PluginManager {
                 if let Err(e) = self.start_record(idx) {
                     self.records[idx].error = Some(e.clone());
                     // 启动失败不算启用成功
-                    self.enabled.remove(id);
+                    if is_native {
+                        self.disabled.insert(id.to_string());
+                    } else {
+                        self.enabled.remove(id);
+                    }
                     return Err(e);
                 }
             }
         } else {
-            self.enabled.remove(id);
+            if is_native {
+                self.disabled.insert(id.to_string());
+            } else {
+                self.enabled.remove(id);
+            }
             self.stop_record(idx);
             self.records[idx].error = None;
         }
-        save_enabled(app, &self.enabled)?;
+        save_state(app, &self.enabled, &self.disabled)?;
         Ok(())
     }
 
@@ -474,7 +531,8 @@ impl PluginManager {
         self.stop_record(idx);
         self.records.remove(idx);
         self.enabled.remove(id);
-        save_enabled(app, &self.enabled)?;
+        self.disabled.remove(id);
+        save_state(app, &self.enabled, &self.disabled)?;
         trash::delete(&dir).map_err(|e| format!("删除插件目录失败: {e}"))?;
         Ok(())
     }
@@ -488,7 +546,7 @@ impl PluginManager {
             .ok_or("插件不存在")?;
         self.stop_record(idx);
         self.records[idx].error = None;
-        if self.enabled.contains(id) && self.records[idx].manifest.runtime != PluginRuntime::Webview
+        if self.plugin_enabled(id) && self.records[idx].manifest.runtime != PluginRuntime::Webview
         {
             self.start_record(idx)
                 .map_err(|e| {
@@ -509,7 +567,7 @@ impl PluginManager {
             .iter()
             .position(|r| r.manifest.id == id)
             .ok_or("插件不存在")?;
-        if !self.enabled.contains(id) {
+        if !self.plugin_enabled(id) {
             return Err("插件未启用".to_string());
         }
         match self.records[idx].manifest.runtime {

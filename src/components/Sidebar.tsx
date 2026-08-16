@@ -48,17 +48,15 @@ const ICON_MAP: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
   puzzle: IconPuzzle,
 };
 
-/** 导航分组定义（设置页的"导航栏"配置也基于它渲染）。 */
+/** 导航分组定义（设置页的"导航栏"配置也基于它渲染）。
+ *  笔记/记录/清单/项目入口由核心插件 nav 声明提供（禁用即消失）。 */
 export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "工作区",
     items: [
       { id: "overview", label: "概览", icon: IconGrid, now: true },
-      { id: "notes", label: "笔记", icon: IconFileText, now: true },
       { id: "plugins", label: "插件", icon: IconPuzzle, now: true },
       { id: "tools", label: "数据工具", icon: IconSliders, now: true },
-      { id: "checklist", label: "清单", icon: IconCheckSquare, now: true },
-      { id: "projects", label: "项目", icon: IconFolder, now: true },
     ],
   },
   {
@@ -81,6 +79,23 @@ export function pluginNavToItems(nav: PluginNav[]): NavItem[] {
   }));
 }
 
+/** 插件入口按 nav.group 分组（未声明分组归入"工作区"），供各导航组追加。 */
+function pluginItemsByGroup(nav: PluginNav[]): Map<string, NavItem[]> {
+  const map = new Map<string, NavItem[]>();
+  for (const n of nav) {
+    const g = n.group || "工作区";
+    const list = map.get(g) ?? [];
+    list.push({
+      id: n.id,
+      label: n.label,
+      icon: ICON_MAP[n.icon] ?? IconGrid,
+      now: true,
+    });
+    map.set(g, list);
+  }
+  return map;
+}
+
 interface SidebarProps {
   activeView: ViewId;
   onSelect: (view: ViewId) => void;
@@ -92,8 +107,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeView, onSelect, collapsed, prefs, pluginNav }: SidebarProps) {
-  // 插件入口：排除与静态项重复的 id（如未来笔记也插件化），其余追加到各组末尾
-  const pluginItems = pluginNavToItems(pluginNav);
+  // 插件入口按声明的 group 归组，只追加到对应组（避免重复/串组）
+  const pluginByGroup = pluginItemsByGroup(pluginNav);
   return (
     <nav
       className={`sidebar${collapsed ? " collapsed" : ""}`}
@@ -107,7 +122,9 @@ export function Sidebar({ activeView, onSelect, collapsed, prefs, pluginNav }: S
           .filter((i): i is NavItem => !!i)
           .filter((i) => !prefs.hidden.includes(i.id));
         const staticIds = new Set(group.items.map((i) => i.id));
-        const extra = pluginItems.filter((i) => !staticIds.has(i.id));
+        const extra = (pluginByGroup.get(group.label) ?? []).filter(
+          (i) => !staticIds.has(i.id)
+        );
         const all = [...items, ...extra];
         if (all.length === 0) return null;
         return (
