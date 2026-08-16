@@ -19,7 +19,6 @@ import { StatusBar } from "./components/StatusBar";
 import { WelcomeView } from "./components/WelcomeView";
 import { NotesView } from "./components/NotesView";
 import { PluginsView } from "./components/PluginsView";
-import { ToolsView } from "./components/ToolsView";
 import { ChecklistView } from "./components/ChecklistView";
 import { RecordsView } from "./components/RecordsView";
 import { ProjectsView } from "./components/ProjectsView";
@@ -214,8 +213,6 @@ function AppInner() {
               />
             ) : view === "plugins" ? (
               <PluginsView />
-            ) : view === "tools" ? (
-              <ToolsView />
             ) : view === "checklist" ? (
               corePluginEnabled(pluginCtx.plugins, "core-checklists") ? (
                 hasPluginUi(pluginCtx.plugins, "core-checklists") ? (

@@ -7,7 +7,6 @@ import {
   IconGrid,
   IconNotebook,
   IconPuzzle,
-  IconSliders,
   IconSparkle,
 } from "./icons";
 import type { ComponentType, SVGProps } from "react";
@@ -18,7 +17,6 @@ export type ViewId =
   | "overview"
   | "notes"
   | "plugins"
-  | "tools"
   | "checklist"
   | "records"
   | "projects"
@@ -41,7 +39,6 @@ const ICON_MAP: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
   grid: IconGrid,
   check: IconCheckSquare,
   folder: IconFolder,
-  sliders: IconSliders,
   sparkle: IconSparkle,
   globe: IconGlobe,
   gear: IconGear,
@@ -56,7 +53,6 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { id: "overview", label: "概览", icon: IconGrid, now: true },
       { id: "plugins", label: "插件", icon: IconPuzzle, now: true },
-      { id: "tools", label: "数据工具", icon: IconSliders, now: true },
     ],
   },
   {
@@ -133,7 +129,6 @@ export function Sidebar({ activeView, onSelect, collapsed, prefs, pluginNav }: S
                 item.id === "overview" ||
                 item.id === "notes" ||
                 item.id === "plugins" ||
-                item.id === "tools" ||
                 item.id === "checklist" ||
                 item.id === "records" ||
                 item.id === "projects" ||
