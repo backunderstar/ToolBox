@@ -3,8 +3,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
 import { PluginProvider, usePlugins } from "./core/plugins";
-import { ChecklistProvider } from "./core/checklists";
-import { ProjectsProvider } from "./core/projects";
 import { NavProvider } from "./core/navigation";
 import type { ViewParams } from "./core/navigation";
 import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
@@ -23,12 +21,7 @@ import { TopBar } from "./components/TopBar";
 import { Sidebar, type ViewId } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { WelcomeView } from "./components/WelcomeView";
-import { NotesView } from "./components/NotesView";
 import { PluginsView } from "./components/PluginsView";
-import { ChecklistView } from "./components/ChecklistView";
-import { ProjectsView } from "./components/ProjectsView";
-import { AIChatView } from "./components/AIChatView";
-import { BlogView } from "./components/BlogView";
 import { PluginUiView } from "./components/PluginUiView";
 import { SettingsView } from "./components/SettingsView";
 import { FloatApp } from "./components/FloatApp";
@@ -54,11 +47,7 @@ export default function App() {
     <ErrorBoundary>
       <VaultProvider>
         <PluginProvider>
-          <ChecklistProvider>
-            <ProjectsProvider>
-              <AppInner />
-            </ProjectsProvider>
-          </ChecklistProvider>
+          <AppInner />
         </PluginProvider>
       </VaultProvider>
     </ErrorBoundary>
@@ -77,15 +66,9 @@ function AppInner() {
   /* Ctrl+K 聚焦信号（自增触发 TopBar 聚焦） */
   const [focusTick, setFocusTick] = useState(0);
 
-  /* 布局偏好：导航折叠 / 文件面板折叠 / 专注模式（持久化） */
+  /* 布局偏好：导航折叠（持久化）。文件面板/专注模式已随宿主回退笔记视图删除 */
   const [navCollapsed, setNavCollapsed] = useState(
     () => loadLayoutPrefs().navCollapsed
-  );
-  const [filesCollapsed, setFilesCollapsed] = useState(
-    () => loadLayoutPrefs().filesCollapsed
-  );
-  const [focusMode, setFocusMode] = useState(
-    () => loadLayoutPrefs().focusMode
   );
 
   /* 导航栏全配置：分组/顺序/隐藏/标签图标覆盖（localStorage 持久化；归一化兜底插件增删） */
@@ -130,8 +113,8 @@ function AppInner() {
   };
 
   useEffect(() => {
-    saveLayoutPrefs({ navCollapsed, filesCollapsed, focusMode });
-  }, [navCollapsed, filesCollapsed, focusMode]);
+    saveLayoutPrefs({ navCollapsed });
+  }, [navCollapsed]);
 
   useEffect(() => {
     applyTheme(themeId);
@@ -172,9 +155,6 @@ function AppInner() {
     ? (vault.path.split(/[\\/]/).pop() ?? vault.path)
     : null;
 
-  /* 专注模式：导航与文件面板全部隐藏，编辑器占满 */
-  const navHidden = focusMode;
-
   /* 跨视图导航（供双向链接跳转）。
      openFile 来自 vault（每次渲染新对象），但 openNote 只需稳定引用：用 ref 包住 */
   const openFileRef = useRef(vault.openFile);
@@ -211,10 +191,9 @@ function AppInner() {
           onToggleTheme={toggleThemeMode}
           query={vault.query}
           onQueryChange={vault.setQuery}
-          // 笔记视图为插件自带前端时，顶栏搜索停用（插件界面内有自己的搜索框）
-          searchEnabled={
-            view === "notes" && !!vault.path && !hasPluginUi(pluginCtx.plugins, "core-notes")
-          }
+          // 顶栏搜索仅服务于宿主回退笔记视图（已删除）——笔记视图恒为插件
+          // 自带前端（内置自己的搜索框），故顶栏搜索恒停用
+          searchEnabled={false}
           vaultName={vaultName}
           onPickVault={vault.pickVault}
           navCollapsed={navCollapsed}
@@ -223,19 +202,17 @@ function AppInner() {
           focusSignal={focusTick}
         />
         <div className="body">
-          {!navHidden && (
-            <Sidebar
-              activeView={view}
-              onSelect={(v) => {
-                setView(v);
-                setViewParams({});
-              }}
-              collapsed={navCollapsed}
-              config={nav}
-              defs={navDefs}
-              onToggleGroup={toggleNavGroup}
-            />
-          )}
+          <Sidebar
+            activeView={view}
+            onSelect={(v) => {
+              setView(v);
+              setViewParams({});
+            }}
+            collapsed={navCollapsed}
+            config={nav}
+            defs={navDefs}
+            onToggleGroup={toggleNavGroup}
+          />
           <main className="main">
             {view === "overview" ? (
               <WelcomeView
@@ -247,41 +224,25 @@ function AppInner() {
               <PluginsView />
             ) : view === "checklist" ? (
               corePluginEnabled(pluginCtx.plugins, "core-checklists") ? (
-                hasPluginUi(pluginCtx.plugins, "core-checklists") ? (
-                  <PluginUiView pluginId="core-checklists" />
-                ) : (
-                  <ChecklistView />
-                )
+                <PluginUiView pluginId="core-checklists" />
               ) : (
                 <CoreDisabled name="清单" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
             ) : view === "projects" ? (
               corePluginEnabled(pluginCtx.plugins, "core-projects") ? (
-                hasPluginUi(pluginCtx.plugins, "core-projects") ? (
-                  <PluginUiView pluginId="core-projects" />
-                ) : (
-                  <ProjectsView />
-                )
+                <PluginUiView pluginId="core-projects" />
               ) : (
                 <CoreDisabled name="项目" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
             ) : view === "ai" ? (
               corePluginEnabled(pluginCtx.plugins, "core-ai") ? (
-                hasPluginUi(pluginCtx.plugins, "core-ai") ? (
-                  <PluginUiView pluginId="core-ai" />
-                ) : (
-                  <AIChatView />
-                )
+                <PluginUiView pluginId="core-ai" />
               ) : (
                 <CoreDisabled name="AI 整理" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
             ) : view === "blog" ? (
               corePluginEnabled(pluginCtx.plugins, "core-blog") ? (
-                hasPluginUi(pluginCtx.plugins, "core-blog") ? (
-                  <PluginUiView pluginId="core-blog" />
-                ) : (
-                  <BlogView />
-                )
+                <PluginUiView pluginId="core-blog" />
               ) : (
                 <CoreDisabled name="博客发布" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
@@ -296,28 +257,16 @@ function AppInner() {
               />
             ) : view === "notes" ? (
               corePluginEnabled(pluginCtx.plugins, "core-notes") ? (
-                hasPluginUi(pluginCtx.plugins, "core-notes") ? (
-                  <PluginUiView pluginId="core-notes" />
-                ) : (
-                  <NotesView
-                    dark={themeMode === "dark"}
-                    filesCollapsed={filesCollapsed}
-                    focusMode={focusMode}
-                    onToggleFiles={() => setFilesCollapsed((c) => !c)}
-                    onToggleFocus={() => setFocusMode((f) => !f)}
-                  />
-                )
+                <PluginUiView pluginId="core-notes" />
               ) : (
                 <CoreDisabled name="笔记" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
             ) : (
-              <NotesView
-                dark={themeMode === "dark"}
-                filesCollapsed={filesCollapsed}
-                focusMode={focusMode}
-                onToggleFiles={() => setFilesCollapsed((c) => !c)}
-                onToggleFocus={() => setFocusMode((f) => !f)}
-              />
+              // 未知视图（如第三方插件声明的非内置 nav 项）：明确占位而非静默落笔记视图
+              <div className="empty-state">
+                <h2>未找到页面</h2>
+                <p>该视图不存在或对应插件未启用</p>
+              </div>
             )}
           </main>
         </div>
@@ -336,12 +285,6 @@ function AppInner() {
 function corePluginEnabled(plugins: { id: string; enabled: boolean }[], id: string): boolean {
   const p = plugins.find((x) => x.id === id);
   return p ? p.enabled : true;
-}
-
-/** 插件是否自带前端（声明 ui → 用 PluginUiView 渲染插件页面）。 */
-function hasPluginUi(plugins: { id: string; ui: string | null }[], id: string): boolean {
-  const p = plugins.find((x) => x.id === id);
-  return !!p?.ui;
 }
 
 /** 核心插件被禁用时的占位（引导去插件页启用）。 */

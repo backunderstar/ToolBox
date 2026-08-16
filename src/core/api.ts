@@ -34,7 +34,6 @@ export interface PluginNav {
   label: string;
   icon: string;
   group: string;
-  view: string;
 }
 
 /** 插件信息（与 Rust PluginInfo 对应，serde camelCase） */
@@ -122,28 +121,13 @@ export const pluginCall = (
 export const openInExplorer = (path: string) =>
   invoke<void>("open_in_explorer", { path });
 
-/** 用系统默认应用打开 URL（Tauri 环境经 opener 插件；浏览器环境回退 window.open） */
-export const openUrl = (url: string) => {
-  const w = window as Window & { __TAURI_INTERNALS__?: unknown };
-  if (w.__TAURI_INTERNALS__) {
-    return import("@tauri-apps/plugin-opener").then((m) => m.openUrl(url));
-  }
-  window.open(url, "_blank");
-  return Promise.resolve();
-};
-
-/* ---- M6 AI（经 core-ai 原生插件；无显式 vault 用当前工作区） ---- */
+/* ---- M6 AI 配置（经 core-ai 原生插件；无显式 vault 用当前工作区） ---- */
 
 export interface AiConfig {
   baseUrl: string;
   model: string;
   /** 是否已配置 API Key（Key 存系统凭据管理器，不返回明文） */
   hasKey: boolean;
-}
-
-export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
 }
 
 export const aiConfigGet = () =>
@@ -163,99 +147,10 @@ export const aiConfigClearKey = () =>
   currentVault().then((v) =>
     pluginCall(v, "core-ai", "ai.configClearKey", {})
   ) as Promise<void>;
-export const aiChat = (messages: ChatMessage[]) =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-ai", "ai.chat", { messages })
-  ) as Promise<string>;
-/**
- * 流式对话：core-ai 将请求派发到独立线程后**立即返回**（防宿主 tokio 线程
- * block_on 嵌套 panic）。增量经 `ai-chunk`（plugin-event 转发）到达，
- * 结束/失败经 `ai-done`（{ok, error?}）通知——调用方应监听该事件收尾，
- * 不能依赖本调用 resolve 表示"流结束"。
- */
-export const aiChatStream = (messages: ChatMessage[]) =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-ai", "ai.chatStream", { messages })
-  ) as Promise<void>;
-/** `ai-chunk` 事件载荷（plugin-event 的 data 字段） */
-export interface AiChunk {
-  text: string;
-}
 export const aiTest = () =>
   currentVault().then((v) =>
     pluginCall(v, "core-ai", "ai.test", {})
   ) as Promise<string>;
-
-/* ---- M7 博客发布（经 core-blog 原生插件） ---- */
-
-export interface PostMeta {
-  path: string;
-  title: string;
-  date: string;
-  tags: string[];
-  status: string;
-  /** 笔记文件最后修改时间（unix 秒） */
-  mtime: number | null;
-}
-
-export interface BlogListResult {
-  posts: PostMeta[];
-  /** 站点最后生成时间（未生成过为 null） */
-  siteGeneratedAt: number | null;
-  /** 站点生成后又被修改过的已发布笔记数 */
-  staleCount: number;
-}
-
-export interface BlogGenerateResult {
-  siteDir: string;
-  posts: number;
-  indexUrl: string;
-}
-
-export const blogList = (vault: string) =>
-  pluginCall(vault, "core-blog", "blog.list", {}) as Promise<BlogListResult>;
-export const blogGenerate = (vault: string, siteTitle: string) =>
-  pluginCall(vault, "core-blog", "blog.generate", { siteTitle }) as Promise<BlogGenerateResult>;
-export const blogPreviewStart = (vault: string) =>
-  pluginCall(vault, "core-blog", "blog.previewStart", {}) as Promise<string>;
-export const blogPreviewStop = (vault: string) =>
-  pluginCall(vault, "core-blog", "blog.previewStop", {}) as Promise<void>;
-export const blogOpenFolder = (vault: string) =>
-  pluginCall(vault, "core-blog", "blog.openFolder", {}) as Promise<void>;
-
-/* ---- 项目文件管理（经 core-projects 原生插件） ---- */
-
-export interface ProjectInfo {
-  name: string;
-  archived: boolean;
-  fileCount: number;
-}
-
-export interface ProjectFile {
-  name: string;
-  /** 相对项目根，/ 分隔 */
-  path: string;
-  isDir: boolean;
-  size: number | null;
-}
-
-export const projectsList = (vault: string) =>
-  pluginCall(vault, "core-projects", "projects.list", {}) as Promise<ProjectInfo[]>;
-export const projectsCreate = (vault: string, name: string) =>
-  pluginCall(vault, "core-projects", "projects.create", { name }) as Promise<void>;
-export const projectsArchive = (vault: string, name: string) =>
-  pluginCall(vault, "core-projects", "projects.archive", { name }) as Promise<void>;
-export const projectsUnarchive = (vault: string, name: string) =>
-  pluginCall(vault, "core-projects", "projects.unarchive", { name }) as Promise<void>;
-export const projectsDelete = (vault: string, name: string, permanent = false) =>
-  pluginCall(vault, "core-projects", "projects.delete", {
-    name,
-    permanent,
-  }) as Promise<void>;
-export const projectsFiles = (vault: string, name: string, dir: string) =>
-  pluginCall(vault, "core-projects", "projects.files", { name, dir }) as Promise<ProjectFile[]>;
-export const projectsOpen = (vault: string, name: string, rel: string) =>
-  pluginCall(vault, "core-projects", "projects.open", { name, rel }) as Promise<void>;
 
 /* ---- 自动备份（宿主内嵌命令，原 core-backup 插件命令；搜索/备份已迁回本体框架） ---- */
 
@@ -298,13 +193,6 @@ export const backupRestore = (vault: string, name: string) =>
 
 /* ---- 浮窗快速待办（经 core-todos 原生插件；当前工作区来自 vault 配置） ---- */
 
-export interface TodosItem {
-  id: string;
-  text: string;
-  done: boolean;
-  createdAt: string;
-}
-
 /** 读取当前工作区路径（todos/plugin_call 等无显式 vault 的命令用） */
 async function currentVault(): Promise<string> {
   const s = await vaultGet();
@@ -312,26 +200,6 @@ async function currentVault(): Promise<string> {
   return s.path;
 }
 
-export const todosList = () =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-todos", "todos.list", {})
-  ) as Promise<TodosItem[]>;
-export const todosAdd = (text: string) =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-todos", "todos.add", { text })
-  ) as Promise<TodosItem[]>;
-export const todosToggle = (id: string) =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-todos", "todos.toggle", { id })
-  ) as Promise<TodosItem[]>;
-export const todosDelete = (id: string) =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-todos", "todos.delete", { id })
-  ) as Promise<TodosItem[]>;
-export const todosClearDone = () =>
-  currentVault().then((v) =>
-    pluginCall(v, "core-todos", "todos.clearDone", {})
-  ) as Promise<TodosItem[]>;
 /** 显示 / 隐藏浮窗（返回操作后可见状态） */
 export const floatToggle = () => invoke<boolean>("float_toggle");
 /** 锁定 / 解锁浮窗位置（锁定时禁用拖拽与改大小） */

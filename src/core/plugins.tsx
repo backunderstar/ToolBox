@@ -281,7 +281,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "notes", label: "笔记", icon: "file-text", group: "工作区", view: "NotesView" }],
+          nav: [{ id: "notes", label: "笔记", icon: "file-text", group: "工作区" }],
         },
         {
           id: "core-checklists",
@@ -298,7 +298,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "checklist", label: "清单", icon: "check", group: "工作区", view: "ChecklistView" }],
+          nav: [{ id: "checklist", label: "清单", icon: "check", group: "工作区" }],
         },
         {
           id: "core-projects",
@@ -315,7 +315,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "projects", label: "项目", icon: "folder", group: "工作区", view: "ProjectsView" }],
+          nav: [{ id: "projects", label: "项目", icon: "folder", group: "工作区" }],
         },
         {
           id: "core-blog",
@@ -332,7 +332,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "blog", label: "博客发布", icon: "globe", group: "系统", view: "BlogView" }],
+          nav: [{ id: "blog", label: "博客发布", icon: "globe", group: "系统" }],
         },
         {
           id: "core-ai",
@@ -349,7 +349,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", view: "AIChatView" }],
+          nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统" }],
         },
       ];
       setPlugins(mock);

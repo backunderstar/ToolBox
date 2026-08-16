@@ -94,45 +94,6 @@ fn walk(root: &Path, dir: &Path, base: &str, out: &mut Vec<FileEntry>) {
     }
 }
 
-/// 列出 vault 内指定目录下的全部条目（不过滤扩展名，供 JSON 数据枚举）。
-pub fn list_dir(vault: &str, dir: &str) -> Result<Vec<FileEntry>, String> {
-    let root = PathBuf::from(vault);
-    if !root.is_dir() {
-        return Err(format!("工作区不存在: {vault}"));
-    }
-    let target = resolve_safe(vault, dir)?;
-    if !target.is_dir() {
-        return Ok(Vec::new());
-    }
-    let Ok(read) = std::fs::read_dir(&target) else {
-        return Ok(Vec::new());
-    };
-    let mut entries: Vec<_> = read.flatten().collect();
-    entries.sort_by_key(|e| e.file_name());
-    let base = dir.trim_end_matches('/').to_string();
-    let mut out = Vec::new();
-    for entry in entries {
-        let name = entry.file_name().to_string_lossy().to_string();
-        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        let size = if is_dir {
-            None
-        } else {
-            entry.metadata().ok().map(|m| m.len())
-        };
-        out.push(FileEntry {
-            name: name.clone(),
-            path: if base.is_empty() {
-                name
-            } else {
-                format!("{base}/{name}")
-            },
-            is_dir,
-            size,
-        });
-    }
-    Ok(out)
-}
-
 /// 读取笔记内容。超大文件拒绝（防卡死），提示用外部编辑器。
 pub fn read(vault: &str, rel: &str) -> Result<String, String> {
     let p = resolve_safe(vault, rel)?;

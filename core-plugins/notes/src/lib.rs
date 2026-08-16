@@ -1,7 +1,7 @@
 //! 笔记核心插件（cdylib，id: core-notes）。
 //!
 //! 命令（plugin_call("core-notes", ...)）：
-//! - notes.list / notes.listDir / notes.read / notes.write / notes.create / notes.delete / notes.rename
+//! - notes.list / notes.read / notes.write / notes.create / notes.delete / notes.rename
 //!
 //! 前端 api.ts 的 fs* 系列透明转发到这里（同一契约：vault 相对路径 + `/` 分隔）。
 
@@ -48,10 +48,6 @@ fn call(
     match method {
         "notes.list" => {
             fs::list(&vault).map(|v| serde_json::to_value(v).unwrap_or(Value::Null))
-        }
-        "notes.listDir" => {
-            let dir = s("dir").unwrap_or_default();
-            fs::list_dir(&vault, &dir).map(|v| serde_json::to_value(v).unwrap_or(Value::Null))
         }
         "notes.read" => {
             let rel = s("rel").ok_or("缺少 rel")?;

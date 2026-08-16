@@ -47,10 +47,9 @@ export function PluginUiView({ pluginId }: { pluginId: string }) {
           nav.openNote(rel);
         },
         openChecklist: (id) => {
-          // 清单视图是插件自带前端时，宿主 App.openChecklist 只写 viewParams
-          // .openChecklistId，而该参数仅宿主回退 ChecklistView 消费、插件 UI 收不到
-          // （反链"打开清单"静默失效）。与 openNote 对称：广播 tb:open-checklist
-          // 事件 + 挂载期标记，清单插件 UI 据此打开清单。
+          // 清单视图恒为插件自带前端（宿主回退视图已删除），宿主
+          // viewParams.openChecklistId 无人消费。与 openNote 对称：广播
+          // tb:open-checklist 事件 + 挂载期标记，清单插件 UI 据此打开清单。
           const w2 = window as unknown as Record<string, unknown>;
           w2.__TB_PENDING_CHECKLIST__ = id;
           window.dispatchEvent(new CustomEvent("tb:open-checklist", { detail: id }));
