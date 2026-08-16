@@ -133,13 +133,27 @@ if (isRelease) {
   coreRoot = path.join(appData, "com.toolbox.desktop", "plugins", "_core");
 }
 mkdirSync(coreRoot, { recursive: true });
-// 清理已不在 PLUGINS 中的旧插件目录（如迁回宿主的 core-search / core-backup）
+// 清理已不在 PLUGINS 中的旧随包插件目录（如迁回宿主的 core-search / core-backup）。
+// 只删"随包插件"（plugin.json 带 bundled 标记，见下方 manifest）——用户手动安装的
+// 插件目录必须保留：dev 构建不能清掉用户放进去的 DLL 插件（与 release 的
+// deploy_core_plugins "保留用户插件" 语义对齐）。
 {
   const keep = new Set(PLUGINS.map((p) => p.id));
   for (const name of readdirSync(coreRoot)) {
     if (!keep.has(name)) {
-      rmSync(path.join(coreRoot, name), { recursive: true, force: true });
-      console.log(`[build-core] 清理已移除插件: ${name}`);
+      const manifestPath = path.join(coreRoot, name, "plugin.json");
+      let bundled = false;
+      try {
+        bundled = JSON.parse(readFileSync(manifestPath, "utf8")).bundled === true;
+      } catch {
+        bundled = false; // 无清单/清单损坏：一律视为手动插件，保留
+      }
+      if (bundled) {
+        rmSync(path.join(coreRoot, name), { recursive: true, force: true });
+        console.log(`[build-core] 清理已移除随包插件: ${name}`);
+      } else {
+        console.log(`[build-core] 保留手动安装插件: ${name}`);
+      }
     }
   }
 }
@@ -173,6 +187,9 @@ for (const p of PLUGINS) {
     system: p.system ?? false,
     ui: p.ui ?? null,
     nav: p.nav ?? [],
+    // 随包插件标记：dev 构建清理时据此识别"可清理的旧随包插件"，
+    // 不误删用户手动安装的插件目录（宿主解析清单时忽略未知字段）
+    bundled: true,
   };
   writeFileSync(path.join(target, "plugin.json"), JSON.stringify(manifest, null, 2), "utf8");
   console.log(`[build-core] 已部署: ${p.id} → ${target}`);

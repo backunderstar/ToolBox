@@ -120,6 +120,9 @@ def search_provide(args):
     宿主 search_all 调用 search.provide {query, limit} → 返回 [{path, title, snippet}]。
     这里演示：经核心 API fs.listDir（需 fs:read:vault 权限）递归枚举 vault 文件，
     文件名/路径包含关键词即命中（真实提供者可做内容搜索，本示例保持最小）。
+    结果按文件修改时间（fs.listDir 返回的 mtime，UNIX 毫秒）降序截取 limit 条：
+    保证"最近修改的文件"排在前面（历史缺陷：深度优先遍历先到先得，
+    新文件可能被旧文件挤出上限——搜索不到刚建的文件）。
     """
     query = (args.get("query") or "").lower()
     limit = int(args.get("limit") or 20)
@@ -132,16 +135,12 @@ def search_provide(args):
     SKIP_DIRS = {".git", ".toolbox", "node_modules", "target", "site"}
 
     def walk(rel):
-        if len(hits) >= limit:
-            return
         try:
             entries = call_core("fs.listDir", {"dir": rel})
         except Exception as e:  # noqa: BLE001
             sys.stderr.write("[py-tools] fs.listDir(%r) 失败: %s\n" % (rel, e))
             return
         for e in entries:
-            if len(hits) >= limit:
-                return
             if e.get("isDir"):
                 if e["name"] in SKIP_DIRS or e["name"].startswith("."):
                     continue
@@ -153,12 +152,18 @@ def search_provide(args):
                             "path": e["path"],
                             "title": e["name"],
                             "snippet": "文件名匹配（py-tools 搜索提供者）",
+                            "mtime": e.get("mtime") or 0,
                         }
                     )
 
     walk("")
-    sys.stderr.write("[py-tools] search.provide query=%r hits=%d\n" % (query, len(hits)))
-    return hits[:limit]
+    # 最近修改优先；同时间戳保持原顺序（稳定排序）
+    hits.sort(key=lambda h: h["mtime"], reverse=True)
+    out = [{k: h[k] for k in ("path", "title", "snippet")} for h in hits[:limit]]
+    sys.stderr.write(
+        "[py-tools] search.provide query=%r hits=%d -> %d\n" % (query, len(hits), len(out))
+    )
+    return out
 
 
 def main():

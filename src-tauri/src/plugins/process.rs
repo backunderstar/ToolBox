@@ -14,7 +14,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Mutex;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 /// 来自插件进程的入站消息。
 pub enum Incoming {
@@ -267,12 +267,26 @@ impl ProcessPlugin {
                     } else {
                         e.metadata().ok().map(|m| m.len())
                     };
+                    // 修改时间（UNIX 毫秒整数）：搜索提供者等插件按"最近修改"排序结果
+                    // （历史缺陷：深度优先遍历先到先得，新文件可能被旧文件挤出上限）
+                    let mtime = e
+                        .metadata()
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as i64);
                     let rel = if base.is_empty() {
                         name.clone()
                     } else {
                         format!("{base}/{name}")
                     };
-                    entries.push(json!({ "name": name, "path": rel, "isDir": is_dir, "size": size }));
+                    entries.push(json!({
+                        "name": name,
+                        "path": rel,
+                        "isDir": is_dir,
+                        "size": size,
+                        "mtime": mtime,
+                    }));
                 }
                 entries.sort_by_key(|v| v["path"].as_str().unwrap_or("").to_string());
                 Ok(json!(entries))
