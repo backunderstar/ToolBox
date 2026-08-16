@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{ai, backup, blog, projects, vault};
+use core::{ai, backup, blog, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -124,13 +124,6 @@ pub fn run() {
             blog::blog_preview_start,
             blog::blog_preview_stop,
             blog::blog_open_folder,
-            projects::projects_list,
-            projects::projects_create,
-            projects::projects_archive,
-            projects::projects_unarchive,
-            projects::projects_delete,
-            projects::projects_files,
-            projects::projects_open,
             backup::backup_now_cmd,
             backup::backup_config_get,
             backup::backup_config_set,

@@ -13,6 +13,5 @@ pub mod ai;
 pub mod backup;
 pub mod blog;
 pub mod path;
-pub mod projects;
 pub mod search;
 pub mod vault;

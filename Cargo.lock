@@ -4425,6 +4425,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tb-projects"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tb-sdk",
+ "trash",
+]
+
+[[package]]
 name = "tb-records"
 version = "0.1.0"
 dependencies = [

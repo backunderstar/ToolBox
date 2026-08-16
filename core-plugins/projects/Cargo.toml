@@ -1,0 +1,14 @@
+[package]
+name = "tb-projects"
+version = "0.1.0"
+description = "ToolBox 核心插件：项目文件管理（projects/ 目录、归档、默认应用打开）"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tb-sdk = { path = "../../tb-sdk" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+trash = "5"

@@ -199,7 +199,7 @@ export const blogPreviewStop = () => invoke<void>("blog_preview_stop");
 export const blogOpenFolder = (vault: string) =>
   invoke<void>("blog_open_folder", { vault });
 
-/* ---- M8 项目文件管理 ---- */
+/* ---- 项目文件管理（经 core-projects 原生插件） ---- */
 
 export interface ProjectInfo {
   name: string;
@@ -216,19 +216,22 @@ export interface ProjectFile {
 }
 
 export const projectsList = (vault: string) =>
-  invoke<ProjectInfo[]>("projects_list", { vault });
+  pluginCall(vault, "core-projects", "projects.list", {}) as Promise<ProjectInfo[]>;
 export const projectsCreate = (vault: string, name: string) =>
-  invoke<void>("projects_create", { vault, name });
+  pluginCall(vault, "core-projects", "projects.create", { name }) as Promise<void>;
 export const projectsArchive = (vault: string, name: string) =>
-  invoke<void>("projects_archive", { vault, name });
+  pluginCall(vault, "core-projects", "projects.archive", { name }) as Promise<void>;
 export const projectsUnarchive = (vault: string, name: string) =>
-  invoke<void>("projects_unarchive", { vault, name });
+  pluginCall(vault, "core-projects", "projects.unarchive", { name }) as Promise<void>;
 export const projectsDelete = (vault: string, name: string, permanent = false) =>
-  invoke<void>("projects_delete", { vault, name, permanent });
+  pluginCall(vault, "core-projects", "projects.delete", {
+    name,
+    permanent,
+  }) as Promise<void>;
 export const projectsFiles = (vault: string, name: string, dir: string) =>
-  invoke<ProjectFile[]>("projects_files", { vault, name, dir });
+  pluginCall(vault, "core-projects", "projects.files", { name, dir }) as Promise<ProjectFile[]>;
 export const projectsOpen = (vault: string, name: string, rel: string) =>
-  invoke<void>("projects_open", { vault, name, rel });
+  pluginCall(vault, "core-projects", "projects.open", { name, rel }) as Promise<void>;
 
 /* ---- 自动备份 ---- */
 
