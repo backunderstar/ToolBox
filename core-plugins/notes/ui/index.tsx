@@ -114,8 +114,9 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[] | null>(null);
   const [searching, setSearching] = useState(false);
-  // 状态消息经 flash() 写入；值本身暂未被任何 UI 渲染，保留 setter 供 flash 使用
-  const [, setStatus] = useState("就绪");
+  // 状态消息条：flash() 写入，4s 后自动清除；err=true 渲染为错误样式（编辑器底部 .editor-status）
+  const [status, setStatus] = useState("");
+  const [statusErr, setStatusErr] = useState(false);
   /* 布局偏好：文件面板折叠 / 专注模式（localStorage 持久化，宿主布局互不影响） */
   const [filesCollapsed, setFilesCollapsed] = useState(() =>
     loadPref("notes.filesCollapsed", false),
@@ -132,8 +133,15 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeq = useRef(0);
+  const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flash = (msg: string) => setStatus(msg);
+  /** 状态条消息：新消息重置 4s 清除计时（连发时以最后一条为准） */
+  const flash = (msg: string, err = false) => {
+    setStatus(msg);
+    setStatusErr(err);
+    if (statusTimer.current) clearTimeout(statusTimer.current);
+    statusTimer.current = setTimeout(() => setStatus(""), 4000);
+  };
 
   /* 主题跟随：宿主切换主题时更新（Vditor setTheme + 暗色变量由宿主 tokens 自动生效） */
   useEffect(() => {
@@ -144,6 +152,14 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
     return () => mo.disconnect();
   }, []);
 
+  /* 卸载时清理状态条计时器 */
+  useEffect(
+    () => () => {
+      if (statusTimer.current) clearTimeout(statusTimer.current);
+    },
+    [],
+  );
+
   useEffect(() => savePref("notes.filesCollapsed", filesCollapsed), [filesCollapsed]);
   useEffect(() => savePref("notes.focusMode", focusMode), [focusMode]);
 
@@ -152,7 +168,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
     try {
       setFiles((await api.call("notes.list")) as FileEntry[]);
     } catch (e) {
-      flash(String(e));
+      flash(String(e), true);
     }
   };
 
@@ -170,7 +186,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
         flash("保存中检测到新输入，稍后自动保存");
       }
     } catch (e) {
-      flash(String(e));
+      flash(String(e), true);
     }
   };
 
@@ -194,7 +210,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
       // 同步宿主 vault（tb:vault-active）：AI 预设等插件界面经 context 读取当前笔记
       window.dispatchEvent(new CustomEvent("tb:vault-active", { detail: { rel, content: text } }));
     } catch (e) {
-      flash(String(e));
+      flash(String(e), true);
     }
   };
 
@@ -208,7 +224,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
       await refresh();
       await openFile(rel);
     } catch (e) {
-      flash(String(e));
+      flash(String(e), true);
     }
   };
 
@@ -226,7 +242,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
       }
       flash(`已删除 ${rel}`);
     } catch (e) {
-      flash(String(e));
+      flash(String(e), true);
     }
   };
 
@@ -236,11 +252,11 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
     // 前端校验（后端也会兜底）：非法字符 / 目标已存在
     const name = to.slice(to.lastIndexOf("/") + 1);
     if (/[\\/:*?"<>|]/.test(name)) {
-      flash(`文件名包含非法字符: ${name}`);
+      flash(`文件名包含非法字符: ${name}`, true);
       return;
     }
     if (stateRef.current.files.some((f) => f.path === to && f.path !== from)) {
-      flash(`同名文件已存在: ${to}`);
+      flash(`同名文件已存在: ${to}`, true);
       return;
     }
     try {
@@ -249,7 +265,7 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
       if (stateRef.current.activePath === from) setActivePath(to);
       flash(`已重命名 ${from} → ${to}`);
     } catch (e) {
-      flash(String(e));
+      flash(String(e), true);
     }
   };
 
@@ -507,6 +523,11 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
             </button>
           </div>
         )}
+      </div>
+
+      {/* 状态条：保存/删除/重命名等操作反馈与错误提示（flash 消息，4s 自动清除） */}
+      <div className={`editor-status${statusErr ? " error" : ""}`} role="status" aria-live="polite">
+        {status}
       </div>
     </div>
   );

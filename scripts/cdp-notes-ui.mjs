@@ -91,6 +91,17 @@ const disk = await ev(`(async () => {
 if (disk !== "OK") throw new Error(`自动保存未落盘（磁盘校验: ${disk}）`);
 log("PASS 输入 → 防抖自动保存落盘（notes.write 经桥 + DLL，磁盘含标记）");
 
+// ---- 4b. 手动保存 → 编辑器底部状态条显示反馈（flash 消息）----
+await ev(`(() => {
+  const b = [...document.querySelectorAll('.plugin-ui-view .editor-header button')].find(b => b.textContent.includes('保存'));
+  b?.click(); return !!b;
+})()`);
+await waitFor(
+  `(document.querySelector('.plugin-ui-view .editor-status')?.textContent || '').includes('已保存')`,
+  "状态条显示保存反馈",
+);
+log("PASS 手动保存 → 状态条显示「已保存」");
+
 // ---- 5. 新建笔记 ----
 const before = await ev(`document.querySelectorAll('.plugin-ui-view .tree-row').length`);
 await ev(

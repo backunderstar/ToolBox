@@ -67,6 +67,9 @@
   --pastel-red-bg: #fdebec;
   --pastel-red-fg: #9f2f2d;
 
+  /* 错误/危险语义色（状态条、删除确认等） */
+  --danger: #9f2f2d;
+
   --shadow-1: 0 1px 2px rgba(32, 31, 28, 0.04);
   --shadow-2: 0 2px 10px rgba(32, 31, 28, 0.05);
 
@@ -99,6 +102,9 @@
   --pastel-yellow-fg: #d9b45c;
   --pastel-red-bg: #3d2526;
   --pastel-red-fg: #e08a86;
+
+  /* 错误/危险语义色（状态条、删除确认等） */
+  --danger: #e08a86;
 
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.35);

@@ -769,6 +769,24 @@
   height: 100%;
 }
 
+/* 编辑器底部状态条：flash 消息（保存/删除/重命名反馈与错误提示），信息态用 muted，错误态用 danger */
+.editor-status {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: var(--space-1) var(--space-5);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--dur) var(--ease);
+}
+.editor-status.error {
+  color: var(--danger);
+}
+
 /* 搜索 */
 .search-results {
   flex: 1;
