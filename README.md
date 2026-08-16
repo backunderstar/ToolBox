@@ -31,7 +31,7 @@ src/           前端（themes 主题引擎 / components 组件 / core IPC 与�
 core-plugins/  6 个核心插件（cdylib DLL + 自带前端 ui/）
 tb-sdk/        核心插件 SDK（C ABI 契约 + tb_plugin! 样板宏 + 路径安全）
 scripts/       构建与 E2E 脚本（build-core.mjs / cdp-*.mjs 驱动真实 WebView2 验证）
-docs/          操作手册与技术详解
+docs/          操作手册、技术栈与概念详解、插件开发指南
 ```
 
 ## 环境要求
