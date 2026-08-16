@@ -1,29 +1,35 @@
-//! 全文搜索：SQLite FTS5（trigram 分词器）。
+//! 全文搜索：SQLite FTS5（trigram 分词器）索引。
 //!
-//! 背景：vault 笔记多时线性扫描（每文件读 256KB + 内存 lower）会拖慢搜索，
-//! 这里用 SQLite FTS5 建倒排索引，索引文件放 `vault/.toolbox/search-fts.sqlite`。
-//!
-//! 设计：
-//! - **trigram 分词器**：把文本切成 3-gram 序列，天然支持中文子串匹配
-//!   （unicode61 会把"工作日报"当整个 token，"工作"搜不到）。代价是 <3 字符
-//!   的查询拆不出 trigram，必须回退线性扫描。
-//! - **增量同步**：搜索前对每个 .md stat（mtime_ns, size），与 `notes_idx` 表
-//!   比对，不一致才重建该文件的 FTS 条目；已删除文件清理。stat 全量很快。
-//! - **查询**：文件名 LIKE 匹配优先；内容 ≥3 字符走 FTS MATCH（短语=trigram
-//!   序列连续匹配=精确子串），<3 字符回退内容 LIKE 线性扫描。
-//! - snippet 不在 SQLite 里做：命中后只对命中的文件读一次、按首次命中位置切
-//!   上下文（复用旧逻辑，质量可控）。
+//! 由宿主 core/search.rs 移植（自包含 collect_md；笔记目录 vault/notes）。
+//! 索引文件 `vault/.toolbox/search-fts.sqlite`；笔记是真源，索引可随时重建。
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-/// 笔记目录（vault/notes/）——笔记已插件化，FTS 索引仍由宿主维护
-/// （阶段 2 搜索插件化后再整体迁移），这里自包含扫描实现。
+/// 笔记目录（vault/notes/）
 const NOTES_DIR: &str = "notes";
 const IGNORED_DIRS: &[&str] = &[".git", ".toolbox", "node_modules", "target", "site"];
+
+/// 索引数据库文件名（位于 vault/.toolbox/ 下）。
+const INDEX_FILE: &str = "search-fts.sqlite";
+/// 索引时每文件最多读取的字节数（超大文件截断索引，避免内存暴涨）
+const INDEX_READ_LIMIT: u64 = 2 * 1024 * 1024;
+/// snippet / 短词线性扫描每文件最多读取的字节数
+const SEARCH_READ_LIMIT: u64 = 256 * 1024;
+/// FTS 内容命中上限
+const FTS_HIT_LIMIT: i64 = 200;
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub path: String,
+    pub filename: String,
+    pub snippet: String,
+}
 
 /// 递归收集 notes/ 下全部 .md（相对路径 + 绝对路径）。
 fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
@@ -49,23 +55,6 @@ fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBu
     }
 }
 
-/// 索引数据库文件名（位于 vault/.toolbox/ 下）。
-const INDEX_FILE: &str = "search-fts.sqlite";
-/// 索引时每文件最多读取的字节数（超大文件截断索引，避免内存暴涨）
-const INDEX_READ_LIMIT: u64 = 2 * 1024 * 1024;
-/// snippet / 短词线性扫描每文件最多读取的字节数
-const SEARCH_READ_LIMIT: u64 = 256 * 1024;
-/// FTS 内容命中上限（超出截断，配合 snippet 重新读文件成本可控）
-const FTS_HIT_LIMIT: i64 = 200;
-
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchHit {
-    pub path: String,
-    pub filename: String,
-    pub snippet: String,
-}
-
 /// 打开（必要时创建）索引库并建表。
 fn open_index(root: &Path) -> Result<Connection, String> {
     let dir = root.join(".toolbox");
@@ -74,7 +63,6 @@ fn open_index(root: &Path) -> Result<Connection, String> {
         .map_err(|e| format!("打开搜索索引失败: {e}"))?;
     conn.busy_timeout(std::time::Duration::from_secs(5))
         .map_err(|e| format!("设置索引超时失败: {e}"))?;
-    // WAL：搜索/同步与可能并发的写入（多窗口、自动备份线程）不互相阻塞
     let _ = conn.execute_batch("PRAGMA journal_mode=WAL;");
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS notes_idx (
@@ -98,8 +86,6 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
     let mut files = Vec::new();
     collect_md(notes, notes, NOTES_DIR, &mut files);
 
-    // 整个同步包在一个事务里：中途失败（磁盘满等）不会留下
-    // notes_idx 与 notes_fts 不一致的中间态（否则该文件后续永不重建）
     let tx = conn.transaction().map_err(|e| format!("开启事务失败: {e}"))?;
     let mut seen: HashSet<String> = HashSet::new();
     for (rel, abs) in files {
@@ -123,11 +109,10 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
         if let Some((om, os, _rowid)) = old {
             if om == mtime_ns && os == size {
                 seen.insert(rel);
-                continue; // 未变化，跳过
+                continue;
             }
         }
 
-        // 内容变化或新文件：重建 FTS 条目；读取失败（权限等）跳过该文件
         let Some(content) = read_index_content(&abs) else {
             continue;
         };
@@ -152,7 +137,6 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
         seen.insert(rel);
     }
 
-    // 清理：索引里存在但磁盘上已删除的
     let stale: Vec<(String, i64)> = {
         let mut stmt = tx
             .prepare("SELECT path, fts_rowid FROM notes_idx")
@@ -175,7 +159,6 @@ fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
 }
 
 /// 读取文件内容用于索引（截断超大文件）。
-/// None = 读取失败（权限等）：调用方跳过该文件，不索引空内容。
 fn read_index_content(abs: &Path) -> Option<String> {
     use std::io::Read;
     let f = std::fs::File::open(abs).ok()?;
@@ -186,7 +169,7 @@ fn read_index_content(abs: &Path) -> Option<String> {
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
-/// 按首次命中位置切 snippet（复用旧搜索的切法）。
+/// 按首次命中位置切 snippet。
 fn make_snippet(content: &str, q: &str) -> String {
     let lower = content.to_lowercase();
     let Some(idx) = lower.find(q) else {
@@ -204,8 +187,7 @@ fn make_snippet(content: &str, q: &str) -> String {
         .to_string()
 }
 
-/// 全文搜索入口（带自愈）：索引损坏（崩溃残留等）时删库重建一次，
-/// 仍失败才报错——避免"文件存在但损坏"时每次搜索都静默失败。
+/// 全文搜索入口（带自愈）：索引损坏时删库重建一次。
 pub fn search(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     match search_once(vault, query) {
         Ok(hits) => Ok(hits),
@@ -219,7 +201,7 @@ pub fn search(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     }
 }
 
-/// 删除索引库及其 WAL/SHM 派生文件（笔记是真源，索引可随时重建）。
+/// 删除索引库及其 WAL/SHM 派生文件。
 fn reset_index(root: &Path) {
     for name in ["search-fts.sqlite", "search-fts.sqlite-wal", "search-fts.sqlite-shm"] {
         let _ = std::fs::remove_file(root.join(".toolbox").join(name));
@@ -255,11 +237,7 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
             .map_err(|e| format!("文件名搜索失败: {e}"))?;
         for path in rows.filter_map(|r| r.ok()) {
             if seen.insert(path.clone()) {
-                let filename = path
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or(&path)
-                    .to_string();
+                let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
                 hits.push(SearchHit {
                     path,
                     filename,
@@ -272,7 +250,6 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     // 2. 内容匹配
     let nchars = q.chars().count();
     if nchars >= 3 {
-        // FTS trigram 短语查询 = 精确子串匹配（引号防注入/防语法错误）
         let escaped = q.replace('"', "");
         let match_expr = format!("\"{escaped}\"");
         let fts_ok = (|| -> Result<(), String> {
@@ -285,9 +262,8 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
             for path in rows.filter_map(|r| r.ok()) {
                 if seen.insert(path.clone()) {
                     let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
-                    // 读文件切 snippet（命中文件数少，成本可控）
-                    let content = std::fs::read_to_string(&root.join(&path))
-                        .unwrap_or_default();
+                    let content =
+                        std::fs::read_to_string(&root.join(&path)).unwrap_or_default();
                     hits.push(SearchHit {
                         path,
                         filename,
@@ -297,18 +273,16 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
             }
             Ok(())
         })();
-        // FTS 语法异常（罕见）→ 回退线性扫描
         if fts_ok.is_err() {
             linear_content_scan(&notes, q, &mut seen, &mut hits);
         }
     } else {
-        // <3 字符：trigram 拆不出，回退内容 LIKE 线性扫描
         linear_content_scan(&notes, q, &mut seen, &mut hits);
     }
     Ok(hits)
 }
 
-/// 短查询兜底：线性读文件内容匹配（受 SEARCH_READ_LIMIT 限制）。
+/// 短查询兜底：线性读文件内容匹配。
 fn linear_content_scan(
     notes: &Path,
     q: &str,
@@ -340,13 +314,54 @@ fn linear_content_scan(
     }
 }
 
+/* ---------------- 插件入口 ---------------- */
+
+pub struct SearchState {
+    vault: String,
+}
+
+fn state_from_cfg(cfg: &Value) -> Result<SearchState, String> {
+    let vault = cfg
+        .get("vault")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if vault.is_empty() {
+        return Err("缺少 vault 配置".to_string());
+    }
+    Ok(SearchState { vault })
+}
+
+/// search.query {query, limit?} → SearchHit[]（文件全文命中）
+fn call(
+    state: &mut SearchState,
+    _host: tb_sdk::TbHostApi,
+    _ctx: *mut std::ffi::c_void,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    match method {
+        "search.query" => {
+            let query = params
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let hits = search(&state.vault, &query)?;
+            serde_json::to_value(hits).map_err(|e| e.to_string())
+        }
+        _ => Err(format!("未知命令: {method}")),
+    }
+}
+
+tb_sdk::tb_plugin!(SearchState, state_from_cfg, call);
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn tmp_vault(tag: &str) -> PathBuf {
-        let p =
-            std::env::temp_dir().join(format!("toolbox-search-test-{tag}-{}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("tb-search-test-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(p.join("notes")).unwrap();
         p
@@ -354,7 +369,8 @@ mod tests {
 
     fn write_note(v: &Path, name: &str, content: &str) {
         std::fs::write(v.join("notes").join(name), content).unwrap();
-    }    /// 中文子串搜索：3+ 字应命中 FTS，snippet 含上下文。
+    }
+
     #[test]
     fn fts_chinese_substring_hit() {
         let v = tmp_vault("fts");
@@ -364,11 +380,9 @@ mod tests {
         assert_eq!(hits.len(), 1, "应只命中 a.md: {hits:?}");
         assert_eq!(hits[0].path, "notes/a.md");
         assert!(hits[0].snippet.contains("工作日报"), "snippet: {}", hits[0].snippet);
-
         std::fs::remove_dir_all(&v).ok();
     }
 
-    /// 文件名匹配优先于内容匹配。
     #[test]
     fn filename_match_first() {
         let v = tmp_vault("fname");
@@ -378,39 +392,32 @@ mod tests {
         assert_eq!(hits[0].path, "notes/项目计划.md", "文件名匹配应排最前: {hits:?}");
         assert_eq!(hits[0].snippet, "文件名匹配");
         assert!(hits.len() >= 2, "内容命中也应返回: {hits:?}");
-
         std::fs::remove_dir_all(&v).ok();
     }
 
-    /// 增量更新：修改文件内容后重新搜索应反映新内容。
     #[test]
     fn incremental_update_after_edit() {
         let v = tmp_vault("incr");
         write_note(&v, "n.md", "旧关键词甲甲甲。\n");
-        assert!(search(&v.to_string_lossy(), "旧关键词").unwrap().len() == 1);
-        // 修改内容（mtime 变化）
+        assert_eq!(search(&v.to_string_lossy(), "旧关键词").unwrap().len(), 1);
         std::thread::sleep(std::time::Duration::from_millis(20));
         write_note(&v, "n.md", "新关键词乙乙乙。\n");
         let hits = search(&v.to_string_lossy(), "新关键词").unwrap();
         assert_eq!(hits.len(), 1);
         assert!(search(&v.to_string_lossy(), "旧关键词").unwrap().is_empty());
-
         std::fs::remove_dir_all(&v).ok();
     }
 
-    /// 删除文件后索引清理，不再命中。
     #[test]
     fn delete_cleans_index() {
         let v = tmp_vault("del");
         write_note(&v, "gone.md", "独特短语甲。\n");
-        assert!(search(&v.to_string_lossy(), "独特短语").unwrap().len() == 1);
+        assert_eq!(search(&v.to_string_lossy(), "独特短语").unwrap().len(), 1);
         std::fs::remove_file(v.join("notes/gone.md")).unwrap();
         assert!(search(&v.to_string_lossy(), "独特短语").unwrap().is_empty());
-
         std::fs::remove_dir_all(&v).ok();
     }
 
-    /// 短查询（<3 字符）回退 LIKE 线性扫描，仍能命中。
     #[test]
     fn short_query_falls_back_to_like() {
         let v = tmp_vault("short");
@@ -418,17 +425,14 @@ mod tests {
         let hits = search(&v.to_string_lossy(), "工作").unwrap();
         assert_eq!(hits.len(), 1, "2 字查询应命中: {hits:?}");
         assert_eq!(hits[0].path, "notes/n.md");
-
         std::fs::remove_dir_all(&v).ok();
     }
 
-    /// 空查询 / 空 vault 安全返回。
     #[test]
     fn empty_query_safe() {
         let v = tmp_vault("empty");
         assert!(search(&v.to_string_lossy(), "  ").unwrap().is_empty());
         assert!(search(&v.to_string_lossy(), "随便").unwrap().is_empty());
-
         std::fs::remove_dir_all(&v).ok();
     }
 }

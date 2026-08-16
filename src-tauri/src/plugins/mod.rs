@@ -869,9 +869,8 @@ pub async fn plugin_call(
     m.invoke(&id, &command, args)
 }
 
-/// 聚合搜索：文件全文命中（现有 FTS）+ 所有启用的搜索提供者插件的
-/// `search.provide` 命中（来源以 source 字段标记，path 为 vault 相对路径）。
-/// 外部插件声明 `searchProvider: true` 并实现该命令即自动接入。
+/// 聚合搜索：core-search 插件文件全文命中（FTS）+ 所有启用的搜索提供者
+/// 插件的 `search.provide` 命中（来源以 source 字段标记）。
 #[tauri::command]
 pub async fn search_all(
     app: tauri::AppHandle,
@@ -882,18 +881,25 @@ pub async fn search_all(
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
 
-    // 1. 文件全文搜索（现有 FTS 索引，覆盖 notes/ 等）
-    let mut hits: Vec<Value> = crate::core::search::search(&vault, &query)
-        .map_err(|e| format!("搜索失败: {e}"))?
-        .into_iter()
-        .filter_map(|h| serde_json::to_value(h).ok())
-        .collect();
+    // 1. 文件全文搜索（core-search 原生插件，SQLite FTS5）
+    let mut hits: Vec<Value> = Vec::new();
+    if let Ok(fh) = m.invoke(
+        "core-search",
+        "search.query",
+        serde_json::json!({ "query": query }),
+    ) {
+        if let Some(arr) = fh.as_array() {
+            for h in arr {
+                hits.push(h.clone());
+            }
+        }
+    }
 
     // 2. 插件提供者命中（启用且声明 searchProvider）
     let providers: Vec<String> = m
         .records
         .iter()
-        .filter(|r| r.manifest.search_provider && m.enabled.contains(&r.manifest.id))
+        .filter(|r| r.manifest.search_provider && m.plugin_enabled(&r.manifest.id))
         .map(|r| r.manifest.id.clone())
         .collect();
     for pid in providers {

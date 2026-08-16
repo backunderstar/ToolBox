@@ -4477,6 +4477,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tb-search"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tb-sdk",
+]
+
+[[package]]
 name = "tb-todos"
 version = "0.1.0"
 dependencies = [
@@ -4778,7 +4788,6 @@ dependencies = [
  "libloading 0.8.9",
  "pulldown-cmark",
  "reqwest 0.12.28",
- "rusqlite",
  "serde",
  "serde_json",
  "tauri",
