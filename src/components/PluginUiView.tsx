@@ -47,7 +47,6 @@ export function PluginUiView({ pluginId }: { pluginId: string }) {
           nav.openNote(rel);
         },
         openChecklist: (id) => nav.openChecklist(id),
-        openRecord: (id) => nav.openRecord(id),
       },
       context: {
         activePath: vault.activePath,

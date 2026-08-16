@@ -40,14 +40,6 @@ export const IconCheckSquare = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export const IconNotebook = (p: SVGProps<SVGSVGElement>) => (
-  <svg {...base} {...p}>
-    <rect x="5" y="3" width="14" height="18" rx="2" />
-    <path d="M9 3v18" />
-    <path d="M12.5 8h3M12.5 12h3" />
-  </svg>
-);
-
 export const IconSparkle = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}>
     <path d="M12 3.5l1.9 5.6 5.6 1.9-5.6 1.9L12 18.5l-1.9-5.6L4.5 11l5.6-1.9z" />

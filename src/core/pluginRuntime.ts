@@ -15,7 +15,6 @@ export interface PluginNavBridge {
   go: (view: string) => void;
   openNote: (rel: string) => void;
   openChecklist: (id: string) => void;
-  openRecord: (id: string) => void;
 }
 
 /** 宿主能力（主窗口插件 UI 可用；搜索迁回宿主本体后的统一入口） */

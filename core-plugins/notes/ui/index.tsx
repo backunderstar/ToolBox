@@ -1,6 +1,6 @@
 // core-notes 插件自带前端（组件模式）：文件树 + Vditor 编辑器 + 反链 + 全文搜索。
 // 数据全部经统一 api 桥：本插件命令（notes.*）+ 宿主内嵌搜索（api.host.search）/
-// 跨插件（core-checklists + core-records 反链 / core-ai 摘要）。宿主全局 CSS 生效，
+// 跨插件（core-checklists 反链 / core-ai 摘要）。宿主全局 CSS 生效，
 // 仅新增少量样式在 style.css（Vite 提取，宿主注入）。
 // Vditor 依赖宿主同源 /vditor 静态资源（与宿主回退组件共享，离线可用）。
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -19,7 +19,6 @@ interface PluginBridgeApi {
     go: (view: string) => void;
     openNote: (rel: string) => void;
     openChecklist: (id: string) => void;
-    openRecord: (id: string) => void;
   };
   /** 宿主能力（搜索迁回本体后经此调用，含搜索提供者聚合） */
   host?: { search: (query: string) => Promise<SearchHit[]> };
@@ -49,11 +48,6 @@ interface Checklist {
   id: string;
   title: string;
   items: ChecklistItem[];
-}
-interface RecordData {
-  id: string;
-  title: string;
-  content: string;
 }
 
 const AUTOSAVE = 800;
@@ -329,15 +323,15 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  /* 反链索引：跨插件取清单 + 记录数据，按 [[笔记路径]] 建索引 */
+  /* 反链索引：跨插件取清单数据，按笔记路径建索引（记录功能已删除） */
   const [backlinks, setBacklinks] = useState<
-    Map<string, { type: "清单" | "记录"; id: string; title: string }[]>
+    Map<string, { type: "清单"; id: string; title: string }[]>
   >(new Map());
   useEffect(() => {
     let alive = true;
     (async () => {
-      const map = new Map<string, { type: "清单" | "记录"; id: string; title: string }[]>();
-      const push = (key: string, entry: { type: "清单" | "记录"; id: string; title: string }) => {
+      const map = new Map<string, { type: "清单"; id: string; title: string }[]>();
+      const push = (key: string, entry: { type: "清单"; id: string; title: string }) => {
         const k = key.replace(/^\/+/, "");
         if (!k) return;
         const list = map.get(k) ?? [];
@@ -351,19 +345,6 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
             if (it.note) push(it.note, { type: "清单", id: c.id, title: c.title });
       } catch {
         /* 清单插件不可用则跳过 */
-      }
-      try {
-        const recs = (await api.call("records.list", {}, "core-records")) as RecordData[];
-        for (const r of recs) {
-          const re = /\[\[([^\]]+)\]\]/g;
-          let m: RegExpExecArray | null;
-          while ((m = re.exec(r.content)) !== null) {
-            const t = m[1].trim();
-            if (t) push(t, { type: "记录", id: r.id, title: r.title });
-          }
-        }
-      } catch {
-        /* 记录插件不可用则跳过 */
       }
       if (alive) setBacklinks(map);
     })();
@@ -450,12 +431,6 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
             results={results}
             query={query}
             onOpen={async (hit) => {
-              // 插件搜索提供者命中（如记录）：跳转对应功能视图
-              if (hit.source === "core-records") {
-                const id = hit.path.split("/").pop()?.replace(/\.json$/, "") ?? "";
-                api.nav?.openRecord(id);
-                return;
-              }
               await openFile(hit.path);
               setQuery("");
             }}
@@ -814,7 +789,7 @@ function BacklinksPanel({
   nav,
 }: {
   activePath: string;
-  backlinks: Map<string, { type: "清单" | "记录"; id: string; title: string }[]>;
+  backlinks: Map<string, { type: "清单"; id: string; title: string }[]>;
   nav?: PluginBridgeApi["nav"];
 }) {
   const [open, setOpen] = useState(false);
@@ -822,7 +797,7 @@ function BacklinksPanel({
   const matches = useMemo(() => {
     const base = activePath.replace(/^\/+/, "");
     const baseName = activePath.split("/").pop() ?? activePath;
-    const out: { type: "清单" | "记录"; title: string; id: string }[] = [];
+    const out: { type: "清单"; title: string; id: string }[] = [];
     let exact = 0;
     for (const [path, entries] of backlinks) {
       if (path === base) {
@@ -861,13 +836,10 @@ function BacklinksPanel({
               className="backlink-item"
               onClick={() => {
                 if (!nav) return;
-                if (m.type === "清单") nav.openChecklist(m.id);
-                else nav.openRecord(m.id);
+                nav.openChecklist(m.id);
               }}
             >
-              <span className={`backlink-type backlink-type-${m.type === "清单" ? "check" : "record"}`}>
-                {m.type}
-              </span>
+              <span className="backlink-type backlink-type-check">{m.type}</span>
               <span className="backlink-title">{m.title}</span>
             </button>
           ))}
@@ -927,10 +899,8 @@ function SearchResults({
   );
 }
 
-/** 搜索来源显示名（插件 id → 中文） */
-const SOURCE_LABEL: Record<string, string> = {
-  "core-records": "记录",
-};
+/** 搜索来源显示名（插件 id → 中文；当前无搜索提供者插件，保留空表供未来扩展） */
+const SOURCE_LABEL: Record<string, string> = {};
 
 /** 大小写不敏感的关键词高亮（安全转义正则） */
 function highlight(text: string, query: string): React.ReactNode {

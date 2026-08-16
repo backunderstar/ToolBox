@@ -1003,51 +1003,48 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// 原生核心插件全链路：真实 DLL 加载 → create → records CRUD。
-    /// 需要先构建核心插件（`cargo build -p tb-records`），DLL 不存在时跳过。
+    /// 原生核心插件全链路：真实 DLL 加载 → create → notes CRUD。
+    /// 需要先构建核心插件（`cargo build -p tb-notes`），DLL 不存在时跳过。
     #[test]
-    fn native_plugin_load_and_call() {        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_records.dll");
+    fn native_plugin_load_and_call() {
+        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_notes.dll");
         if !dll.exists() {
-            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-records");
+            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-notes");
             return;
         }
         let base = std::env::temp_dir().join(format!("tb-native-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let vault = base.join("vault");
-        std::fs::create_dir_all(&vault).unwrap();
+        std::fs::create_dir_all(vault.join("notes")).unwrap();
 
         let cfg = json!({ "vault": vault.to_string_lossy() }).to_string();
-        let plugin = NativePlugin::load(&dll, "core-records", &cfg).expect("DLL 应能加载");
+        let plugin = NativePlugin::load(&dll, "core-notes", &cfg).expect("DLL 应能加载");
 
-        // 空列表
-        let list = plugin.call("records.list", &json!({})).unwrap();
-        assert!(list.as_array().unwrap().is_empty(), "初始应为空: {list}");
+        // 新建
+        plugin.call("notes.create", &json!({ "rel": "notes/测试.md" })).unwrap();
+        assert!(vault.join("notes/测试.md").exists(), "文件应创建");
 
-        // 新建（缺省初值）
-        let created = plugin.call("records.create", &json!({})).unwrap();
-        let id = created["id"].as_str().unwrap().to_string();
-        assert_eq!(created["title"], "未命名记录");
-        assert!(vault.join("data/records").join(format!("{id}.json")).exists());
+        // 写入 + 读取
+        plugin.call("notes.write", &json!({ "rel": "notes/测试.md", "content": "# 你好\n" })).unwrap();
+        let content = plugin.call("notes.read", &json!({ "rel": "notes/测试.md" })).unwrap();
+        assert_eq!(content, "# 你好\n");
 
-        // 保存
-        let mut rec = created.clone();
-        rec["title"] = json!("修改后标题");
-        let saved = plugin.call("records.save", &json!({ "record": rec })).unwrap();
-        assert_eq!(saved["title"], "修改后标题");
+        // 重命名
+        plugin.call("notes.rename", &json!({ "from": "notes/测试.md", "to": "notes/改名.md" })).unwrap();
+        assert!(!vault.join("notes/测试.md").exists());
+        assert!(vault.join("notes/改名.md").exists());
+
+        // 列表
+        let list = plugin.call("notes.list", &json!({})).unwrap();
+        assert_eq!(list.as_array().unwrap().len(), 1, "应只剩改名后的笔记");
 
         // 删除
-        plugin.call("records.delete", &json!({ "id": id })).unwrap();
-        assert!(plugin.call("records.list", &json!({})).unwrap().as_array().unwrap().is_empty());
+        plugin.call("notes.delete", &json!({ "rel": "notes/改名.md" })).unwrap();
+        assert!(plugin.call("notes.list", &json!({})).unwrap().as_array().unwrap().is_empty());
 
         // 未知命令 → 错误
         let err = plugin.call("no.such", &json!({})).unwrap_err();
         assert!(err.contains("未知命令"), "错误信息: {err}");
-
-        // 搜索提供者
-        plugin.call("records.create", &json!({ "partial": { "title": "插件化设计", "content": "C ABI 契约" } })).unwrap();
-        let hits = plugin.call("search.provide", &json!({ "query": "插件化" })).unwrap();
-        assert_eq!(hits.as_array().unwrap().len(), 1);
-        assert_eq!(hits[0]["title"], "插件化设计");
 
         drop(plugin);
         let _ = std::fs::remove_dir_all(&base);

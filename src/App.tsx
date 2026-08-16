@@ -4,7 +4,6 @@ import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
 import { PluginProvider, usePlugins } from "./core/plugins";
 import { ChecklistProvider } from "./core/checklists";
-import { RecordsProvider } from "./core/records";
 import { ProjectsProvider } from "./core/projects";
 import { NavProvider } from "./core/navigation";
 import type { ViewParams } from "./core/navigation";
@@ -20,7 +19,6 @@ import { WelcomeView } from "./components/WelcomeView";
 import { NotesView } from "./components/NotesView";
 import { PluginsView } from "./components/PluginsView";
 import { ChecklistView } from "./components/ChecklistView";
-import { RecordsView } from "./components/RecordsView";
 import { ProjectsView } from "./components/ProjectsView";
 import { AIChatView } from "./components/AIChatView";
 import { BlogView } from "./components/BlogView";
@@ -50,11 +48,9 @@ export default function App() {
       <VaultProvider>
         <PluginProvider>
           <ChecklistProvider>
-            <RecordsProvider>
-              <ProjectsProvider>
-                <AppInner />
-              </ProjectsProvider>
-            </RecordsProvider>
+            <ProjectsProvider>
+              <AppInner />
+            </ProjectsProvider>
           </ChecklistProvider>
         </PluginProvider>
       </VaultProvider>
@@ -164,10 +160,6 @@ function AppInner() {
         setView("checklist");
         setViewParams({ openChecklistId: id });
       },
-      openRecord: (id: string) => {
-        setView("records");
-        setViewParams({ openRecordId: id });
-      },
     }),
     [view, viewParams]
   );
@@ -222,16 +214,6 @@ function AppInner() {
                 )
               ) : (
                 <CoreDisabled name="清单" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
-              )
-            ) : view === "records" ? (
-              corePluginEnabled(pluginCtx.plugins, "core-records") ? (
-                hasPluginUi(pluginCtx.plugins, "core-records") ? (
-                  <PluginUiView pluginId="core-records" />
-                ) : (
-                  <RecordsView />
-                )
-              ) : (
-                <CoreDisabled name="记录" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
             ) : view === "projects" ? (
               corePluginEnabled(pluginCtx.plugins, "core-projects") ? (

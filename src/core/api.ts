@@ -74,9 +74,6 @@ export const vaultSet = (path: string) =>
 
 export const fsList = (vault: string) =>
   pluginCall(vault, "core-notes", "notes.list", {}) as Promise<FileEntry[]>;
-/** 列出 vault 指定目录下的全部条目（含非 .md 文件，供 JSON 数据枚举） */
-export const fsListDir = (vault: string, dir: string) =>
-  pluginCall(vault, "core-notes", "notes.listDir", { dir }) as Promise<FileEntry[]>;
 export const fsRead = (vault: string, rel: string) =>
   pluginCall(vault, "core-notes", "notes.read", { rel }) as Promise<string>;
 export const fsWrite = (vault: string, rel: string, content: string) =>

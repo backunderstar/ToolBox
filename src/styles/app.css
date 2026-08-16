@@ -198,6 +198,22 @@
   overflow: hidden;
 }
 
+/* 插件自带前端容器：占满主区（视图自行滚动），子视图铺满 */
+.plugin-ui-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.plugin-ui-container {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.plugin-ui-container > * {
+  height: 100%;
+}
+
 /* 概览视图：自带滚动与留白 */
 .welcome {
   height: 100%;

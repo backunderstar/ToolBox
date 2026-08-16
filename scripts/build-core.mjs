@@ -16,15 +16,6 @@ const isRelease = process.argv.includes("--release");
 
 const PLUGINS = [
   {
-    id: "core-records",
-    name: "记录",
-    dll: "tb_records.dll",
-    description: "核心插件：工作记录（data/records CRUD + 搜索提供者）",
-    ui: { entry: "ui/index.js" },
-    searchProvider: true,
-    nav: [{ id: "records", label: "记录", icon: "notebook", group: "工作区", view: "RecordsView" }],
-  },
-  {
     id: "core-notes",
     name: "笔记",
     dll: "tb_notes.dll",

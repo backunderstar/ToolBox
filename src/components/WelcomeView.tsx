@@ -5,7 +5,6 @@ import {
   IconFileText,
   IconFolder,
   IconGlobe,
-  IconNotebook,
   IconPuzzle,
   IconSparkle,
 } from "./icons";
@@ -39,13 +38,6 @@ const MODULES: Module[] = [
     milestone: "M4 已完成",
     done: true,
     icon: IconCheckSquare,
-  },
-  {
-    name: "记录",
-    desc: "工作日志与流水记录，支持筛选、统计与导出。",
-    milestone: "M4 已完成",
-    done: true,
-    icon: IconNotebook,
   },
   {
     name: "AI 整理",

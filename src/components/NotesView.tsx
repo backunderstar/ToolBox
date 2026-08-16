@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { useVault } from "../core/vault";
-import { useNav } from "../core/navigation";
 import type { SearchHit } from "../core/api";
 import { Editor } from "./Editor";
 import { FileTree } from "./FileTree";
@@ -31,7 +30,6 @@ export function NotesView({
   onToggleFocus,
 }: NotesViewProps) {
   const vault = useVault();
-  const nav = useNav();
   const {
     path,
     files,
@@ -130,13 +128,6 @@ export function NotesView({
             results={results}
             query={query}
             onOpen={async (hit) => {
-              // 插件搜索提供者命中（如记录）：跳转对应功能视图
-              if (hit.source === "core-records") {
-                const id =
-                  hit.path.split("/").pop()?.replace(/\.json$/, "") ?? "";
-                nav.openRecord(id);
-                return;
-              }
               await openFile(hit.path);
               setQuery(""); // 等文件真正打开后再退出搜索态，避免旧内容闪现
             }}
@@ -244,10 +235,8 @@ function SearchResults({
   );
 }
 
-/** 搜索来源显示名（插件 id → 中文） */
-const SOURCE_LABEL: Record<string, string> = {
-  "core-records": "记录",
-};
+/** 搜索来源显示名（插件 id → 中文；当前无搜索提供者插件，保留空表供未来扩展） */
+const SOURCE_LABEL: Record<string, string> = {};
 
 /** 大小写不敏感的关键词高亮（安全转义正则） */
 function highlight(text: string, query: string): ReactNode {

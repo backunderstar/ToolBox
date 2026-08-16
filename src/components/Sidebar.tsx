@@ -5,7 +5,6 @@ import {
   IconGear,
   IconGlobe,
   IconGrid,
-  IconNotebook,
   IconPuzzle,
   IconSparkle,
 } from "./icons";
@@ -18,7 +17,6 @@ export type ViewId =
   | "notes"
   | "plugins"
   | "checklist"
-  | "records"
   | "projects"
   | "ai"
   | "blog"
@@ -34,7 +32,6 @@ export interface NavItem {
 
 /** 插件 nav 图标名 → 组件映射（records 等核心插件声明）。 */
 const ICON_MAP: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
-  notebook: IconNotebook,
   "file-text": IconFileText,
   grid: IconGrid,
   check: IconCheckSquare,
@@ -94,7 +91,7 @@ interface SidebarProps {
   collapsed: boolean;
   /** 导航偏好（顺序 + 隐藏）；由 App 从 localStorage 加载并持久化 */
   prefs: NavPrefs;
-  /** 启用插件的导航入口（插件 nav 声明，如 core-records → 记录） */
+  /** 启用插件的导航入口（插件 nav 声明，如 core-notes → 笔记） */
   pluginNav: PluginNav[];
 }
 
@@ -130,7 +127,6 @@ export function Sidebar({ activeView, onSelect, collapsed, prefs, pluginNav }: S
                 item.id === "notes" ||
                 item.id === "plugins" ||
                 item.id === "checklist" ||
-                item.id === "records" ||
                 item.id === "projects" ||
                 item.id === "ai" ||
                 item.id === "blog" ||
