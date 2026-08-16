@@ -159,6 +159,8 @@ pub fn run() {
             backup::spawn_auto(app.handle().clone());
             // 版本历史自动提交线程（编辑防抖 15s 后落盘为一次提交）
             history::spawn_auto_committer();
+            // 插件事件桥：进程插件事件 → 前端 plugin-event 事件
+            plugins::events::spawn_event_forwarder(app.handle().clone());
             // 系统托盘（关窗常驻后台）
             create_tray(app.handle())?;
             // 桌面半透明浮窗（快速待办）

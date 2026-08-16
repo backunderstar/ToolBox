@@ -5,6 +5,7 @@
 //! - 崩溃/退出通过 `Eof` 信号检测，由上层管理器决定是否重启
 
 use crate::core::path::resolve_safe;
+use crate::plugins::events::PluginEvent;
 use crate::rpc::{self, Message, RpcError};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -59,6 +60,8 @@ pub struct ProcessPlugin {
     /// 插件声明的权限（execute_core_api 据此放行核心 API）
     permissions: Vec<String>,
     pub plugin_id: String,
+    /// 事件桥：插件 Notification → 前端（纯 mpsc，不接触 tauri 类型）
+    event_tx: Sender<PluginEvent>,
 }
 
 impl ProcessPlugin {
@@ -70,6 +73,7 @@ impl ProcessPlugin {
         plugin_dir: &Path,
         vault: &Path,
         permissions: Vec<String>,
+        event_tx: Sender<PluginEvent>,
     ) -> Result<Self, String> {
         let mut child = Command::new(program)
             .args(args)
@@ -92,6 +96,7 @@ impl ProcessPlugin {
             vault: vault.to_path_buf(),
             permissions,
             plugin_id: plugin_id.to_string(),
+            event_tx,
         })
     }
 
@@ -157,6 +162,11 @@ impl ProcessPlugin {
                 }
                 Incoming::Event { event, data } => {
                     eprintln!("[plugin:{}] event {event}: {data}", self.plugin_id);
+                    let _ = self.event_tx.send(PluginEvent {
+                        plugin_id: self.plugin_id.clone(),
+                        event,
+                        data,
+                    });
                 }
                 Incoming::Eof => {
                     return Err(format!("插件进程已退出: {}", self.plugin_id));

@@ -1,5 +1,6 @@
 //! 插件系统：清单发现、注册表、生命周期（启用/禁用/热重载/崩溃重启）。
 
+pub mod events;
 pub mod manifest;
 pub mod process;
 
@@ -446,8 +447,13 @@ impl PluginManager {
         }
         let dir = self.records[idx].dir.clone();
         let vault = self.vault.clone().ok_or("vault 未设置")?;
+        // 事件桥：从进程级总线取发送端（setup 已初始化；兜底丢弃通道）
+        let event_tx = events::sender().unwrap_or_else(|| {
+            let (tx, _rx) = std::sync::mpsc::channel();
+            tx
+        });
         let mut plugin =
-            ProcessPlugin::spawn(&id, &cmd[0], &cmd[1..], &dir, &vault, perms)?;
+            ProcessPlugin::spawn(&id, &cmd[0], &cmd[1..], &dir, &vault, perms, event_tx)?;
         let commands = plugin.init(API_TIMEOUT)?;
         self.records[idx].commands = commands;
         self.records[idx].process = Some(plugin);
@@ -578,6 +584,7 @@ mod tests {
     use super::*;
     use crate::rpc::Message;
     use serde_json::json;
+    use std::sync::mpsc::channel;
 
     #[test]
     fn manifest_validation() {
@@ -638,9 +645,16 @@ mod tests {
         let cmd = m.command.clone().unwrap();
         let vault = std::env::temp_dir();
         let perms = m.permissions.clone();
-        let mut p =
-            ProcessPlugin::spawn(&m.id, &cmd[0], &cmd[1..], &plugin_dir, &vault, perms)
-                .expect("应能启动 python 进程");
+        let mut p = ProcessPlugin::spawn(
+            &m.id,
+            &cmd[0],
+            &cmd[1..],
+            &plugin_dir,
+            &vault,
+            perms,
+            channel().0,
+        )
+        .expect("应能启动 python 进程");
         let commands = p.init(Duration::from_secs(15)).unwrap();
         assert!(
             commands.contains(&"csv.convert".to_string()),
@@ -668,6 +682,55 @@ mod tests {
         p.shutdown();
     }
 
+    /// 事件桥：csv-tool 的 csv.eventTest 发 Notification → 事件总线收到
+    /// （ProcessPlugin 只持 mpsc Sender，不接触 tauri 类型——规避历史加载崩溃）。
+    #[test]
+    fn bridge_event_forward() {
+        use crate::plugins::events::PluginEvent;
+        use std::sync::mpsc::channel;
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let plugin_dir = base.join("plugins").join("csv-tool");
+        let manifest_raw =
+            std::fs::read_to_string(plugin_dir.join("plugin.json")).expect("示例插件应存在");
+        let m: PluginManifest = serde_json::from_str(&manifest_raw).unwrap();
+        let cmd = m.command.clone().unwrap();
+        let vault = std::env::temp_dir();
+        let (event_tx, event_rx) = channel::<PluginEvent>();
+        let mut p = ProcessPlugin::spawn(
+            &m.id,
+            &cmd[0],
+            &cmd[1..],
+            &plugin_dir,
+            &vault,
+            m.permissions.clone(),
+            event_tx,
+        )
+        .expect("应能启动 python 进程");
+        p.init(Duration::from_secs(15)).unwrap();
+        let res = p
+            .call(
+                "csv.eventTest",
+                json!({ "percent": 60 }),
+                Duration::from_secs(15),
+            )
+            .unwrap();
+        assert!(
+            res["text"].as_str().unwrap().contains("3 个进度事件"),
+            "结果: {res}"
+        );
+        // 应收到 3 个 progress 事件（调用期间实时转发）
+        let ev = event_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(ev.plugin_id, "csv-tool");
+        assert_eq!(ev.event, "progress");
+        assert_eq!(ev.data["percent"], 20);
+        assert_eq!(
+            event_rx.try_iter().count(),
+            2,
+            "还应有剩余 2 个事件"
+        );
+        p.shutdown();
+    }
+
     /// 错误路径：未知命令应返回插件错误（RPC error 透传）。
     #[test]
     fn bridge_error_path() {
@@ -679,8 +742,16 @@ mod tests {
         let cmd = m.command.clone().unwrap();
         let vault = std::env::temp_dir();
         let perms = m.permissions.clone();
-        let mut p =
-            ProcessPlugin::spawn(&m.id, &cmd[0], &cmd[1..], &plugin_dir, &vault, perms).unwrap();
+        let mut p = ProcessPlugin::spawn(
+            &m.id,
+            &cmd[0],
+            &cmd[1..],
+            &plugin_dir,
+            &vault,
+            perms,
+            channel().0,
+        )
+        .unwrap();
         p.init(Duration::from_secs(15)).unwrap();
         let err = p
             .call(
@@ -704,6 +775,7 @@ mod tests {
             &vault,
             &vault,
             vec![],
+            channel().0,
         )
         .expect("应能启动 python");
         let err = p.init(Duration::from_millis(800)).unwrap_err();
@@ -727,6 +799,7 @@ mod tests {
             &vault,
             &vault,
             vec![],
+            channel().0,
         )
         .expect("应能启动 python");
         // 大载荷（远超管道缓冲）写入无人消费的 stdin → 写线程阻塞

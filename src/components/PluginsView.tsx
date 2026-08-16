@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { usePlugins } from "../core/plugins";
 import { useVault } from "../core/vault";
 import { CommandTry } from "./CommandTry";
@@ -16,6 +17,17 @@ const STATUS_TEXT: Record<string, string> = {
   error: "错误",
 };
 
+/** 事件桥载荷（与 Rust PluginEvent camelCase 对应） */
+interface PluginEventPayload {
+  pluginId: string;
+  event: string;
+  data: unknown;
+}
+
+interface PluginEventLog extends PluginEventPayload {
+  time: number;
+}
+
 export function PluginsView() {
   const vault = useVault();
   const {
@@ -32,6 +44,22 @@ export function PluginsView() {
 
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [events, setEvents] = useState<PluginEventLog[]>([]);
+
+  /* 事件桥：进程插件推送的事件（plugin-event）实时追加到日志 */
+  useEffect(() => {
+    let un: (() => void) | null = null;
+    listen<PluginEventPayload>("plugin-event", (e) => {
+      setEvents((prev) =>
+        [...prev, { ...e.payload, time: Date.now() }].slice(-50)
+      );
+    })
+      .then((fn) => (un = fn))
+      .catch(() => {
+        /* 浏览器预览环境无事件桥 */
+      });
+    return () => un?.();
+  }, []);
 
   const doUninstall = async (id: string) => {
     setBusy((b) => ({ ...b, [id]: true }));
@@ -182,6 +210,44 @@ export function PluginsView() {
           setConfirmDel(null);
         }}
       />
+
+      {/* 事件桥日志：进程插件实时推送的事件（Notification） */}
+      {events.length > 0 && (
+        <div className="plugin-events">
+          <div className="plugin-events-head">
+            <span>插件事件（实时）</span>
+            <button
+              className="icon-btn sm"
+              title="清空事件日志"
+              aria-label="清空事件日志"
+              onClick={() => setEvents([])}
+            >
+              <IconTrash width={12} height={12} />
+            </button>
+          </div>
+          <div className="plugin-events-list">
+            {events
+              .slice(-15)
+              .reverse()
+              .map((e, i) => (
+                <div key={i} className="plugin-event">
+                  <span className="plugin-event-time">{fmtTime(e.time)}</span>
+                  <span className="plugin-event-id">{e.pluginId}</span>
+                  <span className="plugin-event-name">{e.event}</span>
+                  <code className="plugin-event-data">
+                    {JSON.stringify(e.data)}
+                  </code>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function fmtTime(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }

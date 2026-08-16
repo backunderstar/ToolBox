@@ -21,11 +21,13 @@ def handle_request(msg):
     params = msg.get("params") or {}
     try:
         if method == "init":
-            result = {"apiVersion": 1, "commands": ["csv.convert"]}
+            result = {"apiVersion": 1, "commands": ["csv.convert", "csv.eventTest"]}
         elif method == "call":
             command = params.get("command", "")
             if command == "csv.convert":
                 result = convert(params.get("args") or {})
+            elif command == "csv.eventTest":
+                result = event_test(params.get("args") or {})
             else:
                 raise ValueError("未知命令: %s" % command)
         else:
@@ -33,6 +35,25 @@ def handle_request(msg):
         return {"id": mid, "result": result}
     except Exception as e:  # noqa: BLE001
         return {"id": mid, "error": {"code": -32000, "message": str(e)}}
+
+
+def notify(event, params):
+    """向核心推送事件（Notification，无 id）——事件桥示例。"""
+    sys.stdout.write(
+        json.dumps({"method": event, "params": params}, ensure_ascii=False) + "\n"
+    )
+    sys.stdout.flush()
+
+
+def event_test(args):
+    percent = int(args.get("percent", 42))
+    # 模拟耗时任务：边处理边汇报进度事件
+    for step in range(1, 4):
+        notify(
+            "progress",
+            {"percent": int(percent * step / 3), "message": "模拟进度 %s/3" % step},
+        )
+    return {"text": "已发送 %d 个进度事件" % step}
 
 
 def convert(args):
