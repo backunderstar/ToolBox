@@ -7,6 +7,8 @@ dist/
 target/
 src-tauri/target/
 src-tauri/gen/
+# 核心插件打包资源（release DLL，由 pnpm build:core:release 生成）
+src-tauri/resources/_core/
 
 # 系统与编辑器
 .DS_Store

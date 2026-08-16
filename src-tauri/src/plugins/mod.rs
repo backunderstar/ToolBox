@@ -125,7 +125,7 @@ fn global_plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// 以下划线开头，与外部插件 id（仅小写字母/数字/连字符）不可能冲突。
 pub const CORE_DIR: &str = "_core";
 
-/// 打包版随应用分发核心插件：从资源目录（`resource_dir/_core`，安装包内）
+/// 打包版随应用分发核心插件：从资源目录（`resource_dir/resources/_core`，安装包内）
 /// 部署到 `%APPDATA%/com.toolbox.desktop/plugins/_core`（清空后整体复制，
 /// 保证与应用版本一致；核心插件是随应用分发的信任代码）。
 /// dev 模式资源目录无 `_core` → 跳过（由 `pnpm build:core` 部署 debug DLL）。
@@ -133,7 +133,8 @@ pub fn ensure_core_plugins(app: &tauri::AppHandle) {
     let Ok(res) = app.path().resource_dir() else {
         return;
     };
-    let src = res.join(CORE_DIR);
+    // bundle.resources 保留相对 tauri.conf.json 的路径（resources/_core）
+    let src = res.join("resources").join(CORE_DIR);
     if !src.is_dir() {
         return;
     }
