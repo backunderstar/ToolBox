@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 /// 笔记目录（vault/notes/）
-const NOTES_DIR: &str = "notes";
+// 索引范围已扩到整个 vault 根（顶栏全局搜索，用户决策）：collect_md 从 vault 根递归，
+// 排除 IGNORED_DIRS（site/.toolbox/node_modules/target/.git）。
 const IGNORED_DIRS: &[&str] = &[".git", ".toolbox", "node_modules", "target", "site"];
 
 /// 索引数据库文件名（位于 vault/.toolbox/ 下）。
@@ -99,10 +100,12 @@ fn open_index(root: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// 增量同步：扫描 notes/ 全部 .md，与索引比对，只重建变化的条目、清理删除的。
-fn sync_index(conn: &mut Connection, notes: &Path) -> Result<(), String> {
+/// 增量同步：扫描 vault 下全部 .md（排除 site/.toolbox/node_modules 等，见 IGNORED_DIRS），
+/// 与索引比对，只重建变化的条目、清理删除的。**索引范围为整个 vault 根**——
+/// 顶栏"全局搜索"搜索所有位置，不只 notes/（用户决策）。
+fn sync_index(conn: &mut Connection, root: &Path) -> Result<(), String> {
     let mut files = Vec::new();
-    collect_md(notes, notes, NOTES_DIR, &mut files);
+    collect_md(root, root, "", &mut files);
 
     let tx = conn.transaction().map_err(|e| format!("开启事务失败: {e}"))?;
     let mut seen: HashSet<String> = HashSet::new();
@@ -267,8 +270,8 @@ fn reset_index(root: &Path) {
 /// 单次搜索：同步索引 → 文件名匹配优先 → 内容匹配（FTS/LIKE）。
 fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     let root = PathBuf::from(vault);
-    let notes = root.join(NOTES_DIR);
-    if !root.is_dir() || !notes.is_dir() {
+    // 全局搜索：只要工作区存在即可（不一定有 notes/ 目录）
+    if !root.is_dir() {
         return Ok(Vec::new());
     }
     let q = query.trim();
@@ -277,7 +280,7 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     }
 
     let mut conn = open_index(&root)?;
-    sync_index(&mut conn, &notes)?;
+    sync_index(&mut conn, &root)?;
 
     let mut hits: Vec<SearchHit> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -337,24 +340,24 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
             Ok(())
         })();
         if fts_ok.is_err() {
-            linear_content_scan(&notes, q, &mut seen, &mut hits);
+            linear_content_scan(&root, q, &mut seen, &mut hits);
         }
     } else {
-        linear_content_scan(&notes, q, &mut seen, &mut hits);
+        linear_content_scan(&root, q, &mut seen, &mut hits);
     }
     Ok(hits)
 }
 
-/// 短查询兜底：线性读文件内容匹配。
+/// 短查询兜底：线性读文件内容匹配（搜索范围为整个 vault）。
 fn linear_content_scan(
-    notes: &Path,
+    root: &Path,
     q: &str,
     seen: &mut HashSet<String>,
     hits: &mut Vec<SearchHit>,
 ) {
     use std::io::Read;
     let mut files = Vec::new();
-    collect_md(notes, notes, NOTES_DIR, &mut files);
+    collect_md(root, root, "", &mut files);
     for (rel, abs) in files {
         if seen.contains(&rel) {
             continue;
@@ -454,6 +457,28 @@ mod tests {
         let v = tmp_vault("empty");
         assert!(search(&v.to_string_lossy(), "  ").unwrap().is_empty());
         assert!(search(&v.to_string_lossy(), "随便").unwrap().is_empty());
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn global_search_covers_whole_vault() {
+        // 全局搜索（用户决策）：vault 根下任意位置的 .md 都进索引（不只 notes/），
+        // 但排除目录（.toolbox/site/node_modules 等）不索引。
+        let v = tmp_vault("global");
+        std::fs::create_dir_all(v.join("projects/foo")).unwrap();
+        std::fs::write(v.join("projects/foo/README.md"), "项目说明：独特术语xyz。\n").unwrap();
+        std::fs::write(v.join("notes/a.md"), "普通内容。\n").unwrap();
+        let hits = search(&v.to_string_lossy(), "独特术语").unwrap();
+        assert_eq!(hits.len(), 1, "应命中 projects/ 下的 md: {hits:?}");
+        assert_eq!(hits[0].path, "projects/foo/README.md");
+
+        std::fs::create_dir_all(v.join(".toolbox")).unwrap();
+        std::fs::write(v.join(".toolbox/secret.md"), "独特术语xyz 在排除目录。\n").unwrap();
+        let hits2 = search(&v.to_string_lossy(), "独特术语").unwrap();
+        assert!(
+            hits2.iter().all(|h| h.path != ".toolbox/secret.md"),
+            "排除目录不应命中: {hits2:?}"
+        );
         std::fs::remove_dir_all(&v).ok();
     }
 

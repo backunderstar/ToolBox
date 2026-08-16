@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { IconFloat, IconFolder, IconMoon, IconPanelLeft, IconSun } from "./icons";
 import type { ThemeMode } from "../themes/themes";
 import { APP_TAG } from "../core/version";
+import type { SearchHit } from "../core/api";
 
 interface TopBarProps {
   theme: ThemeMode;
@@ -9,6 +10,12 @@ interface TopBarProps {
   query: string;
   onQueryChange: (q: string) => void;
   searchEnabled: boolean;
+  /** 全局搜索命中（vault.results；null = 未搜索/已清空） */
+  results: SearchHit[] | null;
+  /** 搜索进行中 */
+  searching: boolean;
+  /** 点击搜索结果：打开对应文件 */
+  onOpenResult: (path: string) => void;
   vaultName: string | null;
   onPickVault: () => void;
   navCollapsed: boolean;
@@ -25,6 +32,9 @@ export function TopBar({
   query,
   onQueryChange,
   searchEnabled,
+  results,
+  searching,
+  onOpenResult,
   vaultName,
   onPickVault,
   navCollapsed,
@@ -89,12 +99,35 @@ export function TopBar({
         <input
           ref={searchRef}
           type="text"
-          placeholder="搜索笔记（文件名 + 内容）"
+          placeholder="全局搜索（文件名 + 内容）"
           value={query}
           disabled={!searchEnabled}
           onChange={(e) => onQueryChange(e.target.value)}
         />
         <kbd>Ctrl K</kbd>
+        {/* 全局搜索结果下拉：文件名匹配优先；source 标记插件提供者命中 */}
+        {searchEnabled && query.trim() && (
+          <div className="search-dropdown">
+            {searching ? (
+              <div className="search-hint">搜索中…</div>
+            ) : results === null ? null : results.length === 0 ? (
+              <div className="search-hint">无结果</div>
+            ) : (
+              results.map((r) => (
+                <button
+                  key={r.path}
+                  className="search-item"
+                  onClick={() => onOpenResult(r.path)}
+                  title={r.snippet}
+                >
+                  <span className="search-item-name">{r.filename}</span>
+                  <span className="search-item-path">{r.path}</span>
+                  {r.source && <span className="badge badge-provider">{r.source}</span>}
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       <div className="spacer" />

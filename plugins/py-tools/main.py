@@ -31,7 +31,14 @@ def handle_request(msg):
     params = msg.get("params") or {}
     try:
         if method == "init":
-            result = {"commands": ["pytext.stats", "pytext.humanDate", "pytext.eventDemo"]}
+            result = {
+                "commands": [
+                    "pytext.stats",
+                    "pytext.humanDate",
+                    "pytext.eventDemo",
+                    "search.provide",
+                ]
+            }
         elif method == "call":
             command = params.get("command", "")
             args = params.get("args") or {}
@@ -41,6 +48,8 @@ def handle_request(msg):
                 result = human_date(args.get("date", ""), args.get("fmt", "%Y-%m-%d"))
             elif command == "pytext.eventDemo":
                 result = event_demo(args)
+            elif command == "search.provide":
+                result = search_provide(args)
             else:
                 raise ValueError("未知命令: %s" % command)
         else:
@@ -54,6 +63,22 @@ def notify(event, params):
     """向宿主推送事件（Notification，无 id）→ 前端 api.on(event) 收到。"""
     sys.stdout.write(json.dumps({"method": event, "params": params}, ensure_ascii=False) + "\n")
     sys.stdout.flush()
+
+
+def call_core(method, params):
+    """调用核心 API（fs.readText / fs.listDir 等，按 plugin.json 的 permissions 放行）。
+
+    插件 → 宿主发 {"id": N, "method": <核心 API>, "params": {...}}，宿主响应同 id。
+    返回响应里的 result 字段（错误则抛异常）。注意：必须在处理 call 请求期间调用
+    （宿主在该期间会响应核心请求）。
+    """
+    sys.stdout.write(json.dumps({"id": 9000, "method": method, "params": params}, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+    msg = json.loads(sys.stdin.readline())
+    if "error" in msg:
+        err = msg["error"]
+        raise ValueError(err.get("message", "核心 API 错误"))
+    return msg.get("result")
 
 
 def text_stats(text):
@@ -87,6 +112,47 @@ def event_demo(args):
     for step in range(1, 4):
         notify("progress", {"percent": int(percent * step / 3), "message": "处理中 %s/3" % step})
     return {"text": "已发送 %d 个进度事件" % step}
+
+
+def search_provide(args):
+    """搜索提供者（manifest searchProvider: true 后进入全局搜索聚合）。
+
+    宿主 search_all 调用 search.provide {query, limit} → 返回 [{path, title, snippet}]。
+    这里演示：经核心 API fs.listDir（需 fs:read:vault 权限）递归枚举 vault 文件，
+    文件名/路径包含关键词即命中（真实提供者可做内容搜索，本示例保持最小）。
+    """
+    query = (args.get("query") or "").lower()
+    limit = int(args.get("limit") or 20)
+    if not query:
+        return []
+    hits = []
+
+    def walk(rel):
+        if len(hits) >= limit:
+            return
+        try:
+            entries = call_core("fs.listDir", {"dir": rel})
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write("[py-tools] fs.listDir(%r) 失败: %s\n" % (rel, e))
+            return
+        for e in entries:
+            if len(hits) >= limit:
+                return
+            if e.get("isDir"):
+                walk(e["path"])
+            else:
+                if query in e["path"].lower() or query in e["name"].lower():
+                    hits.append(
+                        {
+                            "path": e["path"],
+                            "title": e["name"],
+                            "snippet": "文件名匹配（py-tools 搜索提供者）",
+                        }
+                    )
+
+    walk("")
+    sys.stderr.write("[py-tools] search.provide query=%r hits=%d\n" % (query, len(hits)))
+    return hits[:limit]
 
 
 def main():

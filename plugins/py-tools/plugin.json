@@ -2,9 +2,10 @@
   "id": "py-tools",
   "name": "Python 文本工具",
   "version": "0.1.0",
-  "description": "文本统计 / 日期人性化（第三方库 vendored demo）/ 进度事件（JSON-RPC over stdio）",
+  "description": "文本统计 / 日期人性化（第三方库 vendored demo）/ 进度事件 / 搜索提供者示例",
   "runtime": "process",
   "command": ["python", "main.py"],
-  "permissions": ["log"],
+  "permissions": ["fs:read:vault", "log"],
+  "searchProvider": true,
   "config": {}
 }

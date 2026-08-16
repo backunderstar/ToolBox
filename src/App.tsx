@@ -214,9 +214,15 @@ function AppInner() {
           onToggleTheme={toggleThemeMode}
           query={vault.query}
           onQueryChange={vault.setQuery}
-          // 顶栏搜索仅服务于宿主回退笔记视图（已删除）——笔记视图恒为插件
-          // 自带前端（内置自己的搜索框），故顶栏搜索恒停用
-          searchEnabled={false}
+          // 顶栏搜索 = 全局全文搜索（vault 根下所有 .md，用户决策恢复）：
+          // 有工作区即可用；结果下拉里点击即打开对应文件
+          searchEnabled={!!vault.path}
+          results={vault.results}
+          searching={vault.searching}
+          onOpenResult={(p) => {
+            vault.openFile(p);
+            vault.setQuery("");
+          }}
           vaultName={vaultName}
           onPickVault={vault.pickVault}
           navCollapsed={navCollapsed}

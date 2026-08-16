@@ -195,6 +195,7 @@ impl ProcessPlugin {
         let need = match method {
             "fs.readText" => Some("fs:read:vault"),
             "fs.writeText" => Some("fs:write:vault"),
+            "fs.listDir" => Some("fs:read:vault"),
             "log" => Some("log"),
             _ => None, // 未知方法统一在 execute_core_api 拒绝
         };
@@ -240,6 +241,41 @@ impl ProcessPlugin {
                 }
                 std::fs::write(&p, content).map_err(|e| format!("写入失败: {e}"))?;
                 Ok(Value::Null)
+            }
+            // 目录枚举（searchProvider 等插件需要先知道 vault 里有什么才能搜索）。
+            // dir 为空 = vault 根（resolve_safe 拒绝空路径，故特判）。
+            "fs.listDir" => {
+                let dir = params.get("dir").and_then(|v| v.as_str()).unwrap_or("");
+                let p = if dir.is_empty() {
+                    PathBuf::from(&self.vault)
+                } else {
+                    resolve_safe(&self.vault.to_string_lossy(), dir)?
+                };
+                if !p.is_dir() {
+                    return Err(format!("目录不存在: {dir}"));
+                }
+                let Ok(read) = std::fs::read_dir(&p) else {
+                    return Ok(json!([]));
+                };
+                let base = dir.trim_end_matches('/');
+                let mut entries: Vec<Value> = Vec::new();
+                for e in read.flatten() {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                    let size = if is_dir {
+                        None
+                    } else {
+                        e.metadata().ok().map(|m| m.len())
+                    };
+                    let rel = if base.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{base}/{name}")
+                    };
+                    entries.push(json!({ "name": name, "path": rel, "isDir": is_dir, "size": size }));
+                }
+                entries.sort_by_key(|v| v["path"].as_str().unwrap_or("").to_string());
+                Ok(json!(entries))
             }
             "log" => {
                 let msg = params.get("message").map(|v| v.to_string()).unwrap_or_default();
