@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{ai, backup, blog, projects, todos, vault};
+use core::{ai, backup, blog, projects, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -136,11 +136,6 @@ pub fn run() {
             backup::backup_config_set,
             backup::backup_list,
             backup::backup_restore,
-            todos::todos_list,
-            todos::todos_add,
-            todos::todos_toggle,
-            todos::todos_delete,
-            todos::todos_clear_done,
             float_toggle,
             float_set_locked,
         ])

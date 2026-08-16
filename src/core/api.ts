@@ -266,7 +266,7 @@ export const backupList = (vault: string) => invoke<BackupEntry[]>("backup_list"
 export const backupRestore = (vault: string, name: string) =>
   invoke<BackupInfo>("backup_restore", { vault, name });
 
-/* ---- 浮窗快速待办 ---- */
+/* ---- 浮窗快速待办（经 core-todos 原生插件；当前工作区来自 vault 配置） ---- */
 
 export interface TodosItem {
   id: string;
@@ -275,11 +275,33 @@ export interface TodosItem {
   createdAt: string;
 }
 
-export const todosList = () => invoke<TodosItem[]>("todos_list");
-export const todosAdd = (text: string) => invoke<TodosItem[]>("todos_add", { text });
-export const todosToggle = (id: string) => invoke<TodosItem[]>("todos_toggle", { id });
-export const todosDelete = (id: string) => invoke<TodosItem[]>("todos_delete", { id });
-export const todosClearDone = () => invoke<TodosItem[]>("todos_clear_done");
+/** 读取当前工作区路径（todos/plugin_call 等无显式 vault 的命令用） */
+async function currentVault(): Promise<string> {
+  const s = await vaultGet();
+  if (!s.path) throw new Error("请先选择工作区");
+  return s.path;
+}
+
+export const todosList = () =>
+  currentVault().then((v) =>
+    pluginCall(v, "core-todos", "todos.list", {})
+  ) as Promise<TodosItem[]>;
+export const todosAdd = (text: string) =>
+  currentVault().then((v) =>
+    pluginCall(v, "core-todos", "todos.add", { text })
+  ) as Promise<TodosItem[]>;
+export const todosToggle = (id: string) =>
+  currentVault().then((v) =>
+    pluginCall(v, "core-todos", "todos.toggle", { id })
+  ) as Promise<TodosItem[]>;
+export const todosDelete = (id: string) =>
+  currentVault().then((v) =>
+    pluginCall(v, "core-todos", "todos.delete", { id })
+  ) as Promise<TodosItem[]>;
+export const todosClearDone = () =>
+  currentVault().then((v) =>
+    pluginCall(v, "core-todos", "todos.clearDone", {})
+  ) as Promise<TodosItem[]>;
 /** 显示 / 隐藏浮窗（返回操作后可见状态） */
 export const floatToggle = () => invoke<boolean>("float_toggle");
 /** 锁定 / 解锁浮窗位置（锁定时禁用拖拽与改大小） */

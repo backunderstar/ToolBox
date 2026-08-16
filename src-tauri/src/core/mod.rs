@@ -5,10 +5,9 @@
 //! - `ai`      AI 网关：多提供商、对话、连通性测试（M6 落地）
 //! - `blog`    博客发布：frontmatter、站点生成与预览（M7 落地）
 //! - `backup`   自动备份：vault → .toolbox/backups，保留 N 份（Backlog 落地）
-//! - `todos`    快速待办：浮窗清单数据层（vault/data/todos/todos.json）
 //! - `search`   全文搜索：SQLite FTS5 索引（vault/.toolbox/search-fts.sqlite）
 //!
-//! 笔记/记录/清单/项目 已迁移为原生核心插件（core-plugins/*，cdylib）。
+//! 笔记/记录/清单/项目/待办 已迁移为原生核心插件（core-plugins/*，cdylib）。
 
 pub mod ai;
 pub mod backup;
@@ -16,5 +15,4 @@ pub mod blog;
 pub mod path;
 pub mod projects;
 pub mod search;
-pub mod todos;
 pub mod vault;

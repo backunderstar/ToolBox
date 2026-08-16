@@ -80,10 +80,13 @@ export function FloatApp() {
         if (alive) setReady(true);
       }
     })();
-    const un = listen("todos-changed", () => {
-      void todosList()
-        .then(setItems)
-        .catch(() => undefined);
+    const un = listen<{ pluginId: string; event: string }>("plugin-event", (e) => {
+      const payload = e.payload;
+      if (payload.pluginId === "core-todos" && payload.event === "todos-changed") {
+        void todosList()
+          .then(setItems)
+          .catch(() => undefined);
+      }
     });
     return () => {
       alive = false;
