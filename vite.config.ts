@@ -9,9 +9,11 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      // 忽略 Rust 侧与文件写入工具的临时文件（避免 EBUSY 崩溃）
+      // 忽略 Rust 侧与文件写入工具的临时文件（避免 EBUSY 崩溃）；
+      // workspace 化后 cargo target 在仓库根，必须显式忽略
       ignored: [
         "**/src-tauri/**",
+        "**/target/**",
         "**/.git/**",
         "**/.*.tmpdir/**",
         "**/*.tmp",

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { usePlugins } from "../core/plugins";
 import { useVault } from "../core/vault";
+import type { PluginInfo } from "../core/api";
 import { CommandTry } from "./CommandTry";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { IconGear, IconRefresh, IconTrash } from "./icons";
@@ -9,6 +10,7 @@ import { IconGear, IconRefresh, IconTrash } from "./icons";
 const RUNTIME_LABEL: Record<string, string> = {
   webview: "JS",
   process: "Python",
+  native: "原生",
 };
 
 const STATUS_TEXT: Record<string, string> = {
@@ -94,6 +96,91 @@ export function PluginsView() {
     }
   };
 
+  /* 分组：核心插件（native，随应用分发）在前，外部插件在后 */
+  const corePlugins = plugins.filter((p) => p.builtin);
+  const externalPlugins = plugins.filter((p) => !p.builtin);
+
+  const renderCard = (p: PluginInfo) => {
+    const commands = commandsOf(p.id);
+    const err = p.error ?? runtimeErrors[p.id];
+    // webview 入口求值失败时，以"错误"状态展示（Rust 侧不知道前端加载结果）
+    const status = runtimeErrors[p.id] ? "error" : p.status;
+    return (
+      <section className="plugin-card" key={p.id}>
+        <div className="plugin-head">
+          <div className="plugin-title">
+            <h2>{p.name}</h2>
+            <span className="badge badge-version">v{p.version}</span>
+            <span className="badge badge-runtime">
+              {RUNTIME_LABEL[p.runtime] ?? p.runtime}
+            </span>
+            {p.builtin && <span className="badge badge-builtin">核心</span>}
+            {p.provider && (
+              <span className="badge badge-provider" title="实现 search.provide，启用后进入全局搜索">
+                搜索提供者
+              </span>
+            )}
+            <span className={`badge badge-status badge-status-${status}`}>
+              {STATUS_TEXT[status] ?? status}
+            </span>
+          </div>
+          <div className="plugin-actions">
+            <button
+              className="btn btn-sm"
+              onClick={() => toggle(p.id, !p.enabled)}
+              disabled={busy[p.id] || p.status === "error"}
+            >
+              {p.enabled ? "禁用" : "启用"}
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => doReload(p.id)}
+              disabled={busy[p.id] || !p.enabled}
+            >
+              重新加载
+            </button>
+            {!p.builtin && (
+              <button
+                className="btn btn-sm danger"
+                title="卸载：删除插件目录（进回收站）"
+                aria-label={`卸载插件 ${p.name}`}
+                onClick={() => setConfirmDel(p.id)}
+                disabled={busy[p.id]}
+              >
+                <IconTrash width={12} height={12} />
+                卸载
+              </button>
+            )}
+          </div>
+        </div>
+
+        <p className="plugin-desc">{p.description || "（无描述）"}</p>
+        <code className="plugin-id">{p.id}</code>
+
+        {err && (
+          <p className="plugin-error" title={err}>
+            {err}
+          </p>
+        )}
+
+        {commands.length > 0 && (
+          <div className="plugin-commands">
+            <span className="plugin-commands-label">命令</span>
+            {commands.map((c) => (
+              <CommandTry
+                key={c.id}
+                pluginId={p.id}
+                command={c.id}
+                name={c.name}
+                invoke={invoke}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    );
+  };
+
   return (
     <div className="plugins-view">
       <header className="view-header">
@@ -122,76 +209,22 @@ export function PluginsView() {
         </div>
       ) : (
         <div className="plugin-list">
-          {plugins.map((p) => {
-            const commands = commandsOf(p.id);
-            const err = p.error ?? runtimeErrors[p.id];
-            // webview 入口求值失败时，以"错误"状态展示（Rust 侧不知道前端加载结果）
-            const status = runtimeErrors[p.id] ? "error" : p.status;
-            return (
-              <section className="plugin-card" key={p.id}>
-                <div className="plugin-head">
-                  <div className="plugin-title">
-                    <h2>{p.name}</h2>
-                    <span className="badge badge-version">v{p.version}</span>
-                    <span className="badge badge-runtime">{RUNTIME_LABEL[p.runtime] ?? p.runtime}</span>
-                    <span className={`badge badge-status badge-status-${status}`}>
-                      {STATUS_TEXT[status] ?? status}
-                    </span>
-                  </div>
-                  <div className="plugin-actions">
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => toggle(p.id, !p.enabled)}
-                      disabled={busy[p.id] || p.status === "error"}
-                    >
-                      {p.enabled ? "禁用" : "启用"}
-                    </button>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => doReload(p.id)}
-                      disabled={busy[p.id] || !p.enabled}
-                    >
-                      重新加载
-                    </button>
-                    <button
-                      className="btn btn-sm danger"
-                      title="卸载：删除插件目录（进回收站）"
-                      aria-label={`卸载插件 ${p.name}`}
-                      onClick={() => setConfirmDel(p.id)}
-                      disabled={busy[p.id]}
-                    >
-                      <IconTrash width={12} height={12} />
-                      卸载
-                    </button>
-                  </div>
-                </div>
-
-                <p className="plugin-desc">{p.description || "（无描述）"}</p>
-                <code className="plugin-id">{p.id}</code>
-
-                {err && (
-                  <p className="plugin-error" title={err}>
-                    {err}
-                  </p>
-                )}
-
-                {commands.length > 0 && (
-                  <div className="plugin-commands">
-                    <span className="plugin-commands-label">命令</span>
-                    {commands.map((c) => (
-                      <CommandTry
-                        key={c.id}
-                        pluginId={p.id}
-                        command={c.id}
-                        name={c.name}
-                        invoke={invoke}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            );
-          })}
+          {corePlugins.length > 0 && (
+            <div className="plugin-group">
+              <div className="plugin-group-label">
+                核心插件（随应用分发 · 可启用/禁用，不可卸载）
+              </div>
+              {corePlugins.map((p) => renderCard(p))}
+            </div>
+          )}
+          {externalPlugins.length > 0 && (
+            <div className="plugin-group">
+              {corePlugins.length > 0 && (
+                <div className="plugin-group-label">外部插件</div>
+              )}
+              {externalPlugins.map((p) => renderCard(p))}
+            </div>
+          )}
         </div>
       )}
       <ConfirmDialog

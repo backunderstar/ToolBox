@@ -12,6 +12,7 @@ import {
 } from "./icons";
 import type { ComponentType, SVGProps } from "react";
 import type { NavPrefs } from "../core/navPrefs";
+import type { PluginNav } from "../core/api";
 
 export type ViewId =
   | "overview"
@@ -33,6 +34,20 @@ export interface NavItem {
   now?: boolean; // 当前已实现
 }
 
+/** 插件 nav 图标名 → 组件映射（records 等核心插件声明）。 */
+const ICON_MAP: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
+  notebook: IconNotebook,
+  "file-text": IconFileText,
+  grid: IconGrid,
+  check: IconCheckSquare,
+  folder: IconFolder,
+  sliders: IconSliders,
+  sparkle: IconSparkle,
+  globe: IconGlobe,
+  gear: IconGear,
+  puzzle: IconPuzzle,
+};
+
 /** 导航分组定义（设置页的"导航栏"配置也基于它渲染）。 */
 export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
@@ -43,7 +58,6 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { id: "plugins", label: "插件", icon: IconPuzzle, now: true },
       { id: "tools", label: "数据工具", icon: IconSliders, now: true },
       { id: "checklist", label: "清单", icon: IconCheckSquare, now: true },
-      { id: "records", label: "记录", icon: IconNotebook, now: true },
       { id: "projects", label: "项目", icon: IconFolder, now: true },
     ],
   },
@@ -57,15 +71,29 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
+/** 把插件 nav 声明转成 NavItem（图标名未映射时回退 grid）。 */
+export function pluginNavToItems(nav: PluginNav[]): NavItem[] {
+  return nav.map((n) => ({
+    id: n.id,
+    label: n.label,
+    icon: ICON_MAP[n.icon] ?? IconGrid,
+    now: true,
+  }));
+}
+
 interface SidebarProps {
   activeView: ViewId;
   onSelect: (view: ViewId) => void;
   collapsed: boolean;
   /** 导航偏好（顺序 + 隐藏）；由 App 从 localStorage 加载并持久化 */
   prefs: NavPrefs;
+  /** 启用插件的导航入口（插件 nav 声明，如 core-records → 记录） */
+  pluginNav: PluginNav[];
 }
 
-export function Sidebar({ activeView, onSelect, collapsed, prefs }: SidebarProps) {
+export function Sidebar({ activeView, onSelect, collapsed, prefs, pluginNav }: SidebarProps) {
+  // 插件入口：排除与静态项重复的 id（如未来笔记也插件化），其余追加到各组末尾
+  const pluginItems = pluginNavToItems(pluginNav);
   return (
     <nav
       className={`sidebar${collapsed ? " collapsed" : ""}`}
@@ -78,10 +106,14 @@ export function Sidebar({ activeView, onSelect, collapsed, prefs }: SidebarProps
           .map((id) => group.items.find((i) => i.id === id))
           .filter((i): i is NavItem => !!i)
           .filter((i) => !prefs.hidden.includes(i.id));
+        const staticIds = new Set(group.items.map((i) => i.id));
+        const extra = pluginItems.filter((i) => !staticIds.has(i.id));
+        const all = [...items, ...extra];
+        if (all.length === 0) return null;
         return (
           <div className="nav-group" key={group.label}>
             {!collapsed && <div className="nav-label">{group.label}</div>}
-            {items.map((item) => {
+            {all.map((item) => {
               const Icon = item.icon;
               const isActive = item.id === activeView;
               const isClickable =

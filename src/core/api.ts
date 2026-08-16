@@ -24,6 +24,17 @@ export interface SearchHit {
   path: string;
   filename: string;
   snippet: string;
+  /** 搜索来源：缺省为文件全文；插件提供者为插件 id */
+  source?: string;
+}
+
+/** 插件声明的导航入口（Rust NavDecl 对应） */
+export interface PluginNav {
+  id: string;
+  label: string;
+  icon: string;
+  group: string;
+  view: string;
 }
 
 /** 插件信息（与 Rust PluginInfo 对应，serde camelCase） */
@@ -32,13 +43,19 @@ export interface PluginInfo {
   name: string;
   version: string;
   description: string;
-  runtime: "webview" | "process";
+  runtime: "webview" | "process" | "native";
   /** webview 插件入口文件（相对插件目录） */
   entry: string | null;
   enabled: boolean;
   status: "error" | "ready" | "stopped";
   error: string | null;
   commands: string[];
+  /** 核心插件（native，随应用分发，不可卸载） */
+  builtin: boolean;
+  /** 搜索提供者（实现 search.provide 命令，启用后进入全局搜索） */
+  provider: boolean;
+  /** 插件声明的导航入口（启用时并入侧边栏） */
+  nav: PluginNav[];
 }
 
 /* ---- IPC 封装 ---- */
@@ -89,6 +106,13 @@ export const pluginsInvoke = (
   command: string,
   args: unknown
 ) => invoke<unknown>("plugins_invoke", { vault, id, command, args });
+/** 统一插件命令调用（native → FFI；process → JSON-RPC；webview 由前端调用） */
+export const pluginCall = (
+  vault: string,
+  id: string,
+  command: string,
+  args: unknown
+) => invoke<unknown>("plugin_call", { vault, id, command, args });
 
 /* ---- 系统 ---- */
 
@@ -226,6 +250,10 @@ export interface BackupEntry {
   /** unix 秒 */
   timestamp: number;
   sizeBytes: number;
+  /** 备份含配置存档（%APPDATA% json） */
+  hasConfig: boolean;
+  /** 备份含插件存档（全局插件目录） */
+  hasPlugins: boolean;
 }
 
 export const backupConfigGet = () => invoke<BackupConfig>("backup_config_get");
@@ -233,6 +261,9 @@ export const backupConfigSet = (config: BackupConfig) =>
   invoke<void>("backup_config_set", { config });
 export const backupNow = (vault: string) => invoke<BackupInfo>("backup_now_cmd", { vault });
 export const backupList = (vault: string) => invoke<BackupEntry[]>("backup_list", { vault });
+/** 恢复到备份点（恢复前自动保存当前状态；覆盖合并，保留新增文件） */
+export const backupRestore = (vault: string, name: string) =>
+  invoke<BackupInfo>("backup_restore", { vault, name });
 
 /* ---- 浮窗快速待办 ---- */
 

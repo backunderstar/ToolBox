@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useVault } from "../core/vault";
+import { useNav } from "../core/navigation";
 import type { SearchHit } from "../core/api";
 import { Editor } from "./Editor";
 import { FileTree } from "./FileTree";
@@ -30,6 +31,7 @@ export function NotesView({
   onToggleFocus,
 }: NotesViewProps) {
   const vault = useVault();
+  const nav = useNav();
   const {
     path,
     files,
@@ -127,8 +129,15 @@ export function NotesView({
             searching={searching}
             results={results}
             query={query}
-            onOpen={async (rel) => {
-              await openFile(rel);
+            onOpen={async (hit) => {
+              // 插件搜索提供者命中（如记录）：跳转对应功能视图
+              if (hit.source === "core-records") {
+                const id =
+                  hit.path.split("/").pop()?.replace(/\.json$/, "") ?? "";
+                nav.openRecord(id);
+                return;
+              }
+              await openFile(hit.path);
               setQuery(""); // 等文件真正打开后再退出搜索态，避免旧内容闪现
             }}
           />
@@ -194,7 +203,7 @@ function SearchResults({
   searching: boolean;
   results: SearchHit[] | null;
   query: string;
-  onOpen: (rel: string) => void;
+  onOpen: (hit: SearchHit) => void;
 }) {
   const count = results?.length ?? 0;
   return (
@@ -207,16 +216,21 @@ function SearchResults({
       {searching ? (
         <div className="search-hint">检索中…</div>
       ) : count === 0 ? (
-        <div className="search-hint">没有匹配的笔记</div>
+        <div className="search-hint">没有匹配的内容</div>
       ) : (
         <div className="search-list">
           {results!.map((hit) => (
             <button
-              key={hit.path}
+              key={`${hit.source ?? "file"}:${hit.path}`}
               className="result-item"
-              onClick={() => onOpen(hit.path)}
+              onClick={() => onOpen(hit)}
             >
               <div className="result-title">
+                {hit.source && (
+                  <span className="result-source" title="来自插件搜索提供者">
+                    {SOURCE_LABEL[hit.source] ?? hit.source}
+                  </span>
+                )}
                 {highlight(hit.path, query)}
               </div>
               <div className="result-snippet">
@@ -229,6 +243,11 @@ function SearchResults({
     </div>
   );
 }
+
+/** 搜索来源显示名（插件 id → 中文） */
+const SOURCE_LABEL: Record<string, string> = {
+  "core-records": "记录",
+};
 
 /** 大小写不敏感的关键词高亮（安全转义正则） */
 function highlight(text: string, query: string): ReactNode {

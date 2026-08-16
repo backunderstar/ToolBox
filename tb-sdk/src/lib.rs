@@ -16,14 +16,17 @@ use serde_json::Value;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// C ABI 契约版本。宿主加载插件时校验一致；不兼容的 DLL 拒绝加载。
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 /// 宿主回灌给插件的服务表（函数指针，`tb_create` 时传入）。
-/// 回调均为 `unsafe extern "C"`；`ctx` 为宿主分配的上下文指针（当前 = 插件 id）。
+/// 回调均为 `unsafe extern "C"`；回调的 `ctx` 参数 = 本表的 `ctx` 字段
+/// （宿主分配的上下文指针，当前 = 插件 id），插件原样透传。
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct TbHostApi {
     pub abi_version: u32,
+    /// 宿主上下文指针（回调 ctx 参数，插件不得解引用/释放）
+    pub ctx: *mut c_void,
     /// 事件：插件 → 前端（宿主转发为 `plugin-event`）。返回 0 成功。
     pub emit_event: Option<
         unsafe extern "C" fn(ctx: *mut c_void, event: *const c_char, data: *const c_char) -> i32,
@@ -38,6 +41,7 @@ impl TbHostApi {
         if p.is_null() {
             Self {
                 abi_version: ABI_VERSION,
+                ctx: std::ptr::null_mut(),
                 emit_event: None,
                 log: None,
             }
@@ -216,7 +220,7 @@ macro_rules! tb_plugin {
             let b = $crate::PluginBox {
                 state,
                 host,
-                host_ctx: std::ptr::null_mut(),
+                host_ctx: host.ctx,
             };
             Box::into_raw(Box::new(b)) as *mut std::ffi::c_void
         }

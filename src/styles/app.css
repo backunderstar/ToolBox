@@ -703,6 +703,19 @@
   font-weight: 600;
   color: var(--fg);
   margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.result-source {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  padding: 0 5px;
+  border-radius: 9999px;
+  background: var(--pastel-purple-bg);
+  color: var(--pastel-purple-fg);
+  flex-shrink: 0;
 }
 .result-snippet {
   font-size: var(--text-xs);
@@ -1106,6 +1119,33 @@
   background: var(--pastel-red-bg);
   color: var(--pastel-red-fg);
 }
+.badge-builtin {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: var(--pastel-amber-bg);
+  color: var(--pastel-amber-fg);
+}
+.badge-provider {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: var(--pastel-purple-bg);
+  color: var(--pastel-purple-fg);
+}
+.plugin-group {
+  margin-bottom: var(--space-5);
+}
+.plugin-group-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-faint);
+  margin-bottom: var(--space-2);
+}
 
 .plugin-commands {
   display: flex;
@@ -1330,6 +1370,12 @@
 .backup-size {
   font-family: var(--font-mono);
   color: var(--fg-faint);
+}
+.backup-row .badge-version {
+  margin-left: auto;
+}
+.backup-row .btn-sm {
+  margin-left: 0;
 }
 
 /* 分段选择（主题切换） */

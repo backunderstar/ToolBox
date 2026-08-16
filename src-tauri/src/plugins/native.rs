@@ -114,6 +114,7 @@ impl NativePlugin {
                 let ctx = Box::into_raw(Box::new(HostCtx(plugin_id.to_string()))) as *mut c_void;
                 let host = tb_sdk::TbHostApi {
                     abi_version: tb_sdk::ABI_VERSION,
+                    ctx,
                     emit_event: Some(host_emit_event),
                     log: Some(host_log),
                 };

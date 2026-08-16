@@ -153,17 +153,18 @@ themes/my-theme/
 **理念：一切落地为普通文件，不锁死数据。**
 
 ```
-Vault（用户自选的工作区目录）
+Vault（用户自选的工作区目录，纯数据）
 ├── notes/            # Markdown 笔记（可带 frontmatter 元数据）
-├── data/             # 结构化数据：checklists/*.json、records/*.json
-├── plugins/          # 已安装的插件（随 vault 走，可 git 管理）
-├── .toolbox/         # 索引、缓存（SQLite）、应用设置
-└── toolbox.json      # vault 级设置
+├── data/             # 结构化数据：checklists/*.json、records/*.json、todos/
+├── projects/         # 项目文件（+ archive/）
+├── site/             # 博客发布生成物（可重建）
+└── .toolbox/         # 备份（backups/）、搜索索引（SQLite）；插件与配置在应用目录
 ```
 
-- **纯文件优先** → 用 git（Rust `git2` crate）做备份和版本历史；未来博客发布直接消费 Markdown。
-- **SQLite（rusqlite）** 做搜索索引和结构化查询（清单/记录/全文搜索 FTS5），索引可随时重建。
+- **纯文件优先**：数据即文件（Markdown/JSON），任意编辑器可读；备份 = 快照复制（保留最近 N 份 + 配置/插件存档），恢复 = 覆盖合并（回滚手段）。
+- **SQLite（rusqlite）** 做搜索索引（FTS5），索引可随时重建。
 - 笔记 frontmatter（`title / tags / date / status`）是后续 AI 整理和博客发布的数据基础。
+- **核心功能插件化**：宿主只留框架（窗口/工作区/插件宿主/设置/主题），笔记/记录/项目等以**核心插件（cdylib，宿主进程内 FFI）** 形态存在，可启用/禁用/热重载。
 
 ---
 
@@ -198,11 +199,13 @@ Vault（用户自选的工作区目录）
 | ✅ 已完成 | 插件 stdin 写入超时 | 插件不读 stdin 挂死时写管道缓冲满会无限阻塞——改为写线程 + 超时回收，超时即终止进程；含挂死单测 |
 | ✅ 已完成 | 全文搜索性能 | SQLite FTS5（trigram 分词器）索引，增量同步 + 文件名优先 + 短词 LIKE 兜底；实测 3000 篇热查询 ~200ms；rusqlite 需 bundled-full |
 | ✅ 已完成 | 单实例 | 官方 tauri-plugin-single-instance 插件（双开退出 + 恢复托盘窗口；事件桥曾误伤其首轮接入，隔离排查后澄清） |
-| ✅ 已完成 | **Git 版本历史** | vault 内嵌 git（git2/libgit2）自动提交快照（编辑防抖 15s）+ 时间线 + 一键回滚；字节保真（`* -text` 防行尾改写）；未跟踪新文件回滚保留；备份排除 .git |
+| ✅ 已完成 | **Git 版本历史**（已按用户决定移除） | vault 内嵌 git（git2/libgit2）自动提交 + 时间线 + 回滚；用户认为备份已足够，功能整体删除（git2 依赖、自动提交线程、历史视图）；旧 vault 里的 `.git` 残留可手动清理，备份承担数据回滚职责 |
 | ✅ 已完成 | AI 流式输出 | 对话改 SSE 流式（`ai-chunk` 事件逐段推送，打字机效果）；SSE 解析含跨块半行/CRLF/[DONE]；本地 mock 服务器端到端测试 |
 | ✅ 已完成 | 审计遗留小项 | 超大文件读取保护（>8MB）、重命名前端校验（非法字符/重名）、博客站点过期提示 |
 | ✅ 已完成 | 插件事件桥 | 进程插件 Notification → 纯 mpsc 事件总线（ProcessPlugin 不接触 tauri 类型，规避 0xC0000139 加载崩溃路径）→ 前端 `plugin-event` → 插件页实时事件日志；csv-tool 增加 eventTest 演示命令 |
 | ✅ 已完成 | 插件全局化 | 插件从工作区 `vault/plugins` 迁到全局 `%APPDATA%/com.toolbox.desktop/plugins/`（插件是工具不属于数据）；启用状态全局统一；旧布局自动迁移（复制 + 工作区目录回收站清理）；webview 入口改由 `plugins_read_file` 限定目录读取 |
+| ✅ 已完成 | **核心插件 cdylib 化（阶段 0）** | Cargo workspace（宿主 + tb-sdk + core-plugins/*）；tb-sdk 定义 C ABI 契约（tb_abi_version/tb_create/tb_call/tb_free_string/tb_destroy + TbHostApi 宿主回灌含 ctx）；libloading 加载器 + `_core` 目录 + 统一 plugin_call 路由；records（记录）下沉为原生插件（CRUD/事件/搜索提供者，真实 DLL 集成测试）；备份改造（恢复到备份点 + %APPDATA% 配置/插件存档）；搜索提供者机制（manifest searchProvider，search_all 聚合命中）；删除版本历史 |
+| ⏳ 进行中 | **核心插件 cdylib 化（阶段 1）** | 迁移 笔记（最大）+ 待办清单 + 项目 为原生核心插件；侧边栏/视图注册表完全动态化 |
 
 ---
 
@@ -210,25 +213,24 @@ Vault（用户自选的工作区目录）
 
 ```
 ToolBox/
-├── Cargo.toml              # Rust workspace
-├── src-tauri/              # Tauri 主进程（Rust 核心）
+├── Cargo.toml              # Rust workspace（宿主 + tb-sdk + core-plugins/*）
+├── tb-sdk/                 # 核心插件 SDK：C ABI 契约 + tb_plugin! 样板宏
+├── core-plugins/           # 核心插件（cdylib，随应用分发）
+│   └── records/            # 记录（已插件化；笔记/清单/项目 迁移中）
+├── src-tauri/              # Tauri 主进程（宿主框架 + 插件宿主）
 │   ├── src/
 │   │   ├── main.rs / lib.rs
-│   │   ├── core/           # vault、存储、搜索、AI 网关、git
-│   │   ├── plugins/        # 插件管理器、进程桥、manifest 解析
-│   │   ├── rpc/            # JSON-RPC 协议类型（serde）
-│   │   └── commands.rs     # 暴露给前端的 Tauri 命令
+│   │   ├── core/           # vault、笔记、存储、搜索、AI、博客、备份
+│   │   ├── plugins/        # 插件管理器、native 加载器、进程桥、事件桥、manifest
+│   │   └── rpc/            # JSON-RPC 协议类型（serde）
 │   ├── capabilities/       # Tauri 权限声明
 │   └── tauri.conf.json
 ├── src/                    # 前端（TypeScript + React）
 │   ├── main.tsx / App.tsx
 │   ├── themes/             # 令牌 + 主题引擎 + 内置主题
-│   ├── plugin-api/         # JS 插件 API（类型定义 + 运行时）
-│   ├── core/               # IPC 封装、状态管理（zustand）
-│   └── components/         # 文件树、编辑器、面板、设置、命令面板
-├── plugins/                # 插件目录
-│   ├── example-js/
-│   └── example-py/
+│   ├── core/               # IPC 封装、插件运行时、状态
+│   └── components/         # 文件树、编辑器、面板、设置
+├── plugins/                # 外部插件示例（仓库内，部署到 %APPDATA%）
 ├── docs/                   # 架构、插件开发指南、主题开发指南
 ├── PLAN.md
 └── package.json
@@ -244,7 +246,7 @@ ToolBox/
 | 前端 | React + TypeScript + Vite | Vue / Svelte / 原生 | 生态最大，插件 UI 好做 |
 | Markdown 编辑器 | CodeMirror 6 | Milkdown(ProseMirror) | 轻量、可扩展、编辑体验好 |
 | 状态管理 | zustand | valtio | 简单够用 |
-| Rust 核心库 | tauri / serde / tokio / rusqlite / git2 / reqwest | | 进程桥用 tokio 管理子进程 |
+| Rust 核心库 | tauri / serde / serde_json / rusqlite / reqwest / libloading | | 插件宿主 + FTS 搜索；核心插件经 C ABI 加载 |
 | 搜索 | SQLite FTS5 | tantivy | v1 够用，数据量大再换 |
 | Python 桥 | stdio + JSON-RPC（serde_json） | PyO3 内嵌 | 子进程方案灵活、任意 Python 环境可用 |
 | 博客 | Zola（Rust SSG） | 自定义导出 | 与 Rust 技术栈同源 |

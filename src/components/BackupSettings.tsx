@@ -5,10 +5,12 @@ import {
   backupConfigSet,
   backupList,
   backupNow,
+  backupRestore,
   openInExplorer,
 } from "../core/api";
 import type { BackupConfig, BackupEntry } from "../core/api";
 import { IconRefresh } from "./icons";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 /**
  * 设置页「备份」卡片：
@@ -22,6 +24,7 @@ export function BackupSettings() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [msgErr, setMsgErr] = useState(false);
+  const [confirmRestore, setConfirmRestore] = useState<BackupEntry | null>(null);
   const showMsg = (text: string, isErr = false) => {
     setMsg(text);
     setMsgErr(isErr);
@@ -61,7 +64,25 @@ export function BackupSettings() {
     try {
       const info = await backupNow(vault.path);
       showMsg(
-        `备份完成：${info.fileCount} 个文件，${formatSize(info.sizeBytes)}（保留最近 ${config?.keep ?? 10} 份）`
+        `备份完成：${info.fileCount} 个文件，${formatSize(info.sizeBytes)}（含配置与插件存档，保留最近 ${config?.keep ?? 10} 份）`
+      );
+      await loadList();
+    } catch (e) {
+      showMsg(String(e), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 恢复到备份点：恢复前自动保存当前状态；覆盖合并（保留备份后新增的文件） */
+  const doRestore = async (b: BackupEntry) => {
+    if (!vault.path || busy) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await backupRestore(vault.path, b.name);
+      showMsg(
+        `已恢复到 ${new Date(b.timestamp * 1000).toLocaleString("zh-CN", { hour12: false })}（恢复前已自动保存当前状态）`
       );
       await loadList();
     } catch (e) {
@@ -175,10 +196,40 @@ export function BackupSettings() {
                 {new Date(b.timestamp * 1000).toLocaleString("zh-CN", { hour12: false })}
               </span>
               <span className="backup-size">{formatSize(b.sizeBytes)}</span>
+              {b.hasConfig && (
+                <span className="badge badge-version" title="含 %APPDATA% 配置存档">配置</span>
+              )}
+              {b.hasPlugins && (
+                <span className="badge badge-version" title="含全局插件目录存档">插件</span>
+              )}
+              <button
+                className="btn btn-sm"
+                title="恢复到该备份点（恢复前自动保存当前状态）"
+                onClick={() => setConfirmRestore(b)}
+                disabled={busy}
+              >
+                恢复
+              </button>
             </div>
           ))}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmRestore !== null}
+        title="恢复到备份点"
+        message={
+          confirmRestore
+            ? `将工作区恢复到 ${new Date(confirmRestore.timestamp * 1000).toLocaleString("zh-CN", { hour12: false })} 的备份。\n恢复前会自动保存当前状态（可反悔）；备份中存在的文件会被还原，备份后新增的文件保留。`
+            : ""
+        }
+        confirmText="恢复"
+        danger
+        onCancel={() => setConfirmRestore(null)}
+        onConfirm={() => {
+          if (confirmRestore) void doRestore(confirmRestore);
+          setConfirmRestore(null);
+        }}
+      />
     </section>
   );
 }

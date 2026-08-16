@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import {
   fsRead,
   fsWrite,
+  pluginCall,
   pluginsInvoke,
   pluginsList,
   pluginsReadFile,
@@ -18,7 +19,7 @@ import {
   pluginsSetEnabled,
   pluginsUninstall,
 } from "./api";
-import type { PluginInfo } from "./api";
+import type { PluginInfo, PluginNav } from "./api";
 import { useVault } from "./vault";
 
 /**
@@ -66,10 +67,12 @@ interface PluginContextValue {
   reload: (id: string) => Promise<void>;
   /** 卸载插件：停进程 + 清启用状态 + 删除插件目录（回收站） */
   uninstall: (id: string) => Promise<void>;
-  /** 调用插件命令：webview 直跑注册表，process 走 IPC 桥 */
+  /** 调用插件命令：webview 直跑注册表，process/native 走 IPC 桥 */
   invoke: (pluginId: string, command: string, args: unknown) => Promise<unknown>;
   /** 某插件的命令元数据（webview 来自注册表，process 来自清单） */
   commandsOf: (pluginId: string) => { id: string; name: string }[];
+  /** 启用插件的导航入口（核心插件 nav 声明并入侧边栏） */
+  navItems: PluginNav[];
 }
 
 const PluginContext = createContext<PluginContextValue | null>(null);
@@ -244,6 +247,9 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           status: "ready",
           error: null,
           commands: ["analyze"],
+          builtin: false,
+          provider: false,
+          nav: [],
         },
         {
           id: "csv-tool",
@@ -256,6 +262,24 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           status: "ready",
           error: null,
           commands: ["csv.convert"],
+          builtin: false,
+          provider: false,
+          nav: [],
+        },
+        {
+          id: "core-records",
+          name: "记录",
+          version: "0.1.0",
+          description: "核心插件：工作记录（data/records CRUD + 搜索提供者）",
+          runtime: "native",
+          entry: null,
+          enabled: true,
+          status: "ready",
+          error: null,
+          commands: ["records.list", "records.create", "records.save", "records.delete"],
+          builtin: true,
+          provider: true,
+          nav: [{ id: "records", label: "记录", icon: "notebook", group: "工作区", view: "RecordsView" }],
         },
       ];
       setPlugins(mock);
@@ -365,8 +389,8 @@ export function PluginProvider({ children }: { children: ReactNode }) {
     async (pluginId: string, command: string, args: unknown) => {
       const plugin = plugins.find((pl) => pl.id === pluginId);
       if (!plugin) throw new Error(`插件不存在: ${pluginId}`);
-      // mock 模式下所有插件（含 process）都走注册表内联实现；
-      // 真实模式下 webview 走注册表、process 走 IPC 桥
+      // mock 模式下所有插件（含 process/native）都走注册表内联实现；
+      // 真实模式下 webview 走注册表、process/native 走 IPC 桥
       if (isMock || plugin.runtime === "webview") {
         const cmd = getRuntime(pluginId).commands.get(command);
         if (!cmd) throw new Error(`命令未注册: ${command}`);
@@ -374,7 +398,9 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       }
       const p = vaultRef.current;
       if (!p) throw new Error("工作区未设置");
-      return pluginsInvoke(p, pluginId, command, args);
+      return plugin.runtime === "native"
+        ? pluginCall(p, pluginId, command, args)
+        : pluginsInvoke(p, pluginId, command, args);
     },
     [plugins, getRuntime, isMock]
   );
@@ -394,6 +420,17 @@ export function PluginProvider({ children }: { children: ReactNode }) {
     [plugins, getRuntime]
   );
 
+  /* 启用插件的导航入口（内置插件声明 nav 时并入侧边栏） */
+  const navItems = useMemo(() => {
+    const out: PluginNav[] = [];
+    for (const pl of plugins) {
+      if (pl.enabled && pl.builtin) {
+        for (const n of pl.nav) out.push(n);
+      }
+    }
+    return out;
+  }, [plugins]);
+
   /* 工作区切换 / 首次进入时刷新插件列表 */
   useEffect(() => {
     void refresh();
@@ -410,8 +447,9 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       uninstall,
       invoke,
       commandsOf,
+      navItems,
     }),
-    [plugins, loading, runtimeErrors, refresh, setEnabled, reload, uninstall, invoke, commandsOf]
+    [plugins, loading, runtimeErrors, refresh, setEnabled, reload, uninstall, invoke, commandsOf, navItems]
   );
 
   return <PluginContext.Provider value={value}>{children}</PluginContext.Provider>;

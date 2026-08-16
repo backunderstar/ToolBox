@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
-import { PluginProvider } from "./core/plugins";
+import { PluginProvider, usePlugins } from "./core/plugins";
 import { ChecklistProvider } from "./core/checklists";
 import { RecordsProvider } from "./core/records";
 import { ProjectsProvider } from "./core/projects";
@@ -64,6 +64,7 @@ export default function App() {
 
 function AppInner() {
   const vault = useVault();
+  const pluginCtx = usePlugins();
   const [view, setView] = useState<ViewId>(() =>
     new URLSearchParams(window.location.search).has("mock") ? "notes" : "overview"
   );
@@ -194,6 +195,7 @@ function AppInner() {
               }}
               collapsed={navCollapsed}
               prefs={navPrefs}
+              pluginNav={pluginCtx.navItems}
             />
           )}
           <main className="main">
@@ -210,7 +212,23 @@ function AppInner() {
             ) : view === "checklist" ? (
               <ChecklistView />
             ) : view === "records" ? (
-              <RecordsView />
+              coreRecordsEnabled(pluginCtx.plugins) ? (
+                <RecordsView />
+              ) : (
+                <div className="empty-state">
+                  <h2>记录功能已禁用</h2>
+                  <p>记录是核心插件（core-records），可在插件页重新启用</p>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setView("plugins");
+                      setViewParams({});
+                    }}
+                  >
+                    去插件页
+                  </button>
+                </div>
+              )
             ) : view === "projects" ? (
               <ProjectsView />
             ) : view === "ai" ? (
@@ -245,4 +263,10 @@ function AppInner() {
       </div>
     </NavProvider>
   );
+}
+
+/** records 视图守卫：core-records 核心插件启用才渲染（未知/未加载时默认放行）。 */
+function coreRecordsEnabled(plugins: { id: string; enabled: boolean }[]): boolean {
+  const p = plugins.find((x) => x.id === "core-records");
+  return p ? p.enabled : true;
 }
