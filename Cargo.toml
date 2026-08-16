@@ -5,4 +5,4 @@
 # 同时保持"插件"形态——可启用/禁用/热重载/被替换。
 [workspace]
 resolver = "2"
-members = ["src-tauri", "tb-sdk", "core-plugins/records", "core-plugins/notes", "core-plugins/todos"]
+members = ["src-tauri", "tb-sdk", "core-plugins/records", "core-plugins/notes", "core-plugins/todos", "core-plugins/checklists"]

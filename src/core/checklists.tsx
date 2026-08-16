@@ -8,8 +8,7 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import { fsListDir, fsRead, fsWrite, fsDelete } from "./api";
-import type { FileEntry } from "./api";
+import { pluginCall } from "./api";
 import { useVault } from "./vault";
 
 /**
@@ -18,6 +17,9 @@ import { useVault } from "./vault";
  * - 文件即数据：一个清单一个 JSON 文件，普通文件可 git、可迁移
  * - 自动保存（800ms 防抖，与笔记一致）
  * - 维护"笔记引用索引"供笔记视图反链
+ *
+ * 数据层已下沉为原生核心插件（core-checklists，cdylib）：CRUD 在宿主
+ * 进程内经 FFI 完成；变更事件 chk-changed 经 plugin-event 桥推送。
  */
 
 export interface ChecklistItem {
@@ -72,7 +74,6 @@ export function useChecklists(): ChecklistContextValue {
 }
 
 const AUTOSAVE = 800;
-const DIR = "data/checklists";
 
 export function ChecklistProvider({ children }: { children: ReactNode }) {
   const vault = useVault();
@@ -133,22 +134,11 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
     return seed;
   }, []);
 
-  /* ---- 真实模式：枚举 + 读取 ---- */
+  /* ---- 真实模式：经 core-checklists 原生插件 ---- */
   const loadReal = useCallback(async (): Promise<Checklist[]> => {
     const p = vaultRef.current;
     if (!p) return [];
-    const list: FileEntry[] = await fsListDir(p, DIR);
-    const files = list.filter((f) => !f.isDir && f.path.endsWith(".json"));
-    const out: Checklist[] = [];
-    for (const f of files) {
-      try {
-        const raw = await fsRead(p, f.path);
-        out.push(JSON.parse(raw) as Checklist);
-      } catch (e) {
-        console.error(`[checklists] 读取失败 ${f.path}`, e);
-      }
-    }
-    return out;
+    return (await pluginCall(p, "core-checklists", "chk.list", {})) as Checklist[];
   }, []);
 
   const refresh = useCallback(async () => {
@@ -205,20 +195,23 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
     setBacklinks(map);
   }, []);
 
-  /* ---- 写入（真实写文件；mock 写 localStorage） ---- */
+  /* ---- 写入（真实经插件；mock 写 localStorage） ---- */
   const persist = useCallback(
-    async (list: Checklist) => {
+    async (list: Checklist): Promise<Checklist | null> => {
       if (isMock) {
         const all = mockLoad();
         const idx = all.findIndex((c) => c.id === list.id);
         if (idx >= 0) all[idx] = list;
         else all.push(list);
         localStorage.setItem(mockKey, JSON.stringify(all));
-        return;
+        return list;
       }
       const p = vaultRef.current;
-      if (!p) return;
-      await fsWrite(p, `${DIR}/${list.id}.json`, JSON.stringify(list, null, 2));
+      if (!p) return null;
+      // 插件统一刷新 updatedAt，返回更新后的清单
+      return (await pluginCall(p, "core-checklists", "chk.save", {
+        checklist: list,
+      })) as Checklist;
     },
     [isMock, mockLoad]
   );
@@ -233,10 +226,10 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
       pendingRef.current = null;
       const updated = { ...snapshot, updatedAt: new Date().toISOString() };
       try {
-        await persist(updated);
+        const saved = await persist(updated);
         // 仅当当前仍显示该清单时同步 UI（其余场景由后续刷新兜底）
         setCurrent((prev) =>
-          prev && prev.id === updated.id ? { ...updated } : prev
+          saved && prev && prev.id === saved.id ? { ...saved } : prev
         );
         await refresh();
       } catch (e) {
@@ -295,8 +288,10 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
       const p = vaultRef.current;
       if (!p) return;
       try {
-        const raw = await fsRead(p, `${DIR}/${id}.json`);
-        setCurrent(JSON.parse(raw) as Checklist);
+        const c = (await pluginCall(p, "core-checklists", "chk.get", {
+          id,
+        })) as Checklist | null;
+        setCurrent(c);
       } catch (e) {
         console.error(`[checklists] 打开失败 ${id}`, e);
       }
@@ -308,30 +303,41 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
     async (title: string) => {
       const t = title.trim();
       if (!t) return;
-      const now = new Date().toISOString();
-      let id = t
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 40) || `list-${Date.now().toString(36)}`;
-      // 同名标题冲突：追加序号，避免覆盖已有清单文件
-      let n = 2;
-      const base = id;
-      while (metas.some((m) => m.id === id)) {
-        id = `${base}-${n++}`;
+      if (isMock) {
+        const now = new Date().toISOString();
+        let id = t
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 40) || `list-${Date.now().toString(36)}`;
+        // 同名标题冲突：追加序号，避免覆盖已有清单文件
+        let n = 2;
+        const base = id;
+        while (metas.some((m) => m.id === id)) {
+          id = `${base}-${n++}`;
+        }
+        const list: Checklist = {
+          id,
+          title: t,
+          createdAt: now,
+          updatedAt: now,
+          items: [],
+        };
+        await persist(list);
+        await refresh();
+        await open(id);
+        return;
       }
-      const list: Checklist = {
-        id,
+      const p = vaultRef.current;
+      if (!p) return;
+      // 插件负责 id 生成与同名冲突加序号
+      const r = (await pluginCall(p, "core-checklists", "chk.create", {
         title: t,
-        createdAt: now,
-        updatedAt: now,
-        items: [],
-      };
-      await persist(list);
+      })) as Checklist;
       await refresh();
-      await open(id);
+      await open(r.id);
     },
-    [persist, refresh, open, metas]
+    [persist, refresh, open, metas, isMock]
   );
 
   const remove = useCallback(
@@ -343,7 +349,7 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
         const p = vaultRef.current;
         if (p) {
           try {
-            await fsDelete(p, `${DIR}/${id}.json`);
+            await pluginCall(p, "core-checklists", "chk.delete", { id });
           } catch (e) {
             console.error(`[checklists] 删除失败 ${id}`, e);
           }
@@ -426,6 +432,25 @@ export function ChecklistProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh, vault.path]);
+
+  /* 原生插件写操作后推送 chk-changed，本层监听刷新（多窗口一致） */
+  useEffect(() => {
+    let un: (() => void) | null = null;
+    import("@tauri-apps/api/event")
+      .then((m) =>
+        m.listen<{ pluginId: string; event: string }>("plugin-event", (e) => {
+          const payload = e.payload;
+          if (payload.pluginId === "core-checklists" && payload.event === "chk-changed") {
+            void refresh();
+          }
+        })
+      )
+      .then((fn) => (un = fn))
+      .catch(() => {
+        /* 浏览器预览环境无事件桥 */
+      });
+    return () => un?.();
+  }, [refresh]);
 
   const value: ChecklistContextValue = useMemo(
     () => ({

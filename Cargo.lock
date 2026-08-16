@@ -4406,6 +4406,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tb-checklists"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tb-sdk",
+]
+
+[[package]]
 name = "tb-notes"
 version = "0.1.0"
 dependencies = [
