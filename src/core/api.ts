@@ -123,6 +123,13 @@ export const aiConfigSetKey = (key: string) =>
 export const aiConfigClearKey = () => invoke<void>("ai_config_clear_key");
 export const aiChat = (messages: ChatMessage[]) =>
   invoke<string>("ai_chat", { messages });
+/** 流式对话：增量经 `ai-chunk` 事件推送（见 AIChatView），本调用在流结束后 resolve */
+export const aiChatStream = (messages: ChatMessage[]) =>
+  invoke<void>("ai_chat_stream", { messages });
+/** `ai-chunk` 事件载荷 */
+export interface AiChunk {
+  text: string;
+}
 export const aiTest = () => invoke<string>("ai_test");
 
 /* ---- M7 博客 ---- */

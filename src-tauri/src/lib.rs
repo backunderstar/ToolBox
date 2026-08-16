@@ -122,6 +122,7 @@ pub fn run() {
             ai::ai_config_set_key,
             ai::ai_config_clear_key,
             ai::ai_chat,
+            ai::ai_chat_stream,
             ai::ai_test,
             blog::blog_list,
             blog::blog_generate,

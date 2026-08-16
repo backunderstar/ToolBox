@@ -5,13 +5,22 @@
 //!   Keychain / Linux Secret Service，经 keyring crate）；ai.json 只存 baseUrl/model
 //! - 旧版 ai.json 里的明文 apiKey 在首次读取时自动迁移进凭据管理器并清除
 //! - ai_chat：POST {base_url}/chat/completions（OpenAI 兼容，非流式 v1）
+//! - ai_chat_stream：`"stream": true` + SSE 逐段解析，把增量经 `ai-chunk` 事件
+//!   推给前端（打字机效果）；请求完成即命令 resolve
 //! - 无 key / 网络错误 / 非 2xx 都转为可读错误信息
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+/// 流式增量载荷（`ai-chunk` 事件）
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AiChunk {
+    pub text: String,
+}
 
 /// 复用单一 HTTP 客户端（连接池 + TLS 会话）
 static HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
@@ -236,6 +245,103 @@ pub async fn ai_test(app: tauri::AppHandle) -> Result<String, String> {
     Ok(reply)
 }
 
+/// 对话（流式）：`stream: true`，SSE 逐段解析，增量经 `ai-chunk` 事件推给前端。
+/// 命令在流结束（或出错）后 resolve；错误同样走 Err，由前端替换占位消息。
+#[tauri::command]
+pub async fn ai_chat_stream(
+    app: tauri::AppHandle,
+    messages: Vec<ChatMessage>,
+) -> Result<(), String> {
+    let cfg = load_config(&app);
+    let api_key = load_key().ok_or_else(|| "未配置 API Key —— 请在设置页的「AI」区块填写".to_string())?;
+    let base = cfg.base_url.trim().trim_end_matches('/');
+    if base.is_empty() {
+        return Err("未配置 API 地址".to_string());
+    }
+    let url = format!("{base}/chat/completions");
+    let body = json!({
+        "model": cfg.model,
+        "messages": messages,
+        "stream": true
+    });
+
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| format!("创建客户端失败: {e}"))?;
+
+    let resp = client
+        .post(&url)
+        .bearer_auth(api_key.trim())
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败（检查网络或 API 地址）: {e}"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("读取响应失败: {e}"))?;
+        let detail = extract_error(&text);
+        return Err(format!("API 返回 {status}: {detail}"));
+    }
+
+    // 逐块读取 SSE 流，按行解析（行可能跨 chunk，用 buf 缓存半行）
+    let stream = resp.bytes_stream();
+    consume_sse(stream, |text| {
+        let _ = app.emit("ai-chunk", AiChunk { text });
+    })
+    .await?;
+    Ok(())
+}
+
+/// 消费 SSE 字节流：按行解析（容忍跨 chunk 的半行 / CRLF），
+/// 每个内容增量回调一次 `on_text`。可独立测试（内存流 / 本地 mock 服务器）。
+async fn consume_sse<S, F>(stream: S, mut on_text: F) -> Result<(), String>
+where
+    S: futures_util::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
+    F: FnMut(String),
+{
+    use futures_util::StreamExt;
+    let mut stream = stream;
+    let mut buf = String::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("读取流失败: {e}"))?;
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(pos) = buf.find('\n') {
+            let line = buf[..pos].to_string();
+            buf = buf[pos + 1..].to_string();
+            if let Some(text) = parse_sse_line(&line) {
+                on_text(text);
+            }
+        }
+    }
+    // 尾部残余（无换行结尾的最后一行）
+    if let Some(text) = parse_sse_line(buf.trim()) {
+        on_text(text);
+    }
+    Ok(())
+}
+
+/// 解析一行 SSE：`data: {...}` 取 `choices[0].delta.content`；
+/// 空行 / 注释行（`: ...`，keep-alive）/ `data: [DONE]` / 无内容 delta → None。
+fn parse_sse_line(line: &str) -> Option<String> {
+    let line = line.trim_end_matches('\r');
+    if line.is_empty() || line.starts_with(':') {
+        return None;
+    }
+    let data = line.strip_prefix("data:")?.trim();
+    if data == "[DONE]" {
+        return None;
+    }
+    let v: Value = serde_json::from_str(data).ok()?;
+    v.pointer("/choices/0/delta/content")
+        .and_then(|c| c.as_str())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+}
+
 fn extract_error(body: &str) -> String {
     serde_json::from_str::<Value>(body)
         .ok()
@@ -249,6 +355,9 @@ fn extract_error(body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::{consume_sse, parse_sse_line};
+    use serde_json::json;
+
     /// keyring 真实读写（Windows 凭据管理器）。需要桌面会话；CI 无会话时跳过。
     #[test]
     fn keyring_roundtrip() {
@@ -262,5 +371,92 @@ mod tests {
             entry.get_password(),
             Err(keyring::Error::NoEntry)
         ));
+    }
+
+    /// SSE 行解析：正常 delta / [DONE] / 注释 / 空行 / 无内容 delta。
+    #[test]
+    fn sse_line_parsing() {
+        assert_eq!(
+            parse_sse_line(r#"data: {"choices":[{"delta":{"content":"你"}}]}"#).as_deref(),
+            Some("你")
+        );
+        assert_eq!(
+            parse_sse_line(r#"data: {"choices":[{"delta":{"content":""}}]}"#),
+            None,
+            "空内容 delta 应忽略"
+        );
+        assert_eq!(parse_sse_line("data: [DONE]"), None);
+        assert_eq!(parse_sse_line(": keep-alive"), None, "注释行忽略");
+        assert_eq!(parse_sse_line(""), None);
+        assert_eq!(parse_sse_line("data: not-json"), None, "坏 JSON 忽略");
+        // 带 \r 结尾（Windows 换行）
+        assert_eq!(
+            parse_sse_line("data: {\"choices\":[{\"delta\":{\"content\":\"好\"}}]}\r").as_deref(),
+            Some("好")
+        );
+    }
+
+    /// consume_sse 处理分块到达：半行跨块拼接、CRLF、[DONE] 与注释行。
+    #[test]
+    fn consume_sse_joins_split_chunks() {
+        let chunks: Vec<Result<bytes::Bytes, reqwest::Error>> = vec![
+            Ok(bytes::Bytes::from(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"你\"}}]}\n",
+            )),
+            // 半行（JSON 被截断在中间）
+            Ok(bytes::Bytes::from("data: {\"choices\":[{\"delta\":{\"cont")),
+            Ok(bytes::Bytes::from(
+                "ent\":\"好\"}}]}\r\ndata: [DONE]\n: keep-alive\n",
+            )),
+        ];
+        let stream = futures_util::stream::iter(chunks);
+        let mut texts = Vec::new();
+        tauri::async_runtime::block_on(consume_sse(stream, |t| texts.push(t))).unwrap();
+        assert_eq!(texts, vec!["你", "好"], "半行跨块应拼接解析");
+    }
+
+    /// 端到端：本地 SSE mock 服务器 + reqwest 流式请求 + consume_sse 解析。
+    #[test]
+    fn consume_sse_over_http() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            for conn in listener.incoming().take(1) {
+                let mut stream = conn.unwrap();
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf); // 读走请求头
+                let body = concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"流\"}}]}\n",
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"式\"}}]}\n",
+                    "data: [DONE]\n"
+                );
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+                stream.flush().unwrap();
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{port}/chat/completions");
+        let client = reqwest::Client::new();
+        let resp = tauri::async_runtime::block_on(
+            client
+                .post(&url)
+                .json(&json!({ "stream": true }))
+                .send(),
+        )
+        .unwrap();
+        assert!(resp.status().is_success());
+        let mut texts = Vec::new();
+        tauri::async_runtime::block_on(consume_sse(resp.bytes_stream(), |t| texts.push(t)))
+            .unwrap();
+        assert_eq!(texts, vec!["流", "式"], "HTTP 流式响应应逐段解析");
+        server.join().unwrap();
     }
 }
