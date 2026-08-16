@@ -1,0 +1,14 @@
+[package]
+name = "tb-notes"
+version = "0.1.0"
+description = "ToolBox 核心插件：笔记文件操作（notes/ 列表/读写/新建/删除/重命名）"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tb-sdk = { path = "../../tb-sdk" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+trash = "5"

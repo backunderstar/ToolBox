@@ -20,7 +20,34 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use super::notes::{collect_md, NOTES_DIR};
+/// 笔记目录（vault/notes/）——笔记已插件化，FTS 索引仍由宿主维护
+/// （阶段 2 搜索插件化后再整体迁移），这里自包含扫描实现。
+const NOTES_DIR: &str = "notes";
+const IGNORED_DIRS: &[&str] = &[".git", ".toolbox", "node_modules", "target", "site"];
+
+/// 递归收集 notes/ 下全部 .md（相对路径 + 绝对路径）。
+fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || IGNORED_DIRS.contains(&name.as_str()) {
+            continue;
+        }
+        let rel = if base.is_empty() {
+            name.clone()
+        } else {
+            format!("{base}/{name}")
+        };
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_dir {
+            collect_md(root, &entry.path(), &rel, out);
+        } else if name.ends_with(".md") {
+            out.push((rel, entry.path()));
+        }
+    }
+}
 
 /// 索引数据库文件名（位于 vault/.toolbox/ 下）。
 const INDEX_FILE: &str = "search-fts.sqlite";

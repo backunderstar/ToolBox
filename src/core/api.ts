@@ -66,23 +66,24 @@ export const vaultGet = () => invoke<VaultSettings>("vault_get");
 export const vaultSet = (path: string) =>
   invoke<void>("vault_set", { path });
 
+/* ---- 笔记文件操作（经 core-notes 原生插件，宿主进程内 FFI） ---- */
+
 export const fsList = (vault: string) =>
-  invoke<FileEntry[]>("fs_list", { vault });
+  pluginCall(vault, "core-notes", "notes.list", {}) as Promise<FileEntry[]>;
 /** 列出 vault 指定目录下的全部条目（含非 .md 文件，供 JSON 数据枚举） */
 export const fsListDir = (vault: string, dir: string) =>
-  invoke<FileEntry[]>("fs_list_dir", { vault, dir });
+  pluginCall(vault, "core-notes", "notes.listDir", { dir }) as Promise<FileEntry[]>;
 export const fsRead = (vault: string, rel: string) =>
-  invoke<string>("fs_read", { vault, rel });
+  pluginCall(vault, "core-notes", "notes.read", { rel }) as Promise<string>;
 export const fsWrite = (vault: string, rel: string, content: string) =>
-  invoke<void>("fs_write", { vault, rel, content });
+  pluginCall(vault, "core-notes", "notes.write", { rel, content }) as Promise<void>;
 export const fsCreate = (vault: string, rel: string) =>
-  invoke<void>("fs_create", { vault, rel });
+  pluginCall(vault, "core-notes", "notes.create", { rel }) as Promise<void>;
 export const fsDelete = (vault: string, rel: string) =>
-  invoke<void>("fs_delete", { vault, rel });
+  pluginCall(vault, "core-notes", "notes.delete", { rel }) as Promise<void>;
 export const fsRename = (vault: string, from: string, to: string) =>
-  invoke<void>("fs_rename", { vault, from, to });
-export const fsSearch = (vault: string, query: string) =>
-  invoke<SearchHit[]>("fs_search", { vault, query });
+  pluginCall(vault, "core-notes", "notes.rename", { from, to }) as Promise<void>;
+
 /** 聚合搜索：文件全文 + 启用的搜索提供者插件命中（source 字段标记来源） */
 export const searchAll = (vault: string, query: string) =>
   invoke<SearchHit[]>("search_all", { vault, query });

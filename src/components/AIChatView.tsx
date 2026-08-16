@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
-import { aiChatStream, fsSearch, fsRead } from "../core/api";
+import { aiChatStream, searchAll, fsRead } from "../core/api";
 import type { AiChunk, ChatMessage } from "../core/api";
 import { IconSparkle } from "./icons";
 
@@ -155,7 +155,7 @@ export function AIChatView() {
     push({ role: "user", content: `（基于笔记检索）${question}` });
     scrollToBottom();
     try {
-      const hits = await fsSearch(vault.path, question);
+      const hits = await searchAll(vault.path, question);
       const top = hits.slice(0, 3);
       const chunks: string[] = [];
       for (const h of top) {

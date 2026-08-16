@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{ai, backup, blog, notes, projects, todos, vault};
+use core::{ai, backup, blog, projects, todos, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -104,14 +104,6 @@ pub fn run() {
             open_in_explorer,
             vault::vault_get,
             vault::vault_set,
-            notes::fs_list,
-            notes::fs_list_dir,
-            notes::fs_read,
-            notes::fs_write,
-            notes::fs_create,
-            notes::fs_delete,
-            notes::fs_rename,
-            notes::fs_search,
             plugins::plugins_list,
             plugins::plugins_set_enabled,
             plugins::plugins_reload,

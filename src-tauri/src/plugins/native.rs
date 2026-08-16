@@ -57,6 +57,18 @@ unsafe extern "C" fn host_log(_ctx: *mut c_void, level: i32, msg: *const c_char)
     }
 }
 
+/// 打开路径回调：系统默认应用 / 资源管理器（tauri-plugin-opener）。
+unsafe extern "C" fn host_open_path(_ctx: *mut c_void, path: *const c_char) -> i32 {
+    let raw = unsafe { tb_sdk::read_str(path) };
+    let Some(path) = raw else {
+        return -1;
+    };
+    match tauri_plugin_opener::open_path(path, None::<&str>) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
 /* ---------------- C ABI 函数指针类型 ---------------- */
 
 type FnAbi = extern "C" fn() -> u32;
@@ -117,6 +129,7 @@ impl NativePlugin {
                     ctx,
                     emit_event: Some(host_emit_event),
                     log: Some(host_log),
+                    open_path: Some(host_open_path),
                 };
                 let cfg = CString::new(config_json).map_err(|e| e.to_string())?;
                 let handle = create(cfg.as_ptr(), &host);
