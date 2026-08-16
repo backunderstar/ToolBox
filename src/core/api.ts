@@ -28,12 +28,14 @@ export interface SearchHit {
   source?: string;
 }
 
-/** 插件声明的导航入口（Rust NavDecl 对应） */
+/** 插件声明的导航入口（Rust NavDecl 对应；pluginId 由前端收集时补充，App 动态路由用） */
 export interface PluginNav {
   id: string;
   label: string;
   icon: string;
   group: string;
+  /** 所属插件 id：点击导航项时据此渲染该插件的自带前端 */
+  pluginId: string;
 }
 
 /** 插件信息（与 Rust PluginInfo 对应，serde camelCase） */

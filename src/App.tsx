@@ -159,6 +159,29 @@ function AppInner() {
      openFile 来自 vault（每次渲染新对象），但 openNote 只需稳定引用：用 ref 包住 */
   const openFileRef = useRef(vault.openFile);
   openFileRef.current = vault.openFile;
+  /* 外部插件自带前端的动态路由：非内置 view（如插件 nav 声明的 id）时，
+     查插件导航表 → 命中且插件启用且自带前端 → 渲染该插件的 PluginUiView。
+     这样任何插件声明 nav + ui 即可获得侧边栏入口与独立页面（无需宿主改代码）。 */
+  const pluginView = useMemo(() => {
+    if (
+      view === "overview" ||
+      view === "plugins" ||
+      view === "settings" ||
+      view === "notes" ||
+      view === "checklist" ||
+      view === "projects" ||
+      view === "ai" ||
+      view === "blog"
+    ) {
+      return null; // 内置视图由上方固定分支处理
+    }
+    const navItem = pluginCtx.navItems.find((n) => n.id === view);
+    if (!navItem) return null;
+    const pl = pluginCtx.plugins.find((p) => p.id === navItem.pluginId);
+    if (!pl?.enabled || !pl.ui) return null;
+    return <PluginUiView pluginId={navItem.pluginId} />;
+  }, [view, pluginCtx.navItems, pluginCtx.plugins]);
+
   const navValue = useMemo(
     () => ({
       view,
@@ -261,8 +284,8 @@ function AppInner() {
               ) : (
                 <CoreDisabled name="笔记" onGoPlugins={() => { setView("plugins"); setViewParams({}); }} />
               )
-            ) : (
-              // 未知视图（如第三方插件声明的非内置 nav 项）：明确占位而非静默落笔记视图
+            ) : pluginView ?? (
+              // 未知视图（nav 声明但插件未启用/无自带前端）：明确占位
               <div className="empty-state">
                 <h2>未找到页面</h2>
                 <p>该视图不存在或对应插件未启用</p>

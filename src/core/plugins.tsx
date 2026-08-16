@@ -281,7 +281,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "notes", label: "笔记", icon: "file-text", group: "工作区" }],
+          nav: [{ id: "notes", label: "笔记", icon: "file-text", group: "工作区", pluginId: "core-notes" }],
         },
         {
           id: "core-checklists",
@@ -298,7 +298,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "checklist", label: "清单", icon: "check", group: "工作区" }],
+          nav: [{ id: "checklist", label: "清单", icon: "check", group: "工作区", pluginId: "core-checklists" }],
         },
         {
           id: "core-projects",
@@ -315,7 +315,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "projects", label: "项目", icon: "folder", group: "工作区" }],
+          nav: [{ id: "projects", label: "项目", icon: "folder", group: "工作区", pluginId: "core-projects" }],
         },
         {
           id: "core-blog",
@@ -332,7 +332,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "blog", label: "博客发布", icon: "globe", group: "系统" }],
+          nav: [{ id: "blog", label: "博客发布", icon: "globe", group: "系统", pluginId: "core-blog" }],
         },
         {
           id: "core-ai",
@@ -349,7 +349,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           provider: false,
           system: false,
           ui: null,
-          nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统" }],
+          nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", pluginId: "core-ai" }],
         },
       ];
       setPlugins(mock);
@@ -490,12 +490,14 @@ export function PluginProvider({ children }: { children: ReactNode }) {
     [plugins, getRuntime]
   );
 
-  /* 启用插件的导航入口（内置插件声明 nav 时并入侧边栏） */
+  /* 启用插件的导航入口（任何启用的插件都可声明 nav 并入侧边栏；
+     核心插件与外部插件一视同仁）。pluginId 由这里补充——App 路由按
+     nav.id 匹配后据此渲染对应插件的自带前端（PluginUiView）。 */
   const navItems = useMemo(() => {
     const out: PluginNav[] = [];
     for (const pl of plugins) {
-      if (pl.enabled && pl.builtin) {
-        for (const n of pl.nav) out.push(n);
+      if (pl.enabled) {
+        for (const n of pl.nav) out.push({ ...n, pluginId: pl.id });
       }
     }
     return out;
