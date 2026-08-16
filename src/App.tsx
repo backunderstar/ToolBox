@@ -8,12 +8,19 @@ import { ProjectsProvider } from "./core/projects";
 import { NavProvider } from "./core/navigation";
 import type { ViewParams } from "./core/navigation";
 import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
-import { loadNavPrefs, saveNavPrefs, type NavPrefs } from "./core/navPrefs";
+import {
+  loadNavConfig,
+  saveNavConfig,
+  normalizeNav,
+  groupIdFor,
+  type NavConfig,
+  type NavItemDef,
+} from "./core/navPrefs";
 import { floatToggle } from "./core/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { applyTheme, getInitialTheme, toggleTheme, getThemeBase, findTheme } from "./themes/themes";
 import { TopBar } from "./components/TopBar";
-import { Sidebar, NAV_GROUPS, type ViewId } from "./components/Sidebar";
+import { Sidebar, type ViewId } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { WelcomeView } from "./components/WelcomeView";
 import { NotesView } from "./components/NotesView";
@@ -81,18 +88,50 @@ function AppInner() {
     () => loadLayoutPrefs().focusMode
   );
 
-  /* 导航栏偏好：顺序 + 隐藏（localStorage 持久化） */
-  const [navPrefs, setNavPrefs] = useState<NavPrefs>(() =>
-    loadNavPrefs(NAV_GROUPS)
+  /* 导航栏全配置：分组/顺序/隐藏/标签图标覆盖（localStorage 持久化；归一化兜底插件增删） */
+  const [navConfig, setNavConfig] = useState<NavConfig | null>(() => loadNavConfig());
+
+  /* 导航项定义底表：静态项 + 已启用插件的 nav 声明（插件项默认按声明 group 归组，
+     用户可在设置页任意移动/排序/改名换图标） */
+  const navDefs = useMemo<NavItemDef[]>(
+    () => [
+      { id: "overview", label: "概览", icon: "grid", groupId: "work" },
+      { id: "plugins", label: "插件", icon: "puzzle", groupId: "work" },
+      { id: "settings", label: "设置", icon: "gear", groupId: "system", fixed: true },
+      ...pluginCtx.navItems.map((n) => ({
+        id: n.id,
+        label: n.label,
+        icon: n.icon,
+        groupId: groupIdFor(n.group),
+      })),
+    ],
+    [pluginCtx.navItems]
   );
+
+  /* 归一化配置（渲染与设置页共用；失效项清理/新项补齐/settings 强制可见） */
+  const nav = useMemo(() => normalizeNav(navConfig, navDefs), [navConfig, navDefs]);
+
+  useEffect(() => {
+    saveNavConfig(nav);
+  }, [nav]);
+
+  /** 基于当前归一化配置修改并保存（折叠/编辑统一入口） */
+  const updateNav = (fn: (cur: NavConfig) => NavConfig) => {
+    setNavConfig((prev) => fn(normalizeNav(prev, navDefs)));
+  };
+
+  const toggleNavGroup = (groupId: string) => {
+    updateNav((cur) => ({
+      ...cur,
+      groups: cur.groups.map((g) =>
+        g.id === groupId ? { ...g, collapsed: !g.collapsed } : g
+      ),
+    }));
+  };
 
   useEffect(() => {
     saveLayoutPrefs({ navCollapsed, filesCollapsed, focusMode });
   }, [navCollapsed, filesCollapsed, focusMode]);
-
-  useEffect(() => {
-    saveNavPrefs(navPrefs);
-  }, [navPrefs]);
 
   useEffect(() => {
     applyTheme(themeId);
@@ -192,8 +231,9 @@ function AppInner() {
                 setViewParams({});
               }}
               collapsed={navCollapsed}
-              prefs={navPrefs}
-              pluginNav={pluginCtx.navItems}
+              config={nav}
+              defs={navDefs}
+              onToggleGroup={toggleNavGroup}
             />
           )}
           <main className="main">
@@ -250,8 +290,9 @@ function AppInner() {
                 themeId={themeId}
                 onSetThemeId={setThemeId}
                 ping={pingInfo}
-                navPrefs={navPrefs}
-                onNavPrefsChange={setNavPrefs}
+                navConfig={nav}
+                defs={navDefs}
+                onNavChange={setNavConfig}
               />
             ) : view === "notes" ? (
               corePluginEnabled(pluginCtx.plugins, "core-notes") ? (

@@ -1,6 +1,6 @@
 import { useReducer, useState } from "react";
 import type { PingInfo } from "../core/ipc";
-import type { NavPrefs } from "../core/navPrefs";
+import type { NavConfig, NavItemDef } from "../core/navPrefs";
 import { useVault } from "../core/vault";
 import { openInExplorer } from "../core/api";
 import {
@@ -25,16 +25,21 @@ interface SettingsViewProps {
   themeId: string;
   onSetThemeId: (id: string) => void;
   ping: PingInfo | null;
-  navPrefs: NavPrefs;
-  onNavPrefsChange: (prefs: NavPrefs) => void;
+  /** 归一化后的导航配置（分组/顺序/元数据） */
+  navConfig: NavConfig;
+  /** 全部导航项定义（静态 + 插件声明） */
+  defs: NavItemDef[];
+  /** 导航配置变更（保存用户编辑结果） */
+  onNavChange: (cfg: NavConfig) => void;
 }
 
 export function SettingsView({
   themeId,
   onSetThemeId,
   ping,
-  navPrefs,
-  onNavPrefsChange,
+  navConfig,
+  defs,
+  onNavChange,
 }: SettingsViewProps) {
   const vault = useVault();
   const [opening, setOpening] = useState(false);
@@ -217,7 +222,7 @@ export function SettingsView({
         <BackupSettings />
 
         {/* ---- 导航栏 ---- */}
-        <NavSettings prefs={navPrefs} onChange={onNavPrefsChange} />
+        <NavSettings config={navConfig} defs={defs} onChange={onNavChange} />
 
         {/* ---- 关于 ---- */}
         <section className="settings-card">
