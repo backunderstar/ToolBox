@@ -4,7 +4,7 @@ mod core;
 mod plugins;
 mod rpc;
 
-use core::{ai, backup, blog, history, notes, projects, todos, vault};
+use core::{ai, backup, blog, notes, projects, todos, vault};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -118,6 +118,7 @@ pub fn run() {
             plugins::plugins_uninstall,
             plugins::plugins_read_file,
             plugins::plugins_invoke,
+            plugins::plugin_call,
             ai::ai_config_get,
             ai::ai_config_set,
             ai::ai_config_set_key,
@@ -146,22 +147,16 @@ pub fn run() {
             todos::todos_toggle,
             todos::todos_delete,
             todos::todos_clear_done,
-            history::history_init,
-            history::history_status,
-            history::history_commit,
-            history::history_list,
-            history::history_show,
-            history::history_rollback,
             float_toggle,
             float_set_locked,
         ])
         .setup(|app| {
             // 后台自动备份线程（随应用常驻，读取配置按间隔执行）
             backup::spawn_auto(app.handle().clone());
-            // 版本历史自动提交线程（编辑防抖 15s 后落盘为一次提交）
-            history::spawn_auto_committer();
             // 插件事件桥：进程插件事件 → 前端 plugin-event 事件
             plugins::events::spawn_event_forwarder(app.handle().clone());
+            // 原生插件事件回调需要 AppHandle（host 回调）
+            plugins::native::init_host_app(app.handle().clone());
             // 系统托盘（关窗常驻后台）
             create_tray(app.handle())?;
             // 桌面半透明浮窗（快速待办）
@@ -223,8 +218,6 @@ fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                 let _ = float_toggle(app.clone());
             }
             "tray-quit" => {
-                // 退出前把待提交的编辑冲刷为版本快照（不丢最近 15s 内的修改）
-                history::flush_pending();
                 EXITING.store(true, Ordering::SeqCst);
                 app.exit(0);
             }

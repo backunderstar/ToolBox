@@ -1,0 +1,9 @@
+[package]
+name = "tb-sdk"
+version = "0.1.0"
+description = "ToolBox 核心插件 SDK：宿主 ↔ 插件 C ABI 契约与开发样板"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

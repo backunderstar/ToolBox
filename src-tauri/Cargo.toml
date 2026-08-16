@@ -43,9 +43,10 @@ bytes = "1"
 # 全文搜索：SQLite FTS5（trigram 分词器，中文子串匹配）。
 # 注意：bundled 不含 FTS5，必须用 bundled-full（编译捆绑 SQLite 源码，含 SQLITE_ENABLE_FTS5）
 rusqlite = { version = "0.32", features = ["bundled-full"] }
-# 版本历史：内嵌 git（libgit2 源码编译，无需用户安装 git）。
-# 关闭默认 features（ssh/https 需要 openssl），本地仓库操作不需要
-git2 = { version = "0.19", default-features = false, features = ["vendored-libgit2"] }
+# 核心插件：动态加载 cdylib（Windows DLL）
+libloading = "0.8"
+# 核心插件 C ABI 契约（宿主侧解析 tb_sdk 返回的 JSON）
+tb-sdk = { path = "../tb-sdk" }
 
 # Windows 上链接 WebView2 需要，Tauri 2 默认启用
 [target.'cfg(windows)'.dependencies]

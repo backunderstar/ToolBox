@@ -23,7 +23,6 @@ import { ToolsView } from "./components/ToolsView";
 import { ChecklistView } from "./components/ChecklistView";
 import { RecordsView } from "./components/RecordsView";
 import { ProjectsView } from "./components/ProjectsView";
-import { VersionHistoryView } from "./components/VersionHistoryView";
 import { AIChatView } from "./components/AIChatView";
 import { BlogView } from "./components/BlogView";
 import { SettingsView } from "./components/SettingsView";
@@ -214,8 +213,6 @@ function AppInner() {
               <RecordsView />
             ) : view === "projects" ? (
               <ProjectsView />
-            ) : view === "history" ? (
-              <VersionHistoryView />
             ) : view === "ai" ? (
               <AIChatView />
             ) : view === "blog" ? (

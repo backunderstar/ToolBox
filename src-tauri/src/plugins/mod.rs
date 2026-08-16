@@ -2,9 +2,11 @@
 
 pub mod events;
 pub mod manifest;
+pub mod native;
 pub mod process;
 
-use manifest::{PluginManifest, PluginRuntime};
+use manifest::{NavDecl, PluginManifest, PluginRuntime};
+use native::NativePlugin;
 use process::ProcessPlugin;
 use serde::Serialize;
 use serde_json::Value;
@@ -27,6 +29,7 @@ pub struct PluginRecord {
     pub commands: Vec<String>,
     pub error: Option<String>,
     pub process: Option<ProcessPlugin>,
+    pub native: Option<NativePlugin>,
     pub restarts: u32,
     pub last_crash: Option<Instant>,
 }
@@ -45,6 +48,12 @@ pub struct PluginInfo {
     pub status: &'static str,
     pub error: Option<String>,
     pub commands: Vec<String>,
+    /// 核心插件（native，随应用分发，不可卸载）
+    pub builtin: bool,
+    /// 搜索提供者（实现 search.provide 命令，启用后进入全局搜索）
+    pub provider: bool,
+    /// 插件声明的导航入口（启用时并入侧边栏）
+    pub nav: Vec<NavDecl>,
 }
 
 pub struct PluginManager {
@@ -102,6 +111,10 @@ fn global_plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     std::fs::create_dir_all(&p).map_err(|e| format!("创建插件目录失败: {e}"))?;
     Ok(p)
 }
+
+/// 核心插件子目录名（%APPDATA%/com.toolbox.desktop/plugins/_core/<id>/）。
+/// 以下划线开头，与外部插件 id（仅小写字母/数字/连字符）不可能冲突。
+pub const CORE_DIR: &str = "_core";
 
 fn state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
@@ -269,69 +282,21 @@ impl PluginManager {
             if !dir.is_dir() {
                 continue;
             }
-            let raw = match std::fs::read_to_string(dir.join("plugin.json")) {
-                Ok(r) => r,
-                Err(_) => continue, // 无清单的目录忽略
-            };
-            let manifest: PluginManifest = match serde_json::from_str(&raw) {
-                Ok(m) => m,
-                Err(e) => {
-                    let id = dir
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default();
-                    self.records.push(PluginRecord {
-                        manifest: PluginManifest {
-                            id: id.clone(),
-                            name: id.clone(),
-                            version: "?".into(),
-                            runtime: PluginRuntime::Webview,
-                            entry: None,
-                            command: None,
-                            permissions: vec![],
-                            description: String::new(),
-                            config: Value::Null,
-                        },
-                        dir,
-                        commands: vec![],
-                        error: Some(format!("plugin.json 解析失败: {e}")),
-                        process: None,
-                        restarts: 0,
-                        last_crash: None,
-                    });
-                    continue;
+            // 核心插件目录（_core/<id>/）：内部每个子目录是一个 native 插件
+            if entry.file_name() == CORE_DIR {
+                let mut subs: Vec<_> = match std::fs::read_dir(&dir) {
+                    Ok(r) => r.flatten().collect(),
+                    Err(_) => continue,
+                };
+                subs.sort_by_key(|e| e.file_name());
+                for sub in subs {
+                    if sub.path().is_dir() {
+                        self.scan_plugin_dir(&sub.path());
+                    }
                 }
-            };
-            if let Err(e) = manifest.validate() {
-                self.records.push(PluginRecord {
-                    manifest,
-                    dir,
-                    commands: vec![],
-                    error: Some(e),
-                    process: None,
-                    restarts: 0,
-                    last_crash: None,
-                });
                 continue;
             }
-            let id = manifest.id.clone();
-            let is_enabled = self.enabled.contains(&id);
-            let is_process = manifest.runtime == PluginRuntime::Process;
-            let idx = self.records.len();
-            self.records.push(PluginRecord {
-                manifest,
-                dir,
-                commands: vec![],
-                error: None,
-                process: None,
-                restarts: 0,
-                last_crash: None,
-            });
-            if is_enabled && is_process {
-                if let Err(e) = self.start_record(idx) {
-                    self.records[idx].error = Some(e);
-                }
-            }
+            self.scan_plugin_dir(&dir);
         }
         // 失效 id 清理：插件目录已删除后，enabled 里的残留 id 会导致
         // 重新放回同名插件时自动启用（可能意外）。发现即移除并持久化。
@@ -351,6 +316,77 @@ impl PluginManager {
         Ok(())
     }
 
+    /// 扫描单个插件目录并入注册表；已启用则启动（process/native）。
+    fn scan_plugin_dir(&mut self, dir: &Path) {
+        let raw = match std::fs::read_to_string(dir.join("plugin.json")) {
+            Ok(r) => r,
+            Err(_) => return, // 无清单的目录忽略
+        };
+        let manifest: PluginManifest = match serde_json::from_str(&raw) {
+            Ok(m) => m,
+            Err(e) => {
+                let id = dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                self.records.push(PluginRecord {
+                    manifest: PluginManifest {
+                        id: id.clone(),
+                        name: id.clone(),
+                        version: "?".into(),
+                        runtime: PluginRuntime::Webview,
+                        entry: None,
+                        command: None,
+                        permissions: vec![],
+                        description: String::new(),
+                        config: Value::Null,
+                        search_provider: false,
+                        nav: vec![],
+                    },
+                    dir: dir.to_path_buf(),
+                    commands: vec![],
+                    error: Some(format!("plugin.json 解析失败: {e}")),
+                    process: None,
+                    native: None,
+                    restarts: 0,
+                    last_crash: None,
+                });
+                return;
+            }
+        };
+        if let Err(e) = manifest.validate() {
+            self.records.push(PluginRecord {
+                manifest,
+                dir: dir.to_path_buf(),
+                commands: vec![],
+                error: Some(e),
+                process: None,
+                native: None,
+                restarts: 0,
+                last_crash: None,
+            });
+            return;
+        }
+        let id = manifest.id.clone();
+        let is_enabled = self.enabled.contains(&id);
+        let idx = self.records.len();
+        self.records.push(PluginRecord {
+            manifest,
+            dir: dir.to_path_buf(),
+            commands: vec![],
+            error: None,
+            process: None,
+            native: None,
+            restarts: 0,
+            last_crash: None,
+        });
+        if is_enabled {
+            if let Err(e) = self.start_record(idx) {
+                self.records[idx].error = Some(e);
+            }
+        }
+    }
+
     pub fn list(&self) -> Vec<PluginInfo> {
         self.records
             .iter()
@@ -362,18 +398,22 @@ impl PluginManager {
                 runtime: match r.manifest.runtime {
                     PluginRuntime::Webview => "webview",
                     PluginRuntime::Process => "process",
+                    PluginRuntime::Native => "native",
                 },
                 entry: r.manifest.entry.clone(),
                 enabled: self.enabled.contains(&r.manifest.id),
                 // 状态语义：
                 // - error 优先（清单/启动/崩溃等错误）
                 // - process 插件：进程存活才算 ready
+                // - native 插件：DLL 加载成功即 ready
                 // - webview 插件：无子进程，入口由前端加载；
                 //   启用即视为 ready（入口求值失败由前端 runtimeErrors 展示为错误）
                 status: if r.error.is_some() {
                     "error"
                 } else if r.manifest.runtime == PluginRuntime::Process {
                     if r.process.is_some() { "ready" } else { "stopped" }
+                } else if r.manifest.runtime == PluginRuntime::Native {
+                    if r.native.is_some() { "ready" } else { "stopped" }
                 } else if self.enabled.contains(&r.manifest.id) {
                     "ready"
                 } else {
@@ -381,6 +421,9 @@ impl PluginManager {
                 },
                 error: r.error.clone(),
                 commands: r.commands.clone(),
+                builtin: r.manifest.runtime == PluginRuntime::Native,
+                provider: r.manifest.search_provider,
+                nav: r.manifest.nav.clone(),
             })
             .collect()
     }
@@ -393,9 +436,13 @@ impl PluginManager {
             .ok_or("插件不存在")?;
         if enabled {
             self.enabled.insert(id.to_string());
-            if self.records[idx].manifest.runtime == PluginRuntime::Process
-                && self.records[idx].process.is_none()
-            {
+            // webview 插件由前端加载入口，无后端进程/库需要启动
+            let need_start = match self.records[idx].manifest.runtime {
+                PluginRuntime::Webview => false,
+                PluginRuntime::Process => self.records[idx].process.is_none(),
+                PluginRuntime::Native => self.records[idx].native.is_none(),
+            };
+            if need_start {
                 if let Err(e) = self.start_record(idx) {
                     self.records[idx].error = Some(e.clone());
                     // 启动失败不算启用成功
@@ -413,12 +460,16 @@ impl PluginManager {
     }
 
     /// 卸载：停进程 + 清启用状态 + 删除插件目录（进回收站）。
+    /// 核心插件（native）不可卸载，只能启用/禁用。
     pub fn uninstall(&mut self, app: &tauri::AppHandle, id: &str) -> Result<(), String> {
         let idx = self
             .records
             .iter()
             .position(|r| r.manifest.id == id)
             .ok_or("插件不存在")?;
+        if self.records[idx].manifest.runtime == PluginRuntime::Native {
+            return Err("核心插件不可卸载，只能禁用".to_string());
+        }
         let dir = self.records[idx].dir.clone();
         self.stop_record(idx);
         self.records.remove(idx);
@@ -428,7 +479,7 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 热重载：stop + start（process）；webview 插件由前端重新加载入口。
+    /// 热重载：stop + start（process/native）；webview 插件由前端重新加载入口。
     pub fn reload(&mut self, id: &str) -> Result<(), String> {
         let idx = self
             .records
@@ -437,8 +488,7 @@ impl PluginManager {
             .ok_or("插件不存在")?;
         self.stop_record(idx);
         self.records[idx].error = None;
-        if self.enabled.contains(id)
-            && self.records[idx].manifest.runtime == PluginRuntime::Process
+        if self.enabled.contains(id) && self.records[idx].manifest.runtime != PluginRuntime::Webview
         {
             self.start_record(idx)
                 .map_err(|e| {
@@ -449,7 +499,10 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 调用插件命令。进程插件：进程不在则先启动；崩溃类错误自动重启（限次）。
+    /// 调用插件命令（统一路由）：
+    /// - native：宿主进程内 FFI（最高性能）
+    /// - process：JSON-RPC over stdio（进程隔离）
+    /// - webview：由前端调用（这里拒绝）
     pub fn invoke(&mut self, id: &str, command: &str, args: Value) -> Result<Value, String> {
         let idx = self
             .records
@@ -459,9 +512,21 @@ impl PluginManager {
         if !self.enabled.contains(id) {
             return Err("插件未启用".to_string());
         }
-        if self.records[idx].manifest.runtime != PluginRuntime::Process {
-            return Err("webview 插件请由前端调用".to_string());
+        match self.records[idx].manifest.runtime {
+            PluginRuntime::Webview => Err("webview 插件请由前端调用".to_string()),
+            PluginRuntime::Process => self.invoke_process(idx, command, args),
+            PluginRuntime::Native => {
+                if self.records[idx].native.is_none() {
+                    self.start_record(idx)?;
+                }
+                let plugin = self.records[idx].native.as_ref().expect("native 已启动");
+                plugin.call(command, &args)
+            }
         }
+    }
+
+    /// process 插件调用：崩溃/挂死自动重启（限次）。
+    fn invoke_process(&mut self, idx: usize, command: &str, args: Value) -> Result<Value, String> {
         if self.records[idx].process.is_none() {
             self.start_record(idx)?;
         }
@@ -508,6 +573,15 @@ impl PluginManager {
     }
 
     fn start_record(&mut self, idx: usize) -> Result<(), String> {
+        match self.records[idx].manifest.runtime {
+            PluginRuntime::Webview => Ok(()),
+            PluginRuntime::Process => self.start_process(idx),
+            PluginRuntime::Native => self.start_native(idx),
+        }
+    }
+
+    /// 启动 process 插件：spawn 子进程 + init 握手（声明命令）。
+    fn start_process(&mut self, idx: usize) -> Result<(), String> {
         let (id, cmd, perms) = {
             let rec = &self.records[idx];
             (
@@ -536,10 +610,36 @@ impl PluginManager {
         Ok(())
     }
 
+    /// 启动 native 插件：加载 DLL + 创建实例（配置含 vault 路径）。
+    fn start_native(&mut self, idx: usize) -> Result<(), String> {
+        let (id, cmd, dir, vault) = {
+            let rec = &self.records[idx];
+            (
+                rec.manifest.id.clone(),
+                rec.manifest.command.clone(),
+                rec.dir.clone(),
+                self.vault.clone(),
+            )
+        };
+        let cmd = cmd.ok_or("native 插件缺少 command")?;
+        if cmd.is_empty() {
+            return Err("native 插件 command 为空".to_string());
+        }
+        let vault = vault.ok_or("vault 未设置")?;
+        let config = serde_json::json!({ "vault": vault.to_string_lossy() }).to_string();
+        let plugin = NativePlugin::load(&dir.join(&cmd[0]), &id, &config)?;
+        self.records[idx].native = Some(plugin);
+        // native 命令由插件内部分发，无握手声明
+        self.records[idx].error = None;
+        Ok(())
+    }
+
     fn stop_record(&mut self, idx: usize) {
         if let Some(p) = self.records[idx].process.take() {
             p.shutdown();
         }
+        // native：Drop 即销毁插件实例并释放 DLL（Windows 上文件随即可覆盖）
+        self.records[idx].native.take();
         self.records[idx].commands.clear();
     }
 
@@ -682,6 +782,22 @@ pub async fn plugins_invoke(
     m.invoke(&id, &command, args)
 }
 
+/// 统一插件命令调用（任何 runtime）：native → FFI；process → JSON-RPC；
+/// webview → 拒绝（由前端注册表调用）。核心插件（如 records）走这里。
+#[tauri::command]
+pub async fn plugin_call(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<PluginManager>>,
+    vault: String,
+    id: String,
+    command: String,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut m = state.lock().map_err(|e| e.to_string())?;
+    ensure_refreshed(&mut m, &app, &vault)?;
+    m.invoke(&id, &command, args)
+}
+
 /* ---------------- 测试 ---------------- */
 
 #[cfg(test)]
@@ -690,6 +806,57 @@ mod tests {
     use crate::rpc::Message;
     use serde_json::json;
     use std::sync::mpsc::channel;
+
+    /// 原生核心插件全链路：真实 DLL 加载 → create → records CRUD。
+    /// 需要先构建核心插件（`cargo build -p tb-records`），DLL 不存在时跳过。
+    #[test]
+    fn native_plugin_load_and_call() {
+        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_records.dll");
+        if !dll.exists() {
+            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-records");
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("tb-native-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let vault = base.join("vault");
+        std::fs::create_dir_all(&vault).unwrap();
+
+        let cfg = json!({ "vault": vault.to_string_lossy() }).to_string();
+        let plugin = NativePlugin::load(&dll, "core-records", &cfg).expect("DLL 应能加载");
+
+        // 空列表
+        let list = plugin.call("records.list", &json!({})).unwrap();
+        assert!(list.as_array().unwrap().is_empty(), "初始应为空: {list}");
+
+        // 新建（缺省初值）
+        let created = plugin.call("records.create", &json!({})).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+        assert_eq!(created["title"], "未命名记录");
+        assert!(vault.join("data/records").join(format!("{id}.json")).exists());
+
+        // 保存
+        let mut rec = created.clone();
+        rec["title"] = json!("修改后标题");
+        let saved = plugin.call("records.save", &json!({ "record": rec })).unwrap();
+        assert_eq!(saved["title"], "修改后标题");
+
+        // 删除
+        plugin.call("records.delete", &json!({ "id": id })).unwrap();
+        assert!(plugin.call("records.list", &json!({})).unwrap().as_array().unwrap().is_empty());
+
+        // 未知命令 → 错误
+        let err = plugin.call("no.such", &json!({})).unwrap_err();
+        assert!(err.contains("未知命令"), "错误信息: {err}");
+
+        // 搜索提供者
+        plugin.call("records.create", &json!({ "partial": { "title": "插件化设计", "content": "C ABI 契约" } })).unwrap();
+        let hits = plugin.call("search.provide", &json!({ "query": "插件化" })).unwrap();
+        assert_eq!(hits.as_array().unwrap().len(), 1);
+        assert_eq!(hits[0]["title"], "插件化设计");
+
+        drop(plugin);
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     /// 旧布局迁移：vault/plugins/* → 全局目录（复制 + 整体回收站清理）。
     #[test]

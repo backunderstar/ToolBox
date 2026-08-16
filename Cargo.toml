@@ -1,0 +1,8 @@
+# ToolBox workspace：宿主（src-tauri）+ 核心插件 SDK + 核心插件（cdylib）。
+#
+# 核心插件以动态库形式随应用分发，宿主经 libloading + C ABI 加载：
+# 性能接近进程内直接调用（FFI + JSON 序列化，微秒级），
+# 同时保持"插件"形态——可启用/禁用/热重载/被替换。
+[workspace]
+resolver = "2"
+members = ["src-tauri", "tb-sdk", "core-plugins/records"]

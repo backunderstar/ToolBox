@@ -156,7 +156,6 @@ pub async fn projects_create(vault: String, name: String) -> Result<(), String> 
         return Err(format!("项目已存在: {}", name.trim()));
     }
     std::fs::create_dir_all(&p).map_err(|e| format!("创建项目失败: {e}"))?;
-    crate::core::history::mark_dirty(&vault);
     Ok(())
 }
 
@@ -171,7 +170,6 @@ pub async fn projects_archive(vault: String, name: String) -> Result<(), String>
     std::fs::create_dir_all(&archive).map_err(|e| format!("创建归档目录失败: {e}"))?;
     let dst = unique_name(&archive, name.trim());
     std::fs::rename(&src, &dst).map_err(|e| format!("归档失败: {e}"))?;
-    crate::core::history::mark_dirty(&vault);
     Ok(())
 }
 
@@ -185,7 +183,6 @@ pub async fn projects_unarchive(vault: String, name: String) -> Result<(), Strin
     let root = projects_root(&vault);
     let dst = unique_name(&root, name.trim());
     std::fs::rename(&src, &dst).map_err(|e| format!("还原失败: {e}"))?;
-    crate::core::history::mark_dirty(&vault);
     Ok(())
 }
 
@@ -199,7 +196,6 @@ pub async fn projects_delete(vault: String, name: String, permanent: bool) -> Re
         trash::delete(&target).map_err(|e| format!("移入回收站失败: {e}"))
     };
     res?;
-    crate::core::history::mark_dirty(&vault);
     Ok(())
 }
 

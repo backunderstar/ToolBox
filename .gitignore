@@ -3,6 +3,8 @@ node_modules/
 dist/
 # Vditor 离线资源例外（随仓库提交，保证离线可用；升级用 pnpm sync:vditor 重建）
 !public/vditor/dist/
+# Cargo workspace（target 移到仓库根）
+target/
 src-tauri/target/
 src-tauri/gen/
 

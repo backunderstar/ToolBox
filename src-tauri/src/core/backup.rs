@@ -102,7 +102,7 @@ fn backups_root(vault: &str) -> PathBuf {
 /// 排除规则：
 /// - `site`：仅排除 vault **根级**的博客生成物（可重建）；
 ///   项目内同名目录（projects/x/site/）是用户数据，必须备份
-/// - `.git`：仅排除 vault 根级的版本历史仓库（独立图层，不必重复备份）
+/// - `.git`：仅排除 vault 根级的 git 残留（旧版版本历史遗留，独立图层不重复备份）
 /// - 备份目录自身防递归；FTS 搜索索引及其 WAL/SHM 派生文件（派生数据，可从笔记重建）
 /// - 临时文件
 fn is_skipped(parent: &Path, name: &str, at_root: bool) -> bool {

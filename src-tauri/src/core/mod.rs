@@ -9,13 +9,10 @@
 //! - `backup`   自动备份：vault → .toolbox/backups，保留 N 份（Backlog 落地）
 //! - `todos`    快速待办：浮窗清单数据层（vault/data/todos/todos.json）
 //! - `search`   全文搜索：SQLite FTS5 索引（vault/.toolbox/search-fts.sqlite）
-//! - `history`  版本历史：内嵌 git（libgit2）自动提交 + 时间线 + 回滚
-//! - `git`     Git 扩展（未来：远程仓库/发布）
 
 pub mod ai;
 pub mod backup;
 pub mod blog;
-pub mod history;
 pub mod notes;
 pub mod path;
 pub mod projects;
