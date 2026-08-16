@@ -382,6 +382,8 @@ static PREVIEW: OnceLock<Mutex<PreviewInner>> = OnceLock::new();
 struct PreviewInner {
     server: Option<Arc<tiny_http::Server>>,
     vault: Option<PathBuf>,
+    /// 预览线程句柄：preview_stop 时 unblock + join（见 preview_stop 注释）。
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 fn preview_state() -> &'static Mutex<PreviewInner> {
@@ -389,6 +391,7 @@ fn preview_state() -> &'static Mutex<PreviewInner> {
         Mutex::new(PreviewInner {
             server: None,
             vault: None,
+            thread: None,
         })
     })
 }
@@ -421,7 +424,10 @@ pub fn preview_start(vault: &str) -> Result<String, String> {
     let server = Arc::new(server);
     let handle = server.clone();
     let dir = public_dir.clone();
-    std::thread::spawn(move || {
+    // 预览线程（常驻 accept 循环）。线程句柄存入 PreviewInner：
+    // 卸载前必须 unblock + join 让它退出（见 preview_stop）——
+    // 否则 DLL 被 FreeLibrary 卸载后线程仍在执行已卸载的代码，宿主进程崩溃（S4）。
+    let thread = std::thread::spawn(move || {
         for request in handle.incoming_requests() {
             let path = request.url().to_string();
             let file_path = resolve_static(&dir, &path);
@@ -463,6 +469,7 @@ pub fn preview_start(vault: &str) -> Result<String, String> {
     let mut inner = st.lock().map_err(|e| e.to_string())?;
     inner.server = Some(server);
     inner.vault = Some(PathBuf::from(vault));
+    inner.thread = Some(thread);
     Ok(format!("http://127.0.0.1:{port}/"))
 }
 
@@ -470,7 +477,13 @@ pub fn preview_stop() -> Result<(), String> {
     let st = preview_state();
     let mut inner = st.lock().map_err(|e| e.to_string())?;
     if let Some(s) = inner.server.take() {
+        // unblock 使 incoming_requests 立即返回 None → 线程循环结束
         s.unblock();
+    }
+    if let Some(t) = inner.thread.take() {
+        // join 确保线程真正退出后才返回：调用方（插件 Drop）随后卸载 DLL 时
+        // 不再有线程执行已卸载的代码
+        let _ = t.join();
     }
     inner.vault = None;
     Ok(())

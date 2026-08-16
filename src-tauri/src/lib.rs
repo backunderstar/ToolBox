@@ -81,6 +81,8 @@ fn app_config_dir(app: &tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 fn backup_now(app: tauri::AppHandle, vault: String) -> Result<backup::BackupInfo, String> {
+    // 安全（S1c）：备份会读取并复制 vault 全量内容，作用域必须绑定已配置工作区
+    core::vault::ensure_vault_matches(&app, &vault)?;
     let cfg = app_config_dir(&app)?;
     backup::backup_now_cmd(&cfg, &vault)
 }
@@ -101,8 +103,9 @@ fn backup_config_set(
 }
 
 #[tauri::command]
-fn backup_list(vault: String) -> Vec<backup::BackupEntry> {
-    backup::backup_list(&vault)
+fn backup_list(app: tauri::AppHandle, vault: String) -> Result<Vec<backup::BackupEntry>, String> {
+    core::vault::ensure_vault_matches(&app, &vault)?;
+    Ok(backup::backup_list(&vault))
 }
 
 #[tauri::command]
@@ -111,6 +114,8 @@ fn backup_restore(
     vault: String,
     name: String,
 ) -> Result<backup::BackupInfo, String> {
+    // 恢复会向 vault 覆盖写入，同样绑定已配置工作区
+    core::vault::ensure_vault_matches(&app, &vault)?;
     let cfg = app_config_dir(&app)?;
     backup::restore_backup(&cfg, &vault, &name)
 }

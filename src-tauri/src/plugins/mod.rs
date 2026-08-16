@@ -732,6 +732,21 @@ impl PluginManager {
         if cmd.is_empty() {
             return Err("native 插件 command 为空".to_string());
         }
+        // 安全（S1b）：native 运行时 = 把 DLL 加载进宿主进程（完全控制），
+        // 只允许随应用分发的核心插件（目录在 plugins/_core 下）。第三方插件
+        // 目录声明 runtime=native 一律拒绝——否则任意插件目录放一个 DLL
+        // 即可在宿主进程内执行任意代码。manifest 里声明信任模型（"核心插件是
+        // 信任代码"）必须与这里的加载路径强制一致。
+        let is_core = dir
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|n| n == CORE_DIR)
+            .unwrap_or(false);
+        if !is_core {
+            return Err(format!(
+                "插件 {id} 声明了 native 运行时，但不在核心插件目录（仅随应用分发的核心插件允许 native，已拒绝加载）"
+            ));
+        }
         let vault = vault.ok_or("vault 未设置")?;
         let config_dir = self.config_dir.clone().unwrap_or_default();
         let config = serde_json::json!({
@@ -808,6 +823,9 @@ pub async fn plugins_list(
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
 ) -> Result<Vec<PluginInfo>, String> {
+    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
+    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
     Ok(m.list())
@@ -821,6 +839,9 @@ pub async fn plugins_set_enabled(
     id: String,
     enabled: bool,
 ) -> Result<(), String> {
+    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
+    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
     m.set_enabled(&app, &id, enabled)
@@ -834,6 +855,9 @@ pub async fn plugins_uninstall(
     vault: String,
     id: String,
 ) -> Result<(), String> {
+    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
+    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
     m.uninstall(&app, &id)
@@ -846,19 +870,41 @@ pub async fn plugins_reload(
     vault: String,
     id: String,
 ) -> Result<(), String> {
+    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
+    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
     m.reload(&id)
 }
 
+/// 插件 id 安全校验：小写字母/数字开头，仅含小写字母/数字/`-`/`_`。
+/// 用于所有"id 拼进文件路径"的入口——拒绝 `..`、`/`、`\`、绝对路径等，
+/// 防路径穿越（如 `id="../../.."` 把目录根引到任意位置后读取任意文件）。
+pub fn is_safe_plugin_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() || c.is_ascii_digit() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+}
+
 /// 读取插件目录内的文件（前端加载 webview 插件入口 / 核心插件自带 ui 用）。
-/// 限定在插件目录内：拒绝绝对路径与 `..` 段。核心插件在 `_core/<id>` 子目录。
+/// 限定在插件目录内：id 白名单 + 拒绝绝对路径与 `..` 段 + root 规范化复核。
+/// 核心插件在 `_core/<id>` 子目录。
 #[tauri::command]
 pub async fn plugins_read_file(
     app: tauri::AppHandle,
     id: String,
     rel: String,
 ) -> Result<String, String> {
+    // 安全（S1a）：id 必须为合法插件名。历史漏洞——id 未校验就拼路径，
+    // `id="../../.."` 会让候选 root 指向插件根之外任意**已存在**目录，
+    // 此时 rel 只要不含非法组件即可读取该目录下任意文本文件。
+    if !is_safe_plugin_id(&id) {
+        return Err(format!("非法插件 id: {id}"));
+    }
     let base = global_plugins_dir(&app)?;
     let candidates = [base.join(CORE_DIR).join(&id), base.join(&id)];
     let root = candidates
@@ -866,6 +912,13 @@ pub async fn plugins_read_file(
         .find(|p| p.is_dir())
         .ok_or("插件不存在")?
         .clone();
+    // 纵深防御：root 规范化后必须仍在插件根内（防符号链接 / `..` 残留把
+    // 目录引出去）。canonicalize 失败（目录异常）则拒绝读取。
+    let base_canon = base.canonicalize().map_err(|e| format!("插件根异常: {e}"))?;
+    let root_canon = root.canonicalize().map_err(|e| format!("插件目录异常: {e}"))?;
+    if !root_canon.starts_with(&base_canon) {
+        return Err(format!("非法插件目录: {id}"));
+    }
     let rel_path = Path::new(&rel);
     let bad = rel_path.is_absolute()
         || rel_path.components().any(|c| {
@@ -895,6 +948,9 @@ pub async fn plugins_invoke(
     command: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
+    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
     m.invoke(&id, &command, args)
@@ -911,6 +967,9 @@ pub async fn plugin_call(
     command: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
+    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
     m.invoke(&id, &command, args)
@@ -925,6 +984,9 @@ pub async fn search_all(
     vault: String,
     query: String,
 ) -> Result<serde_json::Value, String> {
+    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
+    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
 
@@ -976,6 +1038,101 @@ mod tests {
     use crate::rpc::Message;
     use serde_json::json;
     use std::sync::mpsc::channel;
+
+    /// 插件 id 白名单（S1a 第一道闸）：合法 id 通过，穿越/绝对路径/非法字符拒绝。
+    #[test]
+    fn safe_plugin_id_validation() {
+        for ok in ["core-notes", "a", "a1", "my_plugin", "x-y_z2"] {
+            assert!(is_safe_plugin_id(ok), "{ok} 应合法");
+        }
+        for bad in [
+            "", ".", "..", "../evil", "..\\evil", "/abs", "C:/evil", "a/b", "a b", "-lead",
+            "UPPER", "中文", "a..b",
+        ] {
+            assert!(!is_safe_plugin_id(bad), "{bad:?} 应非法");
+        }
+    }
+
+    /// native 运行时只允许 _core 目录（S1b）：外部目录的 native 插件拒绝启动。
+    #[test]
+    fn start_native_rejects_non_core_dir() {
+        let mut m = PluginManager::default();
+        m.vault = Some(PathBuf::from("C:/vault"));
+        m.records.push(PluginRecord {
+            manifest: PluginManifest {
+                id: "evil".into(),
+                name: "evil".into(),
+                version: "0.1.0".into(),
+                runtime: PluginRuntime::Native,
+                entry: None,
+                command: Some(vec!["evil.dll".into()]),
+                permissions: Vec::new(),
+                description: String::new(),
+                config: serde_json::Value::Null,
+                search_provider: false,
+                system: false,
+                ui: None,
+                nav: Vec::new(),
+            },
+            // 目录在插件根之外（父目录不是 _core）
+            dir: PathBuf::from("C:/outside/plugins/evil"),
+            commands: Vec::new(),
+            error: None,
+            process: None,
+            native: None,
+            restarts: 0,
+            last_crash: None,
+        });
+        let err = m.start_native(0).unwrap_err();
+        assert!(err.contains("不在核心插件目录"), "应拒绝外部 native 插件: {err}");
+    }
+
+    /// native 运行时 _core 目录放行（S1b 正向）：核心插件仍能正常加载。
+    /// 需要已构建 tb_notes.dll（cargo build -p tb-notes），否则跳过。
+    #[test]
+    fn start_native_accepts_core_dir() {
+        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_notes.dll");
+        if !dll.exists() {
+            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-notes");
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("tb-native-core-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        // 模拟 plugins/_core/core-notes/（含 DLL）
+        let core_dir = base.join("plugins/_core/core-notes");
+        std::fs::create_dir_all(&core_dir).unwrap();
+        std::fs::copy(&dll, core_dir.join("tb_notes.dll")).unwrap();
+
+        let mut m = PluginManager::default();
+        m.vault = Some(PathBuf::from("C:/vault"));
+        m.config_dir = Some(base.to_string_lossy().to_string());
+        m.records.push(PluginRecord {
+            manifest: PluginManifest {
+                id: "core-notes".into(),
+                name: "笔记".into(),
+                version: "0.1.0".into(),
+                runtime: PluginRuntime::Native,
+                entry: None,
+                command: Some(vec!["tb_notes.dll".into()]),
+                permissions: Vec::new(),
+                description: String::new(),
+                config: serde_json::Value::Null,
+                search_provider: false,
+                system: false,
+                ui: None,
+                nav: Vec::new(),
+            },
+            dir: core_dir,
+            commands: Vec::new(),
+            error: None,
+            process: None,
+            native: None,
+            restarts: 0,
+            last_crash: None,
+        });
+        m.start_native(0).expect("_core 下的 native 插件应能启动");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     /// 打包资源部署：src（模拟 resource_dir/_core）→ dst，清空后整体复制。
     #[test]

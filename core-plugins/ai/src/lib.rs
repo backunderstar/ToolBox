@@ -17,18 +17,6 @@ use tb_sdk::{emit, tb_plugin, TbHostApi};
 const KEYRING_SERVICE: &str = "com.toolbox.desktop";
 const KEYRING_USER: &str = "ai-api-key";
 
-/// 流式 tokio 运行时（插件内自建，与宿主解耦）
-static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-fn rt() -> &'static tokio::runtime::Runtime {
-    RT.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(2)
-            .build()
-            .expect("构建 tokio runtime 失败")
-    })
-}
-
 /// 跨线程安全包装（std::thread::spawn / rt().spawn 要求捕获的变量实现 Send）：
 /// - 宿主回调表 `TbHostApi` 含函数指针 + `*mut c_void`，本身不是 Send；
 /// - 上下文指针 `*mut c_void` 同理。
@@ -89,6 +77,23 @@ pub struct ChatMessage {
 pub struct AiState {
     /// 应用配置目录（%APPDATA%/com.toolbox.desktop，宿主传入）
     config_dir: String,
+    /// 插件自建 tokio 运行时（流式任务执行池）。
+    ///
+    /// **为什么放实例而不是 static（重要，S4）**：static 的 Runtime 生命周期
+    /// 与进程相同，其 worker 线程会一直运行 DLL 里的代码；宿主禁用/重载插件
+    /// 即 FreeLibrary 卸载 DLL，残留线程执行已卸载代码 → 宿主崩溃。把 runtime
+    /// 放进 AiState 后，tb_destroy → drop AiState → Runtime drop 自动 shutdown
+    /// 并 join 全部 worker 线程 → 卸载 DLL 时无残留线程，安全。
+    rt: tokio::runtime::Runtime,
+}
+
+/// 构建插件自建运行时（多线程，2 worker；网络 + 时间驱动均启用）。
+fn build_rt() -> Result<tokio::runtime::Runtime, String> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(2)
+        .build()
+        .map_err(|e| format!("构建 tokio runtime 失败: {e}"))
 }
 
 fn state_from_cfg(cfg: &Value) -> Result<AiState, String> {
@@ -100,7 +105,10 @@ fn state_from_cfg(cfg: &Value) -> Result<AiState, String> {
     if config_dir.is_empty() {
         return Err("缺少 config_dir 配置".to_string());
     }
-    Ok(AiState { config_dir })
+    Ok(AiState {
+        config_dir,
+        rt: build_rt()?,
+    })
 }
 
 /* ---------------- 配置与凭据 ---------------- */
@@ -350,7 +358,8 @@ fn chat_stream(state: &AiState, host: TbHostApi, ctx: *mut c_void, params: &Valu
     let ctx_send = SendCtx(ctx);
     // fire-and-forget：不 await JoinHandle；任务完成/失败统一发 ai-done 通知前端。
     // 注意：task 内部失败都会经 Err 走 ai-done，不会静默悬挂。
-    rt().spawn(async move {
+    // 运行时来自 state（实例持有，卸载时 drop → shutdown → 线程退出，见 AiState 注释）。
+    state.rt.spawn(async move {
         let result = chat_stream_inner(host_send, ctx_send, url, api_key, body).await;
         match result {
             Ok(_) => emit(

@@ -35,6 +35,24 @@ fn dir(vault: &str) -> PathBuf {
     PathBuf::from(vault).join(CHECKLISTS_DIR)
 }
 
+/// 清单 id 安全校验：必须是文件名字符（无路径分隔符/`..`/控制字符）。
+///
+/// **为什么需要**：id 会拼进文件路径 `data/checklists/<id>.json`。若恶意构造
+/// `id="../config"`，`path_for` 就会越出清单目录读写任意 JSON——此前只有
+/// delete 校验了 id，get/save 没有（审计发现 S3 路径穿越）。统一收口到
+/// check_id，get/save/delete 全部先校验。
+fn check_id(id: &str) -> Result<(), String> {
+    if id.is_empty()
+        || id.contains('/')
+        || id.contains('\\')
+        || id.contains("..")
+        || id.chars().any(|c| c.is_control())
+    {
+        return Err(format!("非法清单 id: {id}"));
+    }
+    Ok(())
+}
+
 fn path_for(vault: &str, id: &str) -> PathBuf {
     dir(vault).join(format!("{id}.json"))
 }
@@ -77,6 +95,7 @@ pub fn list(vault: &str) -> Result<Vec<Checklist>, String> {
 
 /// 按 id 读取（不存在 → None）。
 pub fn get(vault: &str, id: &str) -> Result<Option<Checklist>, String> {
+    check_id(id)?;
     let p = path_for(vault, id);
     if !p.exists() {
         return Ok(None);
@@ -115,6 +134,7 @@ pub fn create(vault: &str, title: &str) -> Result<Checklist, String> {
 
 /// 保存清单（updatedAt 统一刷新）；返回更新后的清单。
 pub fn save(vault: &str, checklist: &Checklist) -> Result<Checklist, String> {
+    check_id(&checklist.id)?;
     let mut list = checklist.clone();
     list.updated_at = tb_sdk::now_iso();
     save_file(&path_for(vault, &list.id), &list)?;
@@ -123,9 +143,7 @@ pub fn save(vault: &str, checklist: &Checklist) -> Result<Checklist, String> {
 
 /// 删除清单（不存在视为成功——幂等）。
 pub fn delete(vault: &str, id: &str) -> Result<Value, String> {
-    if id.contains('/') || id.contains('\\') || id.contains("..") {
-        return Err(format!("非法清单 id: {id}"));
-    }
+    check_id(id)?;
     let p = path_for(vault, id);
     match std::fs::remove_file(&p) {
         Ok(_) => {}
@@ -216,6 +234,30 @@ mod tests {
         let all = list(vault).unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].id, c.id);
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    /// S3 回归：get/save/delete 统一拒绝穿越 id（此前只有 delete 校验，
+    /// get/save 可经 `../` 越出 data/checklists 目录任意读写 JSON）。
+    #[test]
+    fn rejects_traversal_ids() {
+        let v = tmp_vault("traversal");
+        let vault = v.to_str().unwrap();
+        for bad in ["../evil", "..\\evil", "a/../../x", "/abs", "x\0y", ""] {
+            assert!(get(vault, bad).is_err(), "get 应拒绝 {bad:?}");
+            assert!(delete(vault, bad).is_err(), "delete 应拒绝 {bad:?}");
+            let c = Checklist {
+                id: bad.to_string(),
+                title: "t".into(),
+                created_at: "x".into(),
+                updated_at: "x".into(),
+                items: Vec::new(),
+            };
+            assert!(save(vault, &c).is_err(), "save 应拒绝 {bad:?}");
+        }
+        // 正常 id 不受影响
+        let c = create(vault, "正常").unwrap();
+        assert!(get(vault, &c.id).unwrap().is_some());
         std::fs::remove_dir_all(&v).ok();
     }
 }

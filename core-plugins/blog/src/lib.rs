@@ -13,6 +13,15 @@ pub struct BlogState {
     vault: String,
 }
 
+impl Drop for BlogState {
+    fn drop(&mut self) {
+        // 安全（S4）：宿主禁用/重载插件会 FreeLibrary 卸载 DLL——若预览线程
+        // 还活着并在执行已卸载的代码，宿主进程直接崩溃。这里在实例销毁前
+        // 停止预览服务器并 join 线程，保证卸载时无残留线程。
+        let _ = core::preview_stop();
+    }
+}
+
 fn state_from_cfg(cfg: &Value) -> Result<BlogState, String> {
     let vault = cfg
         .get("vault")
