@@ -39,6 +39,8 @@ tb-sdk = { path = "../tb-sdk" }
 zip = "2"
 # 全文搜索（宿主内嵌）：SQLite FTS5 trigram 索引（bundled-full 免系统依赖）
 rusqlite = { version = "0.40", features = ["bundled-full"] }
+pinyin = "0.11.0"
+tauri-plugin-global-shortcut = "2.3.2"
 
 # Windows 上链接 WebView2 需要，Tauri 2 默认启用
 [target.'cfg(windows)'.dependencies]

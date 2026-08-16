@@ -4,6 +4,7 @@
 //! 索引文件 `vault/.toolbox/search-fts.sqlite`；笔记是真源，索引可随时重建。
 //! 命令入口：宿主 `search_all`（文件全文命中 + 搜索提供者插件聚合）。
 
+use pinyin::ToPinyin;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::collections::HashSet;
@@ -35,6 +36,44 @@ pub struct SearchHit {
 /// 递归最大深度：恶意/意外的万层嵌套目录会让纯递归栈溢出直接 abort 进程
 /// （Rust 栈溢出不可捕获，无 panic 钩子）。超过上限的子树跳过。
 const MAX_DEPTH: usize = 64;
+
+/// vault 内需要索引的非 md 数据文件：清单（data/checklists/*.json）与待办
+/// （data/todos/todos.json）内容可被全局搜索命中（用户优化项：搜到清单/待办）。
+fn is_indexed_json(rel: &str) -> bool {
+    rel.ends_with(".json")
+        && (rel.starts_with("data/checklists/") || rel == "data/todos/todos.json")
+}
+
+/// 文件名的拼音键（全拼 + 首字母，均小写、去空白），用于拼音搜索：
+/// - 全拼："项目计划" → "xiangmujihua"
+/// - 首字母："项目计划" → "xmjh"
+/// 非汉字字符（ASCII 字母/数字）原样保留并与拼音串串联——"API 计划" 可被
+/// "api" 命中。多音字取第一个读音（pinyin crate 默认行为），足够日常使用。
+fn pinyin_keys(stem: &str) -> (String, String) {
+    let mut full = String::new();
+    let mut initials = String::new();
+    for ch in stem.chars() {
+        match ch.to_pinyin() {
+            Some(py) => {
+                full.push_str(py.plain());
+                initials.push_str(py.first_letter());
+            }
+            None => {
+                if !ch.is_whitespace() {
+                    let c = ch.to_ascii_lowercase();
+                    full.push(c);
+                    initials.push(c);
+                }
+            }
+        }
+    }
+    (full, initials)
+}
+
+/// LIKE 通配符转义（`%`/`_` 在 LIKE 里是通配符，搜索词含它们会多命中）。
+fn escape_like(q: &str) -> String {
+    q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
 
 /// 递归收集 notes/ 下全部 .md（相对路径 + 绝对路径）。
 fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
@@ -68,7 +107,7 @@ fn collect_md_depth(
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
         if is_dir {
             collect_md_depth(root, &entry.path(), &rel, out, depth + 1);
-        } else if name.ends_with(".md") {
+        } else if name.ends_with(".md") || is_indexed_json(&rel) {
             out.push((rel, entry.path()));
         }
     }
@@ -88,7 +127,9 @@ fn open_index(root: &Path) -> Result<Connection, String> {
            path TEXT PRIMARY KEY,
            mtime_ns INTEGER NOT NULL,
            size INTEGER NOT NULL,
-           fts_rowid INTEGER NOT NULL
+           fts_rowid INTEGER NOT NULL,
+           pinyin_full TEXT NOT NULL DEFAULT '',
+           pinyin_initials TEXT NOT NULL DEFAULT ''
          );
          CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
            path UNINDEXED,
@@ -97,6 +138,14 @@ fn open_index(root: &Path) -> Result<Connection, String> {
          );",
     )
     .map_err(|e| format!("初始化搜索索引失败: {e}"))?;
+    // 旧库迁移：早期 schema 没有拼音列（pinyin 搜索 2026-08 引入）。
+    // ALTER 重复执行会报 duplicate column，忽略即可（幂等迁移）。
+    for alter in [
+        "ALTER TABLE notes_idx ADD COLUMN pinyin_full TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE notes_idx ADD COLUMN pinyin_initials TEXT NOT NULL DEFAULT ''",
+    ] {
+        let _ = conn.execute_batch(alter);
+    }
     Ok(conn)
 }
 
@@ -118,26 +167,37 @@ fn sync_index(conn: &mut Connection, root: &Path) -> Result<(), String> {
             .map(|d| d.as_nanos() as i64)
             .unwrap_or(0);
         let size = meta.len() as i64;
-        let old: Option<(i64, i64, i64)> = tx
+        let old: Option<(i64, i64, i64, String)> = tx
             .query_row(
-                "SELECT mtime_ns, size, fts_rowid FROM notes_idx WHERE path = ?1",
+                "SELECT mtime_ns, size, fts_rowid, pinyin_full FROM notes_idx WHERE path = ?1",
                 [&rel],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .optional()
             .map_err(|e| format!("查询索引失败: {e}"))?;
 
-        if let Some((om, os, _rowid)) = old {
-            if om == mtime_ns && os == size {
+        if let Some((om, os, _rowid, pinyin_full)) = old.as_ref() {
+            // 拼音列非空才可跳过：旧库迁移后首轮需补拼音（内容未变但拼音为空）
+            if *om == mtime_ns && *os == size && !pinyin_full.is_empty() {
                 seen.insert(rel);
                 continue;
             }
         }
 
+        // 文件名拼音键（全拼 + 首字母），存索引供拼音搜索
+        let stem = rel
+            .rsplit('/')
+            .next()
+            .unwrap_or(&rel)
+            .rsplit_once('.')
+            .map(|(s, _)| s)
+            .unwrap_or(&rel);
+        let (pinyin_full, pinyin_initials) = pinyin_keys(stem);
+
         let Some(content) = read_index_content(&abs) else {
             continue;
         };
-        if let Some((_, _, rowid)) = old {
+        if let Some((_, _, rowid, _)) = old.as_ref() {
             tx.execute("DELETE FROM notes_fts WHERE rowid = ?1", [rowid])
                 .map_err(|e| format!("清理旧索引失败: {e}"))?;
         }
@@ -148,11 +208,14 @@ fn sync_index(conn: &mut Connection, root: &Path) -> Result<(), String> {
         .map_err(|e| format!("写入索引失败: {e}"))?;
         let new_rowid = tx.last_insert_rowid();
         tx.execute(
-            "INSERT INTO notes_idx(path, mtime_ns, size, fts_rowid)
-             VALUES(?1, ?2, ?3, ?4)
+            "INSERT INTO notes_idx(path, mtime_ns, size, fts_rowid, pinyin_full, pinyin_initials)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(path) DO UPDATE SET
-               mtime_ns = excluded.mtime_ns, size = excluded.size, fts_rowid = excluded.fts_rowid",
-            params![rel, mtime_ns, size, new_rowid],
+               mtime_ns = excluded.mtime_ns, size = excluded.size,
+               fts_rowid = excluded.fts_rowid,
+               pinyin_full = excluded.pinyin_full,
+               pinyin_initials = excluded.pinyin_initials",
+            params![rel, mtime_ns, size, new_rowid, pinyin_full, pinyin_initials],
         )
         .map_err(|e| format!("更新索引登记失败: {e}"))?;
         seen.insert(rel);
@@ -288,7 +351,7 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     // 1. 文件名匹配（排最前）。
     // LIKE 通配符转义：`%` 和 `_` 在 LIKE 里是通配符，搜索词含它们会多命中
     // （如搜 "100%" 会匹配所有含任意前缀后 "100" 的名字）。转义后配 ESCAPE。
-    let like_escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let like_escaped = escape_like(q);
     let like = format!("%{like_escaped}%");
     {
         let mut stmt = conn
@@ -304,6 +367,46 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
                     path,
                     filename,
                     snippet: "文件名匹配".to_string(),
+                });
+            }
+        }
+    }
+
+    // 1b. 文件名拼音匹配（首字母/全拼）：query 全为 ASCII 字母时尝试，
+    // 如 "xmjh" 命中"项目计划.md"、"xiangmu" 命中"项目…"。空格忽略（"xm jh" = "xmjh"）。
+    // 注：不能把拼音查询直接写进上面的 LIKE（原文件名字符不含拼音）。
+    let q_compact: String = q
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase();
+    if !q_compact.is_empty() && q_compact.chars().all(|c| c.is_ascii_alphabetic()) {
+        let pinyin_like = format!("%{}%", escape_like(&q_compact));
+        let mut stmt = conn
+            .prepare(
+                "SELECT path, pinyin_initials, pinyin_full FROM notes_idx
+                 WHERE pinyin_initials LIKE ?1 ESCAPE '\\' OR pinyin_full LIKE ?1 ESCAPE '\\'",
+            )
+            .map_err(|e| format!("拼音搜索失败: {e}"))?;
+        let rows = stmt
+            .query_map([&pinyin_like], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            })
+            .map_err(|e| format!("拼音搜索失败: {e}"))?;
+        for (path, initials, full) in rows.filter_map(|r| r.ok()) {
+            if seen.insert(path.clone()) {
+                // 首字母命中优先标注（用户输入更短，意图更明确）
+                let kind = if initials.contains(&q_compact) {
+                    "拼音首字母"
+                } else {
+                    let _ = full; // 全拼命中（含混合字符场景）
+                    "拼音"
+                };
+                let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
+                hits.push(SearchHit {
+                    path,
+                    filename,
+                    snippet: format!("文件名匹配（{kind}）"),
                 });
             }
         }
@@ -491,6 +594,77 @@ mod tests {
         let hits = search(&v.to_string_lossy(), "100%").unwrap();
         assert_eq!(hits.len(), 1, "只应命中真含 % 的名字: {hits:?}");
         assert_eq!(hits[0].path, "notes/任务 100% 完成.md");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn pinyin_initials_match() {
+        // 拼音首字母：搜 "xmjh" 命中 "项目计划.md"
+        let v = tmp_vault("pyinit");
+        write_note(&v, "项目计划.md", "# 正文\n");
+        write_note(&v, "随便.md", "# 正文\n");
+        let hits = search(&v.to_string_lossy(), "xmjh").unwrap();
+        assert_eq!(hits.len(), 1, "应只命中项目计划: {hits:?}");
+        assert_eq!(hits[0].path, "notes/项目计划.md");
+        assert!(
+            hits[0].snippet.contains("拼音首字母"),
+            "snippet 应标注拼音命中: {}",
+            hits[0].snippet
+        );
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn pinyin_full_match() {
+        // 拼音全拼：搜 "xiangmujihua" 命中 "项目计划.md"（含空白折叠 "xm jh" 亦可）
+        let v = tmp_vault("pyfull");
+        write_note(&v, "项目计划.md", "# 正文\n");
+        let hits = search(&v.to_string_lossy(), "xiangmujihua").unwrap();
+        assert_eq!(hits.len(), 1, "全拼应命中: {hits:?}");
+        let hits2 = search(&v.to_string_lossy(), "xm jh").unwrap();
+        assert_eq!(hits2.len(), 1, "带空格的首字母也应命中: {hits2:?}");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn pinyin_mixed_with_ascii() {
+        // 混合名：非汉字原样保留 → "API 计划" 可被 "api" 命中
+        let v = tmp_vault("pymix");
+        write_note(&v, "API 计划.md", "# x\n");
+        let hits = search(&v.to_string_lossy(), "api").unwrap();
+        assert_eq!(hits.len(), 1, "ASCII 部分应命中: {hits:?}");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn checklist_json_content_hit() {
+        // 清单数据内容可被搜索（用户优化项：搜到清单/待办内容）
+        let v = tmp_vault("cljson");
+        std::fs::create_dir_all(v.join("data/checklists")).unwrap();
+        std::fs::write(
+            v.join("data/checklists/采购.json"),
+            "{\"title\": \"采购清单\", \"items\": [{\"text\": \"买独特术语zzz\"}]}",
+        )
+        .unwrap();
+        write_note(&v, "a.md", "# 普通内容\n");
+        let hits = search(&v.to_string_lossy(), "独特术语zzz").unwrap();
+        assert_eq!(hits.len(), 1, "应命中清单 json: {hits:?}");
+        assert_eq!(hits[0].path, "data/checklists/采购.json");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn todos_json_content_hit() {
+        let v = tmp_vault("todosjson");
+        std::fs::create_dir_all(v.join("data/todos")).unwrap();
+        std::fs::write(
+            v.join("data/todos/todos.json"),
+            "[{\"text\": \"待办 独特术语aaa\", \"done\": false}]",
+        )
+        .unwrap();
+        let hits = search(&v.to_string_lossy(), "独特术语aaa").unwrap();
+        assert_eq!(hits.len(), 1, "应命中 todos.json: {hits:?}");
+        assert_eq!(hits[0].path, "data/todos/todos.json");
         std::fs::remove_dir_all(&v).ok();
     }
 

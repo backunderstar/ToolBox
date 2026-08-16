@@ -134,5 +134,24 @@ const resCount = await ev(`document.querySelectorAll('.plugin-ui-view .result-it
 if (resCount < 1) throw new Error("搜索应有命中（E2E 笔记含关键词）");
 log(`PASS 自带搜索框命中 ${resCount} 条（宿主内嵌搜索经统一桥）`);
 
+// ---- 7. 清理：清空内部搜索词 ----
+// 否则 showingSearch（query 非空）残留会遮蔽编辑器，导致后续套件
+// （cdp-search-global 点击搜索结果后断言 editor-title）等待超时。
+await ev(`(() => {
+  const el = document.querySelector('.plugin-ui-view .files-search-input');
+  if (el && el.value) {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(el, '');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  return true;
+})()`);
+await sleep(400);
+const cleared = await ev(
+  `!document.querySelector('.plugin-ui-view .search-results')`,
+);
+if (!cleared) throw new Error("清理搜索词后应退出搜索模式（.search-results 应消失）");
+log("PASS 清理内部搜索词（退出搜索模式，不污染后续套件）");
+
 log("\n========== NOTES_UI_E2E_PASS ==========");
 process.exit(0);

@@ -125,6 +125,19 @@ fn backup_restore(
 /// M1 已注册：`ping` + vault 工作区 + 笔记文件操作 + 文件夹选择对话框。
 /// 后续里程碑把 `plugins`（插件管理器）、`rpc`（协议类型）接进来。
 pub fn run() {
+    // 浮窗全局快捷键（任何窗口下 Alt+Q 显示/隐藏浮窗，与托盘菜单同一入口 float_toggle）
+    let float_hotkey_plugin = {
+        use tauri_plugin_global_shortcut::ShortcutState;
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_shortcuts([FLOAT_HOTKEY])
+            .expect("注册浮窗快捷键失败（Alt+Q 被占用?）")
+            .with_handler(|app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    let _ = float_toggle(app.clone());
+                }
+            })
+            .build()
+    };
     tauri::Builder::default()
         // 单实例：第二实例启动时首实例收到回调，把主窗口从托盘恢复到前台
         // （官方插件，Windows 内部即命名 Mutex——与之前手写实现同机制，跨平台可用）
@@ -138,6 +151,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(float_hotkey_plugin)
         // 注意：托盘/菜单是 Tauri 2 核心能力（tauri::tray / tauri::menu），无需额外插件
         // 插件命令签名要求 Mutex<PluginManager>（见 plugins/mod.rs 的 State 参数）
         .manage(Mutex::new(PluginManager::default()))
@@ -207,6 +221,8 @@ pub fn run() {
 
 /// 浮窗窗口标签。
 pub const FLOAT_WINDOW: &str = "float";
+/// 浮窗全局快捷键（任何窗口下显示/隐藏浮窗）。
+pub const FLOAT_HOTKEY: &str = "Alt+Q";
 
 /// 主窗口屏幕外自愈：若窗口位于明显屏幕外（显示器变更/window-state 残留），移到屏幕中心。
 fn ensure_main_visible(app: &tauri::AppHandle) {

@@ -117,10 +117,13 @@ export function FloatApp() {
 
   return (
     <div className="float-window">
-      {/* 宿主标题栏：拖拽区 + 位置锁定（所有页签共用） */}
+      {/* 宿主标题栏：拖拽区 + 快捷键提示 + 位置锁定（所有页签共用） */}
       <div className="float-titlebar" {...dragProps}>
         <span className="float-title" {...dragProps}>
           {TABS.find((t) => t.id === tab)?.label}
+        </span>
+        <span className="float-hotkey" title="全局快捷键 Alt+Q：显示/隐藏浮窗">
+          Alt+Q
         </span>
         <button
           className={`float-lock${locked ? " on" : ""}`}
