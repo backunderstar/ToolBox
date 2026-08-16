@@ -1,74 +1,29 @@
-import type { CSSProperties, ComponentType, SVGProps } from "react";
+import type { CSSProperties } from "react";
 import type { PingInfo } from "../core/ipc";
-import {
-  IconCheckSquare,
-  IconFileText,
-  IconFolder,
-  IconGlobe,
-  IconPuzzle,
-  IconSparkle,
-} from "./icons";
+import type { PluginInfo } from "../core/api";
 
-interface Module {
-  name: string;
-  desc: string;
-  milestone: string;
-  done: boolean;
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-}
-
-const MODULES: Module[] = [
-  {
-    name: "笔记",
-    desc: "Markdown 编辑、文件树与全文搜索（FTS5 索引），以普通文件落地，可 git 版本化。",
-    milestone: "M1 已完成",
-    done: true,
-    icon: IconFileText,
-  },
-  {
-    name: "插件",
-    desc: "JS / Python 扩展命令，进程隔离 + 权限声明，webview 插件与命令试用台。",
-    milestone: "M2 已完成",
-    done: true,
-    icon: IconPuzzle,
-  },
-  {
-    name: "清单",
-    desc: "工作清单与打卡，结构化 JSON 存储，可与笔记双向链接。",
-    milestone: "M4 已完成",
-    done: true,
-    icon: IconCheckSquare,
-  },
-  {
-    name: "AI 整理",
-    desc: "选段摘要、笔记问答（RAG），提供商可配置，API Key 存系统凭据管理器。",
-    milestone: "M6 已完成",
-    done: true,
-    icon: IconSparkle,
-  },
-  {
-    name: "博客发布",
-    desc: "笔记带 frontmatter 一键发布，集成 Zola 静态博客生成。",
-    milestone: "M7 已完成",
-    done: true,
-    icon: IconGlobe,
-  },
-  {
-    name: "项目文件",
-    desc: "项目目录管理：归档、浏览、默认应用打开，删除进回收站。",
-    milestone: "M8 已完成",
-    done: true,
-    icon: IconFolder,
-  },
-];
+/** 运行时标签（与插件页一致） */
+const RUNTIME_LABEL: Record<string, string> = {
+  webview: "JS",
+  process: "Python",
+  native: "原生",
+};
 
 interface WelcomeViewProps {
   ping: PingInfo | null;
   themeName: string;
+  plugins: PluginInfo[];
   onOpenNotes: () => void;
+  onOpenPlugins: () => void;
 }
 
-export function WelcomeView({ ping, themeName, onOpenNotes }: WelcomeViewProps) {
+export function WelcomeView({
+  ping,
+  themeName,
+  plugins,
+  onOpenNotes,
+  onOpenPlugins,
+}: WelcomeViewProps) {
   const ok = ping?.message === "pong";
 
   return (
@@ -109,27 +64,37 @@ export function WelcomeView({ ping, themeName, onOpenNotes }: WelcomeViewProps) 
       </section>
 
       <section>
-        <h2 className="section-title">模块路线图</h2>
-        <div className="module-grid">
-          {MODULES.map((m, i) => {
-            const Icon = m.icon;
-            return (
+        <h2 className="section-title">已安装插件</h2>
+        {plugins.length === 0 ? (
+          <p className="module-empty">暂无插件</p>
+        ) : (
+          <div className="module-grid">
+            {plugins.map((p, i) => (
               <article
-                key={m.name}
-                className="module-card fade-in"
-                style={{ "--i": i, animationDelay: `${120 + i * 60}ms` } as CSSProperties}
+                key={p.id}
+                className="module-card module-card-clickable fade-in"
+                style={{ "--i": i, animationDelay: `${120 + i * 50}ms` } as CSSProperties}
+                onClick={onOpenPlugins}
+                title="点击进入插件页"
               >
-                <Icon className="module-icon" width={20} height={20} />
-                <div className="module-name">{m.name}</div>
-                <p className="module-desc">{m.desc}</p>
+                <div className="module-name">
+                  {p.name}
+                  {p.builtin && <span className="tag tag-core">核心</span>}
+                  {p.system && <span className="tag tag-muted">系统</span>}
+                  {p.provider && <span className="tag tag-muted">搜索提供者</span>}
+                </div>
+                <p className="module-desc">{p.description}</p>
                 <div className="module-meta">
-                  <span className={`tag ${m.done ? "tag-done" : "tag-plan"}`}>{m.milestone}</span>
-                  <span className="tag tag-muted">插件化</span>
+                  <span className="tag tag-muted">{RUNTIME_LABEL[p.runtime] ?? p.runtime}</span>
+                  <span className="tag tag-muted">v{p.version}</span>
+                  <span className={`tag ${p.enabled ? "tag-done" : "tag-plan"}`}>
+                    {p.enabled ? "已启用" : "已禁用"}
+                  </span>
                 </div>
               </article>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="hint fade-in">

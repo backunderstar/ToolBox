@@ -371,7 +371,7 @@
   margin: 0 0 var(--space-4);
 }
 
-/* 模块卡片（路线图） */
+/* 模块卡片（已安装插件概览） */
 .module-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -392,6 +392,18 @@
 .module-card:hover {
   box-shadow: var(--shadow-2);
   transform: translateY(-1px);
+}
+/* 整卡可点击（进入插件页） */
+.module-card-clickable {
+  cursor: pointer;
+}
+.module-card-clickable:hover {
+  border-color: var(--border-strong);
+}
+.module-empty {
+  color: var(--fg-faint);
+  font-size: var(--text-sm);
+  padding: var(--space-4) 0;
 }
 .module-icon {
   color: var(--accent);
@@ -432,6 +444,10 @@
 .tag-done {
   background: var(--pastel-green-bg);
   color: var(--pastel-green-fg);
+}
+.tag-core {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 .tag-muted {
   background: var(--bg-soft);

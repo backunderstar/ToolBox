@@ -244,7 +244,9 @@ function AppInner() {
               <WelcomeView
                 ping={pingInfo}
                 themeName={themeName}
+                plugins={pluginCtx.plugins}
                 onOpenNotes={() => setView("notes")}
+                onOpenPlugins={() => setView("plugins")}
               />
             ) : view === "plugins" ? (
               <PluginsView />
