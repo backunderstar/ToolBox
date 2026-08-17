@@ -24,6 +24,8 @@ export interface SearchHit {
   path: string;
   filename: string;
   snippet: string;
+  /** 文件修改时间（UNIX 毫秒）：宿主按"最近修改"排序结果（阶段内降序） */
+  mtime?: number;
   /** 搜索来源：缺省为文件全文；插件提供者为插件 id */
   source?: string;
 }

@@ -9,7 +9,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 /// 笔记目录（vault/notes/）
 // 索引范围已扩到整个 vault 根（顶栏全局搜索，用户决策）：collect_md 从 vault 根递归，
@@ -25,12 +26,114 @@ const SEARCH_READ_LIMIT: u64 = 256 * 1024;
 /// FTS 内容命中上限
 const FTS_HIT_LIMIT: i64 = 200;
 
+/// 索引同步缓存（D1）：3 秒窗口内的连续搜索跳过全量增量同步
+/// （collect_md 递归 + 全量文件 stat + 内容比对），vault 大时搜索更跟手。
+/// 正确性完备（无"刚建的文件搜不到"回归）：
+/// - 目录树签名探测：窗口内跳过前重算目录签名（只 read_dir + stat 目录，
+///   远轻于全量 sync）。目录条目增删/改名会更新目录 mtime（NTFS/FAT 可靠）
+///   → 签名变化 → 强制重同步；
+/// - 空结果兜底：文件**内容**修改不改变目录签名（条目未增删），窗口内跳过
+///   后若结果为空 → 强制重同步再查一次（修改后立即搜索新内容仍命中）；
+/// - 命中存在性检查（file_mtime / read_head）：删除后立即搜索不出幽灵结果。
+const SYNC_WINDOW: Duration = Duration::from_secs(3);
+
+struct SyncCache {
+    /// vault 路径（Windows 大小写不敏感，统一小写）
+    key: String,
+    /// 上次同步完成时的目录树签名（条目级变化检测）
+    dir_sig: String,
+    at: Instant,
+}
+
+static SYNC_CACHE: OnceLock<Mutex<Option<SyncCache>>> = OnceLock::new();
+
+/// D1：带缓存的索引同步。返回是否跳过了全量 sync。
+fn maybe_sync_index(conn: &mut Connection, root: &Path) -> Result<bool, String> {
+    let key = root.to_string_lossy().to_lowercase();
+    let now = Instant::now();
+    let mut g = SYNC_CACHE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|e| e.to_string())?;
+    // 窗口内 + 目录树未变 → 跳过全量 sync（文件内容修改不影响目录签名，
+    // 由 search_once 的空结果兜底补偿）
+    if let Some(c) = g.as_ref() {
+        if c.key == key && now.duration_since(c.at) < SYNC_WINDOW && c.dir_sig == dir_tree_signature(root) {
+            return Ok(true);
+        }
+    }
+    sync_index(conn, root)?;
+    *g = Some(SyncCache {
+        key,
+        dir_sig: dir_tree_signature(root),
+        at: now,
+    });
+    Ok(false)
+}
+
+/// 目录树签名：所有目录的 `(相对路径, 目录 mtime_ns)` 列表哈希。
+/// 目录条目增删/改名会更新目录 mtime（NTFS/FAT/exFAT 可靠），文件内容
+/// 修改不更新——正好覆盖"需要强制重同步"的条目级变化，成本远低于
+/// 全量 sync（无文件 stat、无内容读取、无 SQLite 写）。
+fn dir_tree_signature(root: &Path) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut sig: Vec<String> = Vec::new();
+    collect_dirs(root, root, "", &mut sig, 0);
+    sig.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for s in sig {
+        s.hash(&mut h);
+    }
+    h.finish().to_string()
+}
+
+fn collect_dirs(
+    root: &Path,
+    dir: &Path,
+    base: &str,
+    out: &mut Vec<String>,
+    depth: usize,
+) {
+    if depth > MAX_DEPTH {
+        return;
+    }
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || IGNORED_DIRS.contains(&name.as_str()) {
+            continue;
+        }
+        let rel = if base.is_empty() {
+            name.clone()
+        } else {
+            format!("{base}/{name}")
+        };
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let mtime_ns = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        out.push(format!("{rel}|{mtime_ns}"));
+        collect_dirs(root, &entry.path(), &rel, out, depth + 1);
+    }
+}
+
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchHit {
     pub path: String,
     pub filename: String,
     pub snippet: String,
+    /// 文件修改时间（UNIX 毫秒）：搜索结果按"最近修改"排序用
+    /// （用户优化项：文件名/内容命中在各自阶段内按 mtime 降序）。
+    pub mtime: i64,
 }
 
 /// 递归最大深度：恶意/意外的万层嵌套目录会让纯递归栈溢出直接 abort 进程
@@ -253,6 +356,40 @@ fn read_index_content(abs: &Path) -> Option<String> {
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
+/// 文件修改时间（UNIX 毫秒）。不存在/读取失败返回 None——
+/// 命中路径检查用：索引可能陈旧（删除/移动后未同步），跳过不存在的路径。
+fn file_mtime(abs: &Path) -> Option<i64> {
+    std::fs::metadata(abs)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis() as i64)
+}
+
+/// 读取文件头部内容（上限 limit 字节，防大文件拖慢搜索）+ 修改时间。
+/// 内容命中做 snippet 时用（与线性扫描的 SEARCH_READ_LIMIT 一致；
+/// 历史实现 FTS 分支 `read_to_string` 读全文，大文件多命中时明显变慢）。
+fn read_head(abs: &Path, limit: u64) -> Option<(String, i64)> {
+    use std::io::Read;
+    let f = std::fs::File::open(abs).ok()?;
+    let mtime_ms = f
+        .metadata()
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let mut buf = Vec::new();
+    if f.take(limit).read_to_end(&mut buf).is_err() {
+        return None;
+    }
+    Some((String::from_utf8_lossy(&buf).into_owned(), mtime_ms))
+}
+
 /// 按首次命中位置切 snippet。
 ///
 /// **不能直接 `content.to_lowercase().find(q)` 后拿字节索引切原串**：to_lowercase
@@ -330,7 +467,7 @@ fn reset_index(root: &Path) {
     }
 }
 
-/// 单次搜索：同步索引 → 文件名匹配优先 → 内容匹配（FTS/LIKE）。
+/// 单次搜索：同步索引（带缓存）→ 收集命中（文件名/拼音/内容，阶段内按 mtime 排序）。
 fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     let root = PathBuf::from(vault);
     // 全局搜索：只要工作区存在即可（不一定有 notes/ 目录）
@@ -343,8 +480,22 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     }
 
     let mut conn = open_index(&root)?;
-    sync_index(&mut conn, &root)?;
+    let skipped = maybe_sync_index(&mut conn, &root)?;
+    let mut hits = collect_hits(&conn, &root, q)?;
+    // D1 兜底：窗口内跳过同步且结果为空 → 强制重同步再查一次。
+    // 新增/修改文件后立即搜索时索引可能陈旧，空结果可能是漏报（
+    // "搜不到刚建的文件"正是历史缺陷，不能因缓存回归）。
+    if skipped && hits.is_empty() {
+        sync_index(&mut conn, &root)?;
+        hits = collect_hits(&conn, &root, q)?;
+    }
+    Ok(hits)
+}
 
+/// 收集全部命中：文件名 → 拼音 → 内容（阶段权重优先，阶段内按修改时间降序）。
+/// 每个命中做**存在性检查**：索引可能陈旧（删除/移动后未同步），
+/// 路径已不存在的命中直接跳过——"删除后立即搜索"不会出现幽灵结果。
+fn collect_hits(conn: &Connection, root: &Path, q: &str) -> Result<Vec<SearchHit>, String> {
     let mut hits: Vec<SearchHit> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
@@ -354,6 +505,7 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     let like_escaped = escape_like(q);
     let like = format!("%{like_escaped}%");
     {
+        let mut fname: Vec<SearchHit> = Vec::new();
         let mut stmt = conn
             .prepare("SELECT path FROM notes_idx WHERE path LIKE ?1 ESCAPE '\\'")
             .map_err(|e| format!("文件名搜索失败: {e}"))?;
@@ -362,14 +514,21 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
             .map_err(|e| format!("文件名搜索失败: {e}"))?;
         for path in rows.filter_map(|r| r.ok()) {
             if seen.insert(path.clone()) {
-                let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
-                hits.push(SearchHit {
-                    path,
-                    filename,
-                    snippet: "文件名匹配".to_string(),
-                });
+                let abs = root.join(&path);
+                if let Some(m) = file_mtime(&abs) {
+                    let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    fname.push(SearchHit {
+                        path,
+                        filename,
+                        snippet: "文件名匹配".to_string(),
+                        mtime: m,
+                    });
+                }
             }
         }
+        // D2：阶段内按最近修改降序（稳定排序，同时间戳保持原顺序）
+        fname.sort_by_key(|h| std::cmp::Reverse(h.mtime));
+        hits.extend(fname);
     }
 
     // 1b. 文件名拼音匹配（首字母/全拼）：query 全为 ASCII 字母时尝试，
@@ -382,6 +541,7 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
         .to_lowercase();
     if !q_compact.is_empty() && q_compact.chars().all(|c| c.is_ascii_alphabetic()) {
         let pinyin_like = format!("%{}%", escape_like(&q_compact));
+        let mut pinyin: Vec<SearchHit> = Vec::new();
         let mut stmt = conn
             .prepare(
                 "SELECT path, pinyin_initials, pinyin_full FROM notes_idx
@@ -402,14 +562,20 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
                     let _ = full; // 全拼命中（含混合字符场景）
                     "拼音"
                 };
-                let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
-                hits.push(SearchHit {
-                    path,
-                    filename,
-                    snippet: format!("文件名匹配（{kind}）"),
-                });
+                let abs = root.join(&path);
+                if let Some(m) = file_mtime(&abs) {
+                    let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    pinyin.push(SearchHit {
+                        path,
+                        filename,
+                        snippet: format!("文件名匹配（{kind}）"),
+                        mtime: m,
+                    });
+                }
             }
         }
+        pinyin.sort_by_key(|h| std::cmp::Reverse(h.mtime));
+        hits.extend(pinyin);
     }
 
     // 2. 内容匹配。
@@ -419,6 +585,7 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     // 直接走线性扫描：保语义、不报错、无反复降级。
     let fts_safe = q.chars().all(|c| !c.is_control() && c != '"' && c != '\'');
     let nchars = q.chars().count();
+    let mut content: Vec<SearchHit> = Vec::new();
     if nchars >= 3 && fts_safe {
         let match_expr = format!("\"{q}\"");
         let fts_ok = (|| -> Result<(), String> {
@@ -430,54 +597,59 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
                 .map_err(|e| format!("内容搜索失败: {e}"))?;
             for path in rows.filter_map(|r| r.ok()) {
                 if seen.insert(path.clone()) {
-                    let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
-                    let content =
-                        std::fs::read_to_string(&root.join(&path)).unwrap_or_default();
-                    hits.push(SearchHit {
-                        path,
-                        filename,
-                        snippet: make_snippet(&content, &q.to_lowercase()),
-                    });
+                    let abs = root.join(&path);
+                    // D3：摘要读前 SEARCH_READ_LIMIT 字节（不再 read_to_string 全文，
+                    // 大文件多命中时拖慢搜索）；读不到 = 文件已删除，跳过陈旧索引。
+                    if let Some((text, m)) = read_head(&abs, SEARCH_READ_LIMIT) {
+                        let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
+                        content.push(SearchHit {
+                            path,
+                            filename,
+                            snippet: make_snippet(&text, &q.to_lowercase()),
+                            mtime: m,
+                        });
+                    }
                 }
             }
             Ok(())
         })();
         if fts_ok.is_err() {
-            linear_content_scan(&root, q, &mut seen, &mut hits);
+            linear_content_scan(root, q, &mut seen, &mut content);
         }
     } else {
-        linear_content_scan(&root, q, &mut seen, &mut hits);
+        linear_content_scan(root, q, &mut seen, &mut content);
     }
+    content.sort_by_key(|h| std::cmp::Reverse(h.mtime));
+    hits.extend(content);
     Ok(hits)
 }
 
 /// 短查询兜底：线性读文件内容匹配（搜索范围为整个 vault）。
+/// 复用 read_head（256KB 上限 + 拿 mtime），命中带修改时间供排序。
 fn linear_content_scan(
     root: &Path,
     q: &str,
     seen: &mut HashSet<String>,
     hits: &mut Vec<SearchHit>,
 ) {
-    use std::io::Read;
     let mut files = Vec::new();
     collect_md(root, root, "", &mut files);
+    let ql = q.to_lowercase();
     for (rel, abs) in files {
         if seen.contains(&rel) {
             continue;
         }
-        let Ok(f) = std::fs::File::open(&abs) else {
+        let Some((content, mtime)) = read_head(&abs, SEARCH_READ_LIMIT) else {
             continue;
         };
-        let mut buf = Vec::new();
-        let _ = f.take(SEARCH_READ_LIMIT).read_to_end(&mut buf);
-        let content = String::from_utf8_lossy(&buf);
-        if content.to_lowercase().contains(&q.to_lowercase()) {
+        if content.to_lowercase().contains(&ql) {
             let filename = rel.rsplit('/').next().unwrap_or(&rel).to_string();
-            let snippet = make_snippet(&content, &q.to_lowercase());
+            let snippet = make_snippet(&content, &ql);
             hits.push(SearchHit {
                 path: rel,
                 filename,
                 snippet,
+                mtime,
             });
         }
     }
@@ -696,5 +868,60 @@ mod tests {
         let content = "İİİ İSTANBUL —— 折叠 后面内容填充文本。";
         let snip = make_snippet(content, "折叠");
         assert!(snip.contains("折叠"), "snippet: {snip}");
+    }
+
+    #[test]
+    fn content_hits_sorted_by_mtime_desc() {
+        // D2：内容命中同一关键词的两个文件，最近修改的排前（阶段内 mtime 降序）
+        let v = tmp_vault("mtimesort");
+        write_note(&v, "a.md", "独特词w1。\n");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        write_note(&v, "b.md", "独特词w1。\n");
+        let hits = search(&v.to_string_lossy(), "独特词w1").unwrap();
+        assert_eq!(hits.len(), 2, "两个文件都应命中: {hits:?}");
+        assert_eq!(hits[0].path, "notes/b.md", "最近修改的应排前: {hits:?}");
+        assert_eq!(hits[1].path, "notes/a.md", "较早的应排后: {hits:?}");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn filename_hits_sorted_by_mtime_desc() {
+        // D2：文件名命中同一关键词的两个文件，最近修改的排前
+        let v = tmp_vault("mtimesortf");
+        write_note(&v, "任务甲.md", "# x\n");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        write_note(&v, "任务乙.md", "# x\n");
+        let hits = search(&v.to_string_lossy(), "任务").unwrap();
+        assert_eq!(hits.len(), 2, "两个文件名都应命中: {hits:?}");
+        assert_eq!(hits[0].path, "notes/任务乙.md", "最近修改的应排前: {hits:?}");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn d1_window_skip_still_detects_new_file() {
+        // D1：窗口内**新增文件**（目录条目变化 → 目录签名变化）→ 强制重同步，
+        // 立即搜到——不得出现"刚建的文件搜不到"回归（历史缺陷）。
+        let v = tmp_vault("d1new");
+        write_note(&v, "a.md", "独特词d1。\n");
+        let _ = search(&v.to_string_lossy(), "独特词d1").unwrap(); // 首次：全量 sync
+        write_note(&v, "b.md", "独特词d1。\n"); // 新增文件 → 目录 mtime 变化
+        let hits = search(&v.to_string_lossy(), "独特词d1").unwrap();
+        assert_eq!(hits.len(), 2, "窗口内新增文件应立即搜到（目录签名检测）: {hits:?}");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn d1_window_skip_empty_result_forces_resync() {
+        // D1：窗口内文件**内容修改**（目录树不变 → 签名一致 → 跳过 sync），
+        // 搜索新内容结果为空 → 空结果兜底强制重同步 → 命中。
+        let v = tmp_vault("d1edit");
+        write_note(&v, "n.md", "旧词aa。\n");
+        let _ = search(&v.to_string_lossy(), "旧词aa").unwrap(); // 首次：全量 sync
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        write_note(&v, "n.md", "新词bb。\n"); // 内容修改，目录条目未变
+        let hits = search(&v.to_string_lossy(), "新词bb").unwrap();
+        assert_eq!(hits.len(), 1, "窗口内内容修改后搜索新词应立即命中: {hits:?}");
+        assert_eq!(hits[0].path, "notes/n.md");
+        std::fs::remove_dir_all(&v).ok();
     }
 }
