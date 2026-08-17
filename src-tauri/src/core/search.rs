@@ -23,8 +23,9 @@ const INDEX_FILE: &str = "search-fts.sqlite";
 const INDEX_READ_LIMIT: u64 = 2 * 1024 * 1024;
 /// snippet / 短词线性扫描每文件最多读取的字节数
 const SEARCH_READ_LIMIT: u64 = 256 * 1024;
-/// FTS 内容命中上限
-const FTS_HIT_LIMIT: i64 = 200;
+/// 搜索结果整体上限（D4）：文件名/拼音精确命中占满后不再收集内容命中，
+/// 防止 vault 大时一次返回几百条拖慢前端渲染；内容命中只填剩余名额。
+const MAX_TOTAL_HITS: usize = 200;
 
 /// 索引同步缓存（D1）：3 秒窗口内的连续搜索跳过全量增量同步
 /// （collect_md 递归 + 全量文件 stat + 内容比对），vault 大时搜索更跟手。
@@ -530,6 +531,12 @@ fn collect_hits(conn: &Connection, root: &Path, q: &str) -> Result<Vec<SearchHit
         fname.sort_by_key(|h| std::cmp::Reverse(h.mtime));
         hits.extend(fname);
     }
+    // D4：文件名精确命中已占满上限 → 直接返回（精确命中优先，
+    // 内容命中不应挤掉文件名命中；同时省去后续阶段的 stat/读文件成本）
+    if hits.len() >= MAX_TOTAL_HITS {
+        hits.truncate(MAX_TOTAL_HITS);
+        return Ok(hits);
+    }
 
     // 1b. 文件名拼音匹配（首字母/全拼）：query 全为 ASCII 字母时尝试，
     // 如 "xmjh" 命中"项目计划.md"、"xiangmu" 命中"项目…"。空格忽略（"xm jh" = "xmjh"）。
@@ -577,8 +584,17 @@ fn collect_hits(conn: &Connection, root: &Path, q: &str) -> Result<Vec<SearchHit
         pinyin.sort_by_key(|h| std::cmp::Reverse(h.mtime));
         hits.extend(pinyin);
     }
+    // D4：拼音命中占满剩余名额 → 不再收集内容命中
+    if hits.len() >= MAX_TOTAL_HITS {
+        hits.truncate(MAX_TOTAL_HITS);
+        return Ok(hits);
+    }
 
-    // 2. 内容匹配。
+    // 2. 内容匹配（只填剩余名额；无名额则跳过，省去读文件成本）。
+    let budget = MAX_TOTAL_HITS - hits.len();
+    if budget == 0 {
+        return Ok(hits);
+    }
     // FTS5 短语查询包引号即可匹配整串；但引号/控制字符在 FTS 语法里有特殊含义
     // ——历史实现直接 `q.replace('"', "")` 删引号（语义失真：搜 a"b 变 ab），
     // 且纯标点查询会变成空短语让 FTS 报错、每次降级线性扫描。含这些字符时
@@ -593,7 +609,7 @@ fn collect_hits(conn: &Connection, root: &Path, q: &str) -> Result<Vec<SearchHit
                 .prepare("SELECT path FROM notes_fts WHERE notes_fts MATCH ?1 LIMIT ?2")
                 .map_err(|e| format!("内容搜索失败: {e}"))?;
             let rows = stmt
-                .query_map(params![match_expr, FTS_HIT_LIMIT], |r| r.get::<_, String>(0))
+                .query_map(params![match_expr, budget as i64], |r| r.get::<_, String>(0))
                 .map_err(|e| format!("内容搜索失败: {e}"))?;
             for path in rows.filter_map(|r| r.ok()) {
                 if seen.insert(path.clone()) {
@@ -620,6 +636,7 @@ fn collect_hits(conn: &Connection, root: &Path, q: &str) -> Result<Vec<SearchHit
         linear_content_scan(root, q, &mut seen, &mut content);
     }
     content.sort_by_key(|h| std::cmp::Reverse(h.mtime));
+    content.truncate(budget);
     hits.extend(content);
     Ok(hits)
 }
@@ -922,6 +939,42 @@ mod tests {
         let hits = search(&v.to_string_lossy(), "新词bb").unwrap();
         assert_eq!(hits.len(), 1, "窗口内内容修改后搜索新词应立即命中: {hits:?}");
         assert_eq!(hits[0].path, "notes/n.md");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn total_hits_capped_at_limit() {
+        // D4：整体结果上限——文件名命中远超上限时只返回前 MAX_TOTAL_HITS 条
+        let v = tmp_vault("cap");
+        for i in 0..250 {
+            write_note(&v, &format!("任务{i:03}.md"), "# x\n");
+        }
+        let hits = search(&v.to_string_lossy(), "任务").unwrap();
+        assert_eq!(
+            hits.len(),
+            200,
+            "整体上限应生效（200）: {}",
+            hits.len()
+        );
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn filename_saturation_skips_content_stage() {
+        // D4：文件名精确命中占满上限后跳过内容阶段（精确命中优先，
+        // 内容命中不挤掉文件名命中）
+        let v = tmp_vault("capsat");
+        for i in 0..250 {
+            write_note(&v, &format!("任务{i:03}.md"), "# x\n");
+        }
+        // 文件名不含"任务"、内容命中"任务"的文件：不应出现在结果里
+        write_note(&v, "other.md", "任务 相关内容。\n");
+        let hits = search(&v.to_string_lossy(), "任务").unwrap();
+        assert_eq!(hits.len(), 200, "占满后应截断: {}", hits.len());
+        assert!(
+            hits.iter().all(|h| h.path.starts_with("notes/任务")),
+            "内容命中不应挤掉文件名命中: {hits:?}"
+        );
         std::fs::remove_dir_all(&v).ok();
     }
 }
