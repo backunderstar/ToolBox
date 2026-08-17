@@ -1315,46 +1315,62 @@ pub async fn search_all(
     // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
     // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
     crate::core::vault::ensure_vault_matches(&app, &vault)?;
-    let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &app, &vault)?;
+    // 锁内只做"刷新 + 收集提供者列表"（快）；FTS 与提供者聚合都在锁外执行
+    let providers: Vec<String> = {
+        let mut m = state.lock().map_err(|e| e.to_string())?;
+        ensure_refreshed(&mut m, &app, &vault)?;
+        m.records
+            .iter()
+            .filter(|r| r.manifest.search_provider && m.plugin_enabled(&r.manifest.id))
+            .map(|r| r.manifest.id.clone())
+            .collect()
+    };
 
-    // 1. 文件全文搜索（宿主内嵌 core::search，SQLite FTS5；搜索已不是插件）
+    // 1. 全文搜索（宿主内嵌 core::search，SQLite FTS5）与提供者聚合**并行**：
+    // FTS 不碰插件状态（可能涉及索引同步，耗时），放独立线程执行，
+    // 不占插件全局锁、不与提供者调用互相等待。提供者调用仍需 &mut
+    // PluginManager（进程句柄/序号），在锁内串行，每个提供者独立 30s 超时。
+    let fts_vault = vault.clone();
+    let fts_query = query.clone();
+    let fts_handle = std::thread::spawn(move || crate::core::search::search(&fts_vault, &fts_query));
+
+    // 2. 插件提供者命中（启用且声明 searchProvider）
+    let mut provider_hits: Vec<Value> = Vec::new();
+    {
+        let mut m = state.lock().map_err(|e| e.to_string())?;
+        for pid in providers {
+            let params = serde_json::json!({ "query": query, "limit": 20 });
+            if let Ok(mut ph) = m.invoke(&pid, "search.provide", params) {
+                if let Some(arr) = ph.as_array_mut() {
+                    for h in arr {
+                        // 统一结构：provider 的 title 作为 filename；source 标记来源
+                        if h.get("filename").is_none() {
+                            if let Some(t) = h.get("title").and_then(|v| v.as_str()) {
+                                h["filename"] = Value::String(t.to_string());
+                            }
+                        }
+                        h["source"] = Value::String(pid.clone());
+                        provider_hits.push(h.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. 汇总：FTS 命中在前（主搜索结果），提供者命中在后（带 source 徽章）
     let mut hits: Vec<Value> = Vec::new();
-    match crate::core::search::search(&vault, &query) {
-        Ok(fts_hits) => {
+    match fts_handle.join() {
+        Ok(Ok(fts_hits)) => {
             for h in fts_hits {
                 if let Ok(v) = serde_json::to_value(h) {
                     hits.push(v);
                 }
             }
         }
-        Err(e) => eprintln!("[search] 全文搜索失败: {e}"),
+        Ok(Err(e)) => eprintln!("[search] 全文搜索失败: {e}"),
+        Err(_) => eprintln!("[search] 全文搜索线程异常"),
     }
-
-    // 2. 插件提供者命中（启用且声明 searchProvider）
-    let providers: Vec<String> = m
-        .records
-        .iter()
-        .filter(|r| r.manifest.search_provider && m.plugin_enabled(&r.manifest.id))
-        .map(|r| r.manifest.id.clone())
-        .collect();
-    for pid in providers {
-        let params = serde_json::json!({ "query": query, "limit": 20 });
-        if let Ok(mut ph) = m.invoke(&pid, "search.provide", params) {
-            if let Some(arr) = ph.as_array_mut() {
-                for h in arr {
-                    // 统一结构：provider 的 title 作为 filename；source 标记来源
-                    if h.get("filename").is_none() {
-                        if let Some(t) = h.get("title").and_then(|v| v.as_str()) {
-                            h["filename"] = Value::String(t.to_string());
-                        }
-                    }
-                    h["source"] = Value::String(pid.clone());
-                    hits.push(h.clone());
-                }
-            }
-        }
-    }
+    hits.extend(provider_hits);
     Ok(Value::Array(hits))
 }
 

@@ -99,7 +99,7 @@ export function WelcomeView({
 
       <div className="hint fade-in">
         <kbd>Ctrl</kbd>+<kbd>K</kbd>
-        <span>在「笔记」视图聚焦搜索框，检索文件名与内容</span>
+        <span>任意视图下聚焦顶栏全局搜索，检索文件名、内容与清单待办</span>
       </div>
     </div>
   );

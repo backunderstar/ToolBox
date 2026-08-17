@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconFloat, IconFolder, IconMoon, IconPanelLeft, IconSun } from "./icons";
 import type { ThemeMode } from "../themes/themes";
 import { APP_TAG } from "../core/version";
@@ -26,6 +26,19 @@ interface TopBarProps {
   focusSignal?: number;
 }
 
+/** 相对时间：mtime（UNIX 毫秒）→ "刚刚 / x 分钟前 / x 小时前 / x 天前"。
+ *  搜索结果按最近修改排序（D2），展示相对时间让排序依据可见。 */
+function formatRelTime(mtime?: number): string {
+  if (!mtime || mtime <= 0) return "";
+  const diff = Date.now() - mtime;
+  if (diff < 60_000) return "刚刚";
+  const min = Math.floor(diff / 60_000);
+  if (min < 60) return `${min} 分钟前`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} 小时前`;
+  return `${Math.floor(hr / 24)} 天前`;
+}
+
 export function TopBar({
   theme,
   onToggleTheme,
@@ -43,6 +56,11 @@ export function TopBar({
   focusSignal,
 }: TopBarProps) {
   const searchRef = useRef<HTMLInputElement | null>(null);
+  /* S1：键盘导航当前选中项（-1 = 无选择）。结果变化时重置。 */
+  const [activeIdx, setActiveIdx] = useState(-1);
+  useEffect(() => {
+    setActiveIdx(-1);
+  }, [results]);
 
   /* Ctrl+K：聚焦搜索框 */
   useEffect(() => {
@@ -51,6 +69,7 @@ export function TopBar({
       searchRef.current.select();
     }
   }, [focusSignal]);
+
   return (
     <header className="topbar">
       <button
@@ -74,7 +93,7 @@ export function TopBar({
 
       <div
         className={`search${searchEnabled ? "" : " disabled"}`}
-        title={searchEnabled ? "搜索文件名与笔记内容" : "进入「笔记」并选择工作区后可用"}
+        title={searchEnabled ? "搜索文件名与内容（Ctrl+K 聚焦，↑/↓ 选择，Enter 打开）" : "进入「笔记」并选择工作区后可用"}
       >
         <svg
           width="13"
@@ -95,9 +114,29 @@ export function TopBar({
           value={query}
           disabled={!searchEnabled}
           onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActiveIdx((i) =>
+                results && results.length ? Math.min(i + 1, results.length - 1) : -1,
+              );
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActiveIdx((i) => Math.max(i - 1, -1));
+            } else if (e.key === "Enter") {
+              // 有选中项才消费 Enter（否则放行，输入框默认无副作用）
+              if (activeIdx >= 0 && results && results[activeIdx]) {
+                e.preventDefault();
+                onOpenResult(results[activeIdx].path);
+              }
+            } else if (e.key === "Escape") {
+              // 清空 → vault 层 results 置 null，下拉关闭
+              onQueryChange("");
+            }
+          }}
         />
         <kbd>Ctrl K</kbd>
-        {/* 全局搜索结果下拉：文件名匹配优先；source 标记插件提供者命中 */}
+        {/* 全局搜索结果下拉：文件名匹配优先（mtime 降序）；source 标记插件提供者命中 */}
         {searchEnabled && query.trim() && (
           <div className="search-dropdown">
             {searching ? (
@@ -105,18 +144,25 @@ export function TopBar({
             ) : results === null ? null : results.length === 0 ? (
               <div className="search-hint">无结果</div>
             ) : (
-              results.map((r) => (
-                <button
-                  key={r.path}
-                  className="search-item"
-                  onClick={() => onOpenResult(r.path)}
-                  title={r.snippet}
-                >
-                  <span className="search-item-name">{r.filename}</span>
-                  <span className="search-item-path">{r.path}</span>
-                  {r.source && <span className="badge badge-provider">{r.source}</span>}
-                </button>
-              ))
+              <>
+                {results.map((r, i) => (
+                  <button
+                    key={r.path}
+                    className={`search-item${i === activeIdx ? " active" : ""}`}
+                    onClick={() => onOpenResult(r.path)}
+                    onMouseEnter={() => setActiveIdx(i)}
+                    title={r.snippet}
+                  >
+                    <span className="search-item-name">{r.filename}</span>
+                    <span className="search-item-path">{r.path}</span>
+                    {r.mtime ? (
+                      <span className="search-item-time">{formatRelTime(r.mtime)}</span>
+                    ) : null}
+                    {r.source && <span className="badge badge-provider">{r.source}</span>}
+                  </button>
+                ))}
+                <div className="search-meta">共 {results.length} 条结果</div>
+              </>
             )}
           </div>
         )}

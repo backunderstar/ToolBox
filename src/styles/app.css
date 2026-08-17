@@ -113,6 +113,11 @@
 .search-item:hover {
   background: var(--bg-soft);
 }
+/* S1：键盘导航（↑/↓）当前选中项 */
+.search-item.active {
+  background: var(--bg-soft);
+  outline: 1px solid var(--border);
+}
 .search-item-name {
   font-weight: 500;
   flex-shrink: 0;
@@ -122,6 +127,22 @@
   font-size: var(--text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* C2：相对修改时间（mtime 排序的可视化依据），推到行尾 */
+.search-item-time {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--fg-faint);
+  font-size: var(--text-xs);
+}
+/* C2：结果总数（让整体上限 200 透明） */
+.search-meta {
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3) 0;
+  border-top: 1px solid var(--border);
+  color: var(--fg-faint);
+  font-size: var(--text-xs);
+  text-align: right;
 }
 
 .topbar .spacer {
