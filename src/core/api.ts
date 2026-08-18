@@ -48,6 +48,8 @@ export interface PluginThemeDecl {
   tokens: Record<string, string>;
   /** 可选 CSS 覆盖文件（相对插件目录）；切换主题即移除 */
   css: string | null;
+  /** 预览色板（选择器色块：bg/accent/fg，至多 3 色）；缺省从 tokens 推断 */
+  preview: string[] | null;
 }
 
 /** 插件信息（与 Rust PluginInfo 对应，serde camelCase） */

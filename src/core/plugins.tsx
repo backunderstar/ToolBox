@@ -417,6 +417,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
             base: "light",
             tokens: { "--accent": "#a8402c", "--accent-strong": "#7d2d1e" },
             css: null,
+            preview: ["#faf5f0", "#a8402c", "#2b211c"],
           },
         },
       ];
@@ -584,6 +585,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           base: pl.theme.base,
           tokens: pl.theme.tokens ?? {},
           css: pl.theme.css,
+          preview: pl.theme.preview ?? undefined,
           source: "plugin",
           pluginId: pl.id,
         });

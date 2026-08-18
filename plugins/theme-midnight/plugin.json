@@ -29,7 +29,8 @@
       "--pastel-red-bg": "#3d2526",
       "--pastel-red-fg": "#e08a86"
     },
-    "css": "theme.css"
+    "css": "theme.css",
+    "preview": ["#101418", "#5b9bd5", "#dbe4ee"]
   },
   "config": {}
 }

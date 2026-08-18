@@ -190,6 +190,14 @@ export function PluginsView() {
                 搜索提供者
               </span>
             )}
+            {p.theme && (
+              <span
+                className="badge badge-theme"
+                title="皮肤插件：启用后作为主题出现在设置页 → 主题选择器"
+              >
+                主题
+              </span>
+            )}
             <span className={`badge badge-status badge-status-${status}`}>
               {STATUS_TEXT[status] ?? status}
             </span>

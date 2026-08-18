@@ -1682,7 +1682,8 @@ mod tests {
         // 皮肤插件：webview + 声明 theme 时允许无 entry（纯数据包）
         let theme_ok: PluginManifest = serde_json::from_value(json!({
             "id": "theme-x", "name": "x", "version": "0.1.0", "runtime": "webview",
-            "theme": { "base": "light", "tokens": { "--accent": "#c0392b" }, "css": "theme.css" }
+            "theme": { "base": "light", "tokens": { "--accent": "#c0392b" }, "css": "theme.css",
+                       "preview": ["#faf5f0", "#a8402c", "#2b211c"] }
         }))
         .unwrap();
         assert!(theme_ok.validate().is_ok());
@@ -1695,12 +1696,16 @@ mod tests {
         .unwrap();
         assert!(theme_bad_base.validate().is_err());
 
-        // theme 字段序列化回环（前端拿到 camelCase base/tokens/css）
+        // theme 字段序列化回环（前端拿到 camelCase base/tokens/css/preview）
         let back: PluginManifest = serde_json::from_value(serde_json::to_value(&theme_ok).unwrap()).unwrap();
         let t = back.theme.as_ref().expect("theme 应保留");
         assert_eq!(t.base, "light");
         assert_eq!(t.tokens.get("--accent").map(String::as_str), Some("#c0392b"));
         assert_eq!(t.css.as_deref(), Some("theme.css"));
+        assert_eq!(
+            t.preview.as_deref(),
+            Some(&["#faf5f0".to_string(), "#a8402c".to_string(), "#2b211c".to_string()][..])
+        );
     }
 
     #[test]

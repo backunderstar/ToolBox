@@ -50,6 +50,8 @@ export interface ThemeDef {
   pluginId?: string;
   /** 插件主题：可选 CSS 覆盖文件（相对插件目录） */
   css?: string | null;
+  /** 预览色板（bg/accent/fg 三色，选择器色块用）；缺省从 tokens 推断 */
+  preview?: string[];
 }
 
 const STORAGE_KEY = "toolbox.theme";
@@ -296,8 +298,14 @@ async function syncWindowTheme(mode: ThemeMode): Promise<void> {
   }
 }
 
-/** 内置主题的近似色块（用于选择器预览） */
+/** 内置主题的近似色块（用于选择器预览）。插件主题优先用声明的 preview 色板
+ * （真实意图色），不足 3 色补默认底色；其余按 tokens 推断（--bg/--accent/--fg）。 */
 export function swatchOf(theme: ThemeDef): string[] {
+  if (theme.preview && theme.preview.length > 0) {
+    const p = theme.preview.slice(0, 3);
+    while (p.length < 3) p.push(theme.base === "dark" ? "#1b1a17" : "#f6f5f2");
+    return p;
+  }
   const bg = theme.tokens["--bg"] ?? (theme.base === "dark" ? "#1b1a17" : "#f6f5f2");
   const accent = theme.tokens["--accent"] ?? (theme.base === "dark" ? "#d07a4f" : "#b4532a");
   const fg = theme.tokens["--fg"] ?? (theme.base === "dark" ? "#e9e6df" : "#201f1c");

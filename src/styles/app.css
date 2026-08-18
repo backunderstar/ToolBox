@@ -1300,6 +1300,14 @@
   background: var(--pastel-purple-bg);
   color: var(--pastel-purple-fg);
 }
+.badge-theme {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: var(--pastel-green-bg);
+  color: var(--pastel-green-fg);
+}
 .plugin-group {
   margin-bottom: var(--space-5);
 }

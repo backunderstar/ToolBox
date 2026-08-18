@@ -36,6 +36,10 @@ pub struct ThemeDecl {
     /// 经宿主全局注入，切换主题即移除
     #[serde(default)]
     pub css: Option<String>,
+    /// 预览色板（设置页选择器色块：bg / accent / fg，至多 3 色，字符串为 CSS 颜色）。
+    /// 缺省时宿主从 tokens 回退推断（--bg/--accent/--fg）。
+    #[serde(default)]
+    pub preview: Option<Vec<String>>,
 }
 
 /// 导航入口声明（插件启用时并入侧边栏；仅内容型插件使用）。
