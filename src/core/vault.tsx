@@ -174,6 +174,8 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       const sel = (await open({
         directory: true,
         title: "选择工作区文件夹",
+        // 已设置工作区时，对话框初始定位到当前工作区目录（否则落在系统默认/记忆位置）
+        defaultPath: stateRef.current.path ?? undefined,
       })) as string | null;
       if (!sel) return;
       // 切换前把未保存内容落盘（写入旧工作区），防止防抖窗口内的输入丢失
