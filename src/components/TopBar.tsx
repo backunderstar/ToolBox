@@ -71,7 +71,7 @@ export function TopBar({
   }, [focusSignal]);
 
   return (
-    <header className="topbar">
+    <header className="topbar" data-part="topbar">
       <button
         className="icon-btn"
         onClick={onToggleNav}

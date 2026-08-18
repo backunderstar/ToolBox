@@ -41,7 +41,7 @@ export function ThemeEditor({
       custom: true,
     };
     upsertCustomTheme(def);
-    applyTheme(def.id);
+    void applyTheme(def.id);
     onSaved(def.id);
   };
 

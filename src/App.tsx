@@ -112,9 +112,21 @@ function AppInner() {
     saveLayoutPrefs({ navCollapsed });
   }, [navCollapsed]);
 
+  /* 应用主题：内置/自定义同步，插件主题异步读 css（双通道）。
+     依赖 pluginThemeKey：插件列表加载完成后重放——重启后持久化的插件
+     主题 id 此刻才可解析；插件被禁用/卸载时由此触发回落（下方 effect）。 */
   useEffect(() => {
-    applyTheme(themeId);
-  }, [themeId]);
+    void applyTheme(themeId);
+  }, [themeId, pluginCtx.pluginThemeKey]);
+
+  /* 当前主题是皮肤插件主题但插件已禁用/卸载：回落到默认亮色
+     （applyTheme 对"暂不可用"主题只应用外观不覆盖持久化值，这里显式复位）。 */
+  useEffect(() => {
+    const t = findTheme(themeId);
+    if (t?.source === "plugin" && !pluginCtx.pluginThemeKey.split(",").includes(themeId)) {
+      setThemeId("default-light");
+    }
+  }, [themeId, pluginCtx.pluginThemeKey]);
 
   useEffect(() => {
     ping()
@@ -201,7 +213,7 @@ function AppInner() {
 
   return (
     <NavProvider value={navValue}>
-      <div className="app">
+      <div className="app" data-part="app">
         <TopBar
           theme={themeMode}
           onToggleTheme={toggleThemeMode}
@@ -239,7 +251,7 @@ function AppInner() {
             defs={navDefs}
             onToggleGroup={toggleNavGroup}
           />
-          <main className="main">
+          <main className="main" data-part="main">
             {view === "overview" ? (
               <WelcomeView
                 ping={pingInfo}

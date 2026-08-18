@@ -40,6 +40,16 @@ export interface PluginNav {
   pluginId: string;
 }
 
+/** 插件主题声明（与 Rust ThemeDecl 对应）：非空时该插件是主题包 */
+export interface PluginThemeDecl {
+  /** 亮/暗基础（驱动 tokens.css 的 [data-theme]） */
+  base: "light" | "dark";
+  /** 令牌覆盖（CSS 变量名 → 值） */
+  tokens: Record<string, string>;
+  /** 可选 CSS 覆盖文件（相对插件目录）；切换主题即移除 */
+  css: string | null;
+}
+
 /** 插件信息（与 Rust PluginInfo 对应，serde camelCase） */
 export interface PluginInfo {
   id: string;
@@ -63,6 +73,8 @@ export interface PluginInfo {
   ui: string | null;
   /** 插件声明的导航入口（启用时并入侧边栏） */
   nav: PluginNav[];
+  /** 主题声明（皮肤插件）：非空时本插件是主题包，启用后并入主题选择器 */
+  theme: PluginThemeDecl | null;
 }
 
 /* ---- IPC 封装 ---- */

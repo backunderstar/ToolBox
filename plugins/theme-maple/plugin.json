@@ -1,0 +1,29 @@
+{
+  "id": "theme-maple",
+  "name": "枫叶红",
+  "version": "0.1.0",
+  "description": "皮肤插件示例：陶土枫叶红，演示「令牌 + CSS」双通道换肤",
+  "runtime": "webview",
+  "theme": {
+    "base": "light",
+    "tokens": {
+      "--bg": "#faf5f0",
+      "--bg-soft": "#fdf9f4",
+      "--bg-elevated": "#fffdf9",
+      "--fg": "#2b211c",
+      "--fg-muted": "#8a7a70",
+      "--fg-faint": "#9d8f84",
+      "--border": "#ead9cf",
+      "--border-strong": "#d9c0b2",
+      "--accent": "#a8402c",
+      "--accent-strong": "#7d2d1e",
+      "--accent-soft": "#f6e3da",
+      "--on-accent": "#fff8f2",
+      "--danger": "#9f2f2d",
+      "--pastel-red-bg": "#fbe4dd",
+      "--pastel-red-fg": "#9c3a25"
+    },
+    "css": "theme.css"
+  },
+  "config": {}
+}

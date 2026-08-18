@@ -13,7 +13,7 @@ export function StatusBar({ ping, theme, vaultName, status }: StatusBarProps) {
   const label = ping ? ping.message : "连接中…";
 
   return (
-    <footer className="statusbar">
+    <footer className="statusbar" data-part="statusbar">
       <span
         className={`status-dot${ok ? "" : " warn"}`}
         title={ok ? "IPC 链路正常" : "未连接 Tauri 核心（浏览器预览）"}

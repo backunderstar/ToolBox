@@ -1,0 +1,51 @@
+/* ============================================================
+   枫叶红皮肤 · 组件级覆盖示例（CSS 通道）
+   ------------------------------------------------------------
+   - 令牌通道（plugin.json theme.tokens）已覆盖主色，本文件只做
+     组件级微调：形状 / 细节 / 布局感觉
+   - 契约：宿主外壳有稳定钩子 data-part（app/topbar/sidebar/main/
+     statusbar）与公开类名（详见 docs/插件开发指南.md「皮肤插件」）
+   - 全部规则用 :root[data-theme-id="theme-maple"] 前缀：只在你的
+     主题激活时生效，切换主题即整体失效（宿主全局挂载、切走移除）
+   ============================================================ */
+
+/* 顶栏：陶土色细底边 + 品牌区加深 */
+:root[data-theme-id="theme-maple"] [data-part="topbar"] {
+  border-bottom-color: var(--accent-soft);
+}
+:root[data-theme-id="theme-maple"] .topbar-title {
+  color: var(--accent-strong);
+}
+
+/* 搜索框：胶囊圆角，聚焦时陶土描边 */
+:root[data-theme-id="theme-maple"] .search {
+  border-radius: 999px;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+:root[data-theme-id="theme-maple"] .search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* 侧栏：底色略深形成层次，当前导航项陶土胶囊 */
+:root[data-theme-id="theme-maple"] [data-part="sidebar"] {
+  background: var(--bg);
+}
+:root[data-theme-id="theme-maple"] .nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* 状态栏：核心指示灯用陶土 */
+:root[data-theme-id="theme-maple"] .status-dot {
+  background: var(--accent);
+}
+
+/* 卡片：暖调浅边 + 大圆角 */
+:root[data-theme-id="theme-maple"] .settings-card,
+:root[data-theme-id="theme-maple"] .theme-card {
+  border-color: var(--border);
+  border-radius: var(--radius-lg);
+}

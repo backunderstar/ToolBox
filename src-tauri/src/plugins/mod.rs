@@ -5,7 +5,7 @@ pub mod manifest;
 pub mod native;
 pub mod process;
 
-use manifest::{NavDecl, PluginManifest, PluginRuntime};
+use manifest::{NavDecl, PluginManifest, PluginRuntime, ThemeDecl};
 use native::NativePlugin;
 use process::ProcessPlugin;
 use serde::Serialize;
@@ -58,6 +58,8 @@ pub struct PluginInfo {
     pub ui: Option<String>,
     /// 插件声明的导航入口（启用时并入侧边栏）
     pub nav: Vec<NavDecl>,
+    /// 主题声明（皮肤插件）：非空时本插件是主题包，启用后并入主题选择器
+    pub theme: Option<ThemeDecl>,
 }
 
 pub struct PluginManager {
@@ -510,6 +512,7 @@ impl PluginManager {
                         system: false,
                         ui: None,
                         nav: vec![],
+                        theme: None,
                     },
                     dir: dir.to_path_buf(),
                     commands: vec![],
@@ -604,6 +607,7 @@ impl PluginManager {
                 system: r.manifest.system,
                 ui: r.manifest.ui.as_ref().map(|u| u.entry.clone()),
                 nav: r.manifest.nav.clone(),
+                theme: r.manifest.theme.clone(),
             })
             .collect()
     }
@@ -1417,6 +1421,7 @@ mod tests {
                 system: false,
                 ui: None,
                 nav: Vec::new(),
+                theme: None,
             },
             // 目录在插件根之外（父目录不是 _core）
             dir: PathBuf::from("C:/outside/plugins/evil"),
@@ -1465,6 +1470,7 @@ mod tests {
                 system: false,
                 ui: None,
                 nav: Vec::new(),
+                theme: None,
             },
             dir: core_dir,
             commands: Vec::new(),
@@ -1672,6 +1678,29 @@ mod tests {
         }))
         .unwrap();
         assert!(missing_entry.validate().is_err());
+
+        // 皮肤插件：webview + 声明 theme 时允许无 entry（纯数据包）
+        let theme_ok: PluginManifest = serde_json::from_value(json!({
+            "id": "theme-x", "name": "x", "version": "0.1.0", "runtime": "webview",
+            "theme": { "base": "light", "tokens": { "--accent": "#c0392b" }, "css": "theme.css" }
+        }))
+        .unwrap();
+        assert!(theme_ok.validate().is_ok());
+
+        // 主题 base 非法拒绝
+        let theme_bad_base: PluginManifest = serde_json::from_value(json!({
+            "id": "theme-x", "name": "x", "version": "0.1.0", "runtime": "webview",
+            "theme": { "base": "blue" }
+        }))
+        .unwrap();
+        assert!(theme_bad_base.validate().is_err());
+
+        // theme 字段序列化回环（前端拿到 camelCase base/tokens/css）
+        let back: PluginManifest = serde_json::from_value(serde_json::to_value(&theme_ok).unwrap()).unwrap();
+        let t = back.theme.as_ref().expect("theme 应保留");
+        assert_eq!(t.base, "light");
+        assert_eq!(t.tokens.get("--accent").map(String::as_str), Some("#c0392b"));
+        assert_eq!(t.css.as_deref(), Some("theme.css"));
     }
 
     #[test]

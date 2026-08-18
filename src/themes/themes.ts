@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { pluginsReadFile } from "../core/api";
 
 /**
  * 主题系统（M5）：
@@ -7,11 +8,19 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
  *   [data-theme]），`tokens` 覆盖设计令牌（CSS 变量），经 style 注入生效。
  * - 内置 3 个主题（简约亮 / 简约暗 / 暖色）；用户可在设置页复制、调色、保存
  *   自定义主题（localStorage 持久化，v1；后续可落盘 vault/themes/ 成文件包）。
+ * - **插件主题（皮肤插件）**：插件 manifest 声明 `theme`（base + tokens +
+ *   可选 css 文件），由 PluginProvider 把启用插件投影到本模块注册表
+ *   （setPluginThemes）；应用时走"令牌 + CSS 双通道"——tokens 与内置同机制，
+ *   css 文件经 plugins_read_file 读取后全局注入（`#theme-plugin-css`），
+ *   切换主题即移除。纯数据皮肤，无需任何运行时代码。
  * - 切换：document.documentElement 的 data-theme（base）与 data-theme-id，
  *   旧版 localStorage 值 "light"/"dark" 自动迁移。
  */
 
 export type ThemeMode = "light" | "dark";
+
+/** 主题来源：builtin 内置 / custom 用户自定义（localStorage）/ plugin 皮肤插件 */
+export type ThemeSource = "builtin" | "custom" | "plugin";
 
 /** 可被主题覆盖的核心令牌（供编辑器选择，实际可覆盖任意 CSS 变量） */
 export const EDITABLE_TOKENS: { key: string; label: string }[] = [
@@ -35,10 +44,30 @@ export interface ThemeDef {
   tokens: Record<string, string>;
   /** 自定义主题标记（内置为 false） */
   custom?: boolean;
+  /** 主题来源：插件主题（皮肤插件）为 "plugin"，用户自定义为 "custom" */
+  source?: ThemeSource;
+  /** 插件主题：来源插件 id（css 文件读取用） */
+  pluginId?: string;
+  /** 插件主题：可选 CSS 覆盖文件（相对插件目录） */
+  css?: string | null;
 }
 
 const STORAGE_KEY = "toolbox.theme";
 const CUSTOM_KEY = "toolbox.custom-themes";
+
+/* ---------------- 插件主题注册表（皮肤插件） ---------------- */
+
+/**
+ * 模块级插件主题注册表：PluginProvider 在插件状态变化时投影（setPluginThemes）。
+ * 用模块级数组而非 React 状态——主题引擎（applyTheme/listThemes）是纯函数
+ * 模块，不依赖组件树；注册表只缓存"当前启用插件"的主题定义。
+ */
+let pluginThemeRegistry: ThemeDef[] = [];
+
+/** 由 PluginProvider 调用：把启用皮肤插件的主题定义投影进注册表 */
+export function setPluginThemes(list: ThemeDef[]): void {
+  pluginThemeRegistry = list;
+}
 
 /* ---------------- 内置主题 ---------------- */
 
@@ -105,7 +134,7 @@ function saveCustomThemes(list: ThemeDef[]): void {
 }
 
 export function listThemes(): ThemeDef[] {
-  return [...BUILTIN_THEMES, ...loadCustomThemes()];
+  return [...BUILTIN_THEMES, ...pluginThemeRegistry, ...loadCustomThemes()];
 }
 
 export function findTheme(id: string): ThemeDef | undefined {
@@ -119,7 +148,7 @@ export function getThemeBase(id: string): ThemeMode {
 /** 保存/更新自定义主题（内置主题 id 拒绝覆盖） */
 export function upsertCustomTheme(def: ThemeDef): void {
   const list = loadCustomThemes().filter((t) => t.id !== def.id);
-  list.push({ ...def, custom: true });
+  list.push({ ...def, custom: true, source: "custom" });
   saveCustomThemes(list);
 }
 
@@ -171,14 +200,57 @@ function overrideStyle(): HTMLStyleElement {
   return el;
 }
 
-/** 应用主题：base → data-theme（驱动 tokens.css），覆盖令牌注入 style，持久化 */
-export function applyTheme(id: string): void {
+/** 插件主题 CSS 注入节点 id（全局注入，切换主题即移除） */
+const PLUGIN_CSS_ID = "theme-plugin-css";
+
+/** 读取并注入皮肤插件的 CSS 覆盖文件（全局 <style>，切走即失效）。
+ *  themeId 用于竞态防护：读取期间用户已切换主题则丢弃本次结果。 */
+async function loadPluginCss(pluginId: string, rel: string, themeId: string): Promise<void> {
+  let css: string;
+  try {
+    css = await pluginsReadFile(pluginId, rel);
+  } catch (e) {
+    // CSS 可选：文件缺失/读取失败不阻断令牌通道
+    console.warn(`[theme] 插件主题 CSS 加载失败（${pluginId}/${rel}）`, e);
+    document.getElementById(PLUGIN_CSS_ID)?.remove();
+    return;
+  }
+  // 竞态防护：await 期间用户可能已切走主题，此时丢弃（避免旧主题覆盖新主题）
+  if (document.documentElement.dataset.themeId !== themeId) return;
+  let el = document.getElementById(PLUGIN_CSS_ID) as HTMLStyleElement | null;
+  if (!el) {
+    el = document.createElement("style");
+    el.id = PLUGIN_CSS_ID;
+    document.head.appendChild(el);
+  }
+  el.textContent = css;
+}
+
+function clearPluginCss(): void {
+  document.getElementById(PLUGIN_CSS_ID)?.remove();
+}
+
+/** 应用主题：base → data-theme（驱动 tokens.css），覆盖令牌注入 style，持久化。
+ *  插件主题额外异步读取并注入 css 覆盖文件（双通道）；调用方无需 await。 */
+export async function applyTheme(id: string): Promise<void> {
   const theme = findTheme(id);
   if (!theme) {
-    applyTheme("default-light");
+    // 主题暂不可用（插件主题尚未加载 / 插件被禁用）：应用默认外观但
+    // **不覆盖持久化值**——避免启动瞬间插件未就绪时把用户的选择冲掉
+    applyThemeStyle("light", "default-light", {});
+    clearPluginCss();
     return;
   }
   applyThemeStyle(theme.base, id, theme.tokens);
+  if (theme.source === "plugin" && theme.css && theme.pluginId) {
+    await loadPluginCss(theme.pluginId, theme.css, id);
+  } else {
+    clearPluginCss();
+  }
+  // 竞态防护（与 loadPluginCss 同源）：await 期间用户可能已切走主题（含
+  // 插件禁用触发的自动回落）——此时**丢弃本次的持久化**，否则挂起的旧调用
+  // 恢复执行会把 localStorage 又写回旧主题 id（界面已切换，值却倒退）。
+  if (document.documentElement.dataset.themeId !== id) return;
   localStorage.setItem(STORAGE_KEY, id);
   void syncWindowTheme(theme.base);
 }

@@ -62,7 +62,7 @@ export function Sidebar({
   const defById = new Map(defs.map((d) => [d.id, d]));
 
   return (
-    <nav className={`sidebar${collapsed ? " collapsed" : ""}`} aria-label="主导航">
+    <nav className={`sidebar${collapsed ? " collapsed" : ""}`} aria-label="主导航" data-part="sidebar">
       {config.groups.map((group) => {
         const items = (config.order[group.id] ?? [])
           .map((id) => {

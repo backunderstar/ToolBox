@@ -28,6 +28,7 @@ import {
   type PluginBridgeApi,
 } from "./pluginRuntime";
 import { useVault } from "./vault";
+import { setPluginThemes, type ThemeDef } from "../themes/themes";
 
 /**
  * 插件系统（M2）
@@ -86,6 +87,10 @@ interface PluginContextValue {
   commandsOf: (pluginId: string) => { id: string; name: string }[];
   /** 启用插件的导航入口（核心插件 nav 声明并入侧边栏） */
   navItems: PluginNav[];
+  /** 皮肤插件主题 id 串（逗号分隔，顺序稳定）：主题引擎注册表投影后的摘要，
+   *  AppInner 依赖它——插件刷新完成后重放 applyTheme（重启后持久化的插件
+   *  主题 id 要等插件列表加载才可解析；插件禁用/卸载时据此回落默认主题）。 */
+  pluginThemeKey: string;
 }
 
 const PluginContext = createContext<PluginContextValue | null>(null);
@@ -254,6 +259,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           system: false,
           ui: null,
           nav: [],
+          theme: null,
         },
         {
           id: "csv-tool",
@@ -271,6 +277,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           system: false,
           ui: null,
           nav: [],
+          theme: null,
         },
         {
           id: "core-notes",
@@ -296,6 +303,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
               pluginId: "core-notes",
             },
           ],
+          theme: null,
         },
         {
           id: "core-checklists",
@@ -321,6 +329,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
               pluginId: "core-checklists",
             },
           ],
+          theme: null,
         },
         {
           id: "core-projects",
@@ -346,6 +355,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
               pluginId: "core-projects",
             },
           ],
+          theme: null,
         },
         {
           id: "core-blog",
@@ -365,6 +375,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           nav: [
             { id: "blog", label: "博客发布", icon: "globe", group: "系统", pluginId: "core-blog" },
           ],
+          theme: null,
         },
         {
           id: "core-ai",
@@ -384,6 +395,29 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           nav: [
             { id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", pluginId: "core-ai" },
           ],
+          theme: null,
+        },
+        {
+          id: "theme-maple",
+          name: "枫叶红",
+          version: "0.1.0",
+          description: "皮肤插件示例：陶土枫叶红，演示令牌 + CSS 双通道换肤",
+          runtime: "webview",
+          entry: null,
+          enabled: true,
+          status: "ready",
+          error: null,
+          commands: [],
+          builtin: false,
+          provider: false,
+          system: false,
+          ui: null,
+          nav: [],
+          theme: {
+            base: "light",
+            tokens: { "--accent": "#a8402c", "--accent-strong": "#7d2d1e" },
+            css: null,
+          },
         },
       ];
       setPlugins(mock);
@@ -536,6 +570,37 @@ export function PluginProvider({ children }: { children: ReactNode }) {
     return out;
   }, [plugins]);
 
+  /* 皮肤插件 → 主题定义投影：启用且声明 theme 的插件并入主题引擎注册表
+     （setPluginThemes），设置页主题选择器即可看到；应用时走"令牌 + CSS 双通道"
+     （themes.ts applyTheme）。纯数据投影：不注入脚本、不启动任何运行时。 */
+  const pluginThemes = useMemo<ThemeDef[]>(() => {
+    const out: ThemeDef[] = [];
+    for (const pl of plugins) {
+      if (pl.enabled && pl.theme) {
+        out.push({
+          id: pl.id, // 主题 id = 插件 id（插件 id 全局唯一，天然不冲突）
+          name: pl.name,
+          description: pl.description || "插件主题",
+          base: pl.theme.base,
+          tokens: pl.theme.tokens ?? {},
+          css: pl.theme.css,
+          source: "plugin",
+          pluginId: pl.id,
+        });
+      }
+    }
+    return out;
+  }, [plugins]);
+
+  /* 插件主题 id 串（逗号分隔）：AppInner 依赖它重放 applyTheme——
+     重启后持久化的插件主题 id 在插件列表加载完成前无法解析（findTheme 找不到），
+     主题引擎此时只应用默认外观不覆盖持久化值；列表就绪后本 key 变化触发重放。 */
+  const pluginThemeKey = useMemo(() => pluginThemes.map((t) => t.id).join(","), [pluginThemes]);
+
+  useEffect(() => {
+    setPluginThemes(pluginThemes);
+  }, [pluginThemes]);
+
   /* 工作区切换 / 首次进入时刷新插件列表 */
   useEffect(() => {
     void refresh();
@@ -553,6 +618,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       invoke,
       commandsOf,
       navItems,
+      pluginThemeKey,
     }),
     [
       plugins,
@@ -565,6 +631,7 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       invoke,
       commandsOf,
       navItems,
+      pluginThemeKey,
     ],
   );
 
