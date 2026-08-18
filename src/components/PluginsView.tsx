@@ -3,11 +3,13 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { usePlugins } from "../core/plugins";
 import { useVault } from "../core/vault";
+import { useNav } from "../core/navigation";
 import type { PluginInfo } from "../core/api";
 import { pluginsRemovedCore, pluginsReinstallCore, pluginsInstallNative } from "../core/api";
 import { CommandTry } from "./CommandTry";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { IconGear, IconRefresh, IconTrash } from "./icons";
+import type { ViewId } from "./Sidebar";
 
 const RUNTIME_LABEL: Record<string, string> = {
   webview: "JS",
@@ -34,6 +36,7 @@ interface PluginEventLog extends PluginEventPayload {
 
 export function PluginsView() {
   const vault = useVault();
+  const nav = useNav();
   const {
     plugins,
     loading,
@@ -203,6 +206,17 @@ export function PluginsView() {
             </span>
           </div>
           <div className="plugin-actions">
+            {/* 打开界面：插件声明了自带前端（ui）且有导航入口时可用——
+                直接跳转到该插件的视图（如文本统计），解决"界面在哪"的发现性问题 */}
+            {p.ui && p.nav.length > 0 && (
+              <button
+                className="btn btn-sm"
+                title={`打开「${p.name}」的界面`}
+                onClick={() => nav.go(p.nav[0].id as ViewId)}
+              >
+                打开
+              </button>
+            )}
             {!p.system && (
               <button
                 className="btn btn-sm"

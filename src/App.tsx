@@ -77,7 +77,8 @@ function AppInner() {
   const navDefs = useMemo<NavItemDef[]>(
     () => [
       { id: "overview", label: "概览", icon: "grid", groupId: "work" },
-      { id: "plugins", label: "插件", icon: "puzzle", groupId: "work" },
+      // 插件管理页归「系统」组（产品决策；老用户旧布局由 navPrefs 一次性迁移）
+      { id: "plugins", label: "插件", icon: "puzzle", groupId: "system" },
       { id: "settings", label: "设置", icon: "gear", groupId: "system", fixed: true },
       ...pluginCtx.navItems.map((n) => ({
         id: n.id,

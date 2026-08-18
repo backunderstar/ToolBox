@@ -21,6 +21,8 @@ export interface NavItemMeta {
   icon?: string;
   /** 隐藏（"settings" 强制可见） */
   hidden?: boolean;
+  /** 内部迁移标记（如插件页归系统组的一次性迁移）；NavSettings 不展示 */
+  movedToSystem?: boolean;
 }
 
 export interface NavGroup {
@@ -135,6 +137,23 @@ export function normalizeNav(cfg: NavConfig | null, defs: NavItemDef[]): NavConf
     const copy: NavItemMeta = { ...m };
     if (id === "settings") delete copy.hidden;
     if (Object.keys(copy).length > 0) meta[id] = copy;
+  }
+
+  // 5.5 一次性迁移（产品决策，2026-08）：插件管理页默认归「系统」组。
+  //     老用户 localStorage 里可能已保存旧布局（plugins 在 work 组）——用户 order
+  //     优先于默认组，光改 groupId 对老用户不生效。这里检测"work 含 plugins 且
+  //     未迁移过"→ 移到 system 尾部，并用 meta.plugins.movedToSystem 标记：
+  //     之后用户手动拖回 work 不再被强行迁回（迁移只发生一次）。
+  const pluginsMeta = cfg?.meta?.["plugins"];
+  if (
+    defs.some((d) => d.id === "plugins") &&
+    (order["work"] ?? []).includes("plugins") &&
+    !pluginsMeta?.movedToSystem
+  ) {
+    order["work"] = (order["work"] ?? []).filter((id) => id !== "plugins");
+    const sys = (order["system"] ??= []);
+    if (!sys.includes("plugins")) sys.push("plugins");
+    meta["plugins"] = { ...meta["plugins"], movedToSystem: true };
   }
 
   // 6. 清理空组：内置组始终保留；user: 组（用户显式新建）保留空组；

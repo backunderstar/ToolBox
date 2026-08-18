@@ -51,8 +51,8 @@ export function TextStatsUi({ api }: { api: PluginBridgeApi }) {
   );
 
   return (
-    <div className="view-header">
-      <div>
+    <div className="text-stats-view">
+      <header className="text-stats-head">
         <h1>文本统计</h1>
         <p className="view-sub">
           {api.context.vault
@@ -60,7 +60,7 @@ export function TextStatsUi({ api }: { api: PluginBridgeApi }) {
             : "尚未选择工作区（本工具无需工作区）"}
           {" · 统计逻辑在命令 analyze（UI 经 api.call 调用）"}
         </p>
-      </div>
+      </header>
       <div className="text-stats-panel">
         <textarea
           className="text-stats-input"
