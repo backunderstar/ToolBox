@@ -71,7 +71,7 @@ export interface PluginInfo {
   provider: boolean;
   /** 系统插件（数据安全/横切能力，不可禁用） */
   system: boolean;
-  /** 插件自带前端入口（相对插件目录；缺省用宿主内置视图组件） */
+  /** 插件自带前端入口（相对插件目录；null = 无自带前端，声明 nav 也只会显示占位页） */
   ui: string | null;
   /** 插件声明的导航入口（启用时并入侧边栏） */
   nav: PluginNav[];

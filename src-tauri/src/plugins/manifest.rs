@@ -11,7 +11,8 @@ pub enum PluginRuntime {
     Native,
 }
 
-/// 前端界面声明（插件自带页面，宿主经 iframe + tb-plugin:// 协议加载）。
+/// 前端界面声明（插件自带页面）：宿主 PluginUiView 读取 ui 产物（自包含
+/// IIFE + style.css）经 Blob URL <script> 注入并挂载到容器（组件模式）。
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UiDecl {
@@ -90,7 +91,8 @@ pub struct PluginManifest {
     /// 系统插件：数据安全/横切能力（如备份、搜索），前端不可禁用。
     #[serde(default)]
     pub system: bool,
-    /// 插件自带前端界面（宿主经 iframe 加载；缺省则用宿主内置视图组件）。
+    /// 插件自带前端界面（宿主 PluginUiView 组件模式挂载；缺省 = 无自带前端，
+    /// 声明 nav 的插件点击后宿主显示占位页——宿主已无内置视图组件）。
     #[serde(default)]
     pub ui: Option<UiDecl>,
     /// 导航入口（启用时并入侧边栏）。

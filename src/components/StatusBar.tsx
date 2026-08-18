@@ -1,6 +1,11 @@
 import type { PingInfo } from "../core/ipc";
 import type { ThemeMode } from "../themes/themes";
 
+/**
+ * 状态栏（应用外壳）：IPC 连接状态 / 操作反馈 / 当前主题模式 /
+ * 工作区名 / 核心版本。data-part="statusbar"（皮肤插件公开钩子）。
+ */
+
 interface StatusBarProps {
   ping: PingInfo | null;
   theme: ThemeMode;

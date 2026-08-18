@@ -13,12 +13,17 @@ import {
 import type { ComponentType, SVGProps } from "react";
 import type { NavConfig, NavItemDef } from "../core/navPrefs";
 
+/**
+ * 侧边栏（应用外壳）：按 navPrefs 归一化配置渲染分组/项（折叠、隐藏、
+ * 图标覆盖、插件动态项），点击切换视图；ViewId 是宿主导航的视图联合类型
+ * （插件视图 id 为字符串，App 按 nav 表动态路由）。
+ */
+
 export type ViewId =
   | "overview"
   | "notes"
   | "plugins"
-  | "checklist"
-  | "projects"
+  | "checklist"  | "projects"
   | "ai"
   | "blog"
   | "settings";

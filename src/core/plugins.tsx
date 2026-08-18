@@ -34,7 +34,8 @@ import { setPluginThemes, type ThemeDef } from "../themes/themes";
  * 插件系统（M2）
  *
  * - 清单发现与启用状态由 Rust 核心管理（plugins_list / set_enabled / reload）
- * - webview 插件：前端读取入口 JS，经 `new Function("api", code)` 执行，
+ * - webview 插件：前端读取入口 JS，经 **Blob URL `<script>` 注入**执行
+ *   （CSP script-src blob: 允许；不能用 new Function——打包版 CSP 拦截 eval），
  *   插件通过 api.app.registerCommand 把命令注册进本地注册表
  * - process 插件：命令经 plugins_invoke 走 JSON-RPC 桥（Python 子进程）
  *

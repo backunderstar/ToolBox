@@ -4,6 +4,12 @@ import type { ThemeMode } from "../themes/themes";
 import { APP_TAG } from "../core/version";
 import type { SearchHit } from "../core/api";
 
+/**
+ * 顶栏（应用外壳）：导航折叠 / 品牌 / 工作区选择 / 全局搜索（任意视图可用，
+ * Ctrl+K 聚焦，↑↓ 选择 Enter 打开 Esc 清空）/ 主题亮暗切换 / 桌面浮窗开关。
+ * 搜索下拉的状态与键盘导航全在本组件内（activeIdx + 相对时间 + 计数）。
+ */
+
 interface TopBarProps {
   theme: ThemeMode;
   onToggleTheme: () => void;

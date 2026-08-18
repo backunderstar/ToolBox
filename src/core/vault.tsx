@@ -22,6 +22,27 @@ import {
 } from "./api";
 import type { FileEntry, SearchHit } from "./api";
 
+/**
+ * 工作区（Vault）状态中心（M1，宿主侧唯一数据源）：
+ *
+ * - 职责：工作区路径 / 文件树 / 当前笔记（activePath+content）/ 脏标记 /
+ *   全局全文搜索（顶栏搜索）/ 操作反馈状态条（status）。
+ * - 文件操作（列表/读写/增删改）经 core-notes 原生插件（plugin_call → DLL）；
+ *   全局搜索经宿主 search_all（FTS + 搜索提供者聚合）。
+ * - **状态流要点**（读代码前先理解这三个，其余都是衍生）：
+ *   1. `stateRef`：所有异步回调（save/openFile/pickVault）读"最新状态"都经它，
+ *      避免闭包捕获过期值——组件内 useCallback 闭包只捕获首次渲染的 state。
+ *   2. 自动保存：updateContent 置脏 + 800ms 防抖定时器（AUTOSAVE_DELAY）；
+ *      save 写盘后对比"写盘时快照"与"最新 content"，有新增输入则不撤脏，
+ *      交给下一轮定时器（防抖窗口内连续输入不丢）。
+ *   3. 竞态防护：openFile 读盘期间用户继续输入 → 放弃切换（不覆盖新输入）；
+ *      搜索用请求序号（searchSeq）丢弃过期响应。
+ * - 笔记视图已迁到 core-notes 插件自带前端（PluginUiView）：插件侧通过
+ *   `tb:vault-active` 事件同步"当前打开的笔记"回本层（宿主不持有插件 UI
+ *   内部状态），AI 预设等插件经 context.activePath/activeContent 读取；
+ *   插件写文件后推 `notes-changed` 事件，本层监听刷新文件树。
+ */
+
 const AUTOSAVE_DELAY = 800;
 const SEARCH_DELAY = 300;
 

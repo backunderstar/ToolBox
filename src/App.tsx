@@ -27,7 +27,19 @@ import { SettingsView } from "./components/SettingsView";
 import { FloatApp } from "./components/FloatApp";
 import "./styles/tokens.css";
 import "./styles/base.css";
-import "./styles/app.css";
+/* 样式按域拆分（原 app.css 3600 行）：外壳/插件页/设置/各核心插件视图。
+   顺序即级联顺序：shell（外壳+按钮）→ 各视图（同层类名不冲突，插件
+   UI 复用的宿主类名按需覆盖外壳细节）。 */
+import "./styles/shell.css";
+import "./styles/notes.css";
+import "./styles/plugins.css";
+import "./styles/settings.css";
+import "./styles/ai.css";
+import "./styles/blog.css";
+import "./styles/checklists.css";
+import "./styles/records.css";
+import "./styles/projects.css";
+import "./styles/history.css";
 
 /** 是否为浮窗窗口（加载同一前端入口，按窗口 label 分流） */
 function isFloatWindow(): boolean {
@@ -143,12 +155,13 @@ function AppInner() {
 
   const toggleThemeMode = () => setThemeId((t) => toggleTheme(t));
 
-  /* Ctrl+K：切到笔记视图并聚焦搜索框（快捷键提示的真实实现） */
+  /* Ctrl+K：任意视图下聚焦顶栏全局搜索（不切视图——搜索本就是全局的，
+     结果点击自会跳转笔记视图；历史上曾强制 setView("notes")，与"任意视图
+     可用"的语义相悖，已移除）。 */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setView((v) => (v === "notes" ? v : "notes"));
         setFocusTick((t) => t + 1);
       }
     };

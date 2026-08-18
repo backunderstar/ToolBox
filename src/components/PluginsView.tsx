@@ -11,13 +11,17 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { IconGear, IconRefresh, IconTrash } from "./icons";
 import type { ViewId } from "./Sidebar";
 
+/**
+ * 插件页：插件卡片列表（核心/外部分组，启用/禁用/重载/卸载/「打开」跳转界面）、
+ * 命令试用台（CommandTry）、实时事件流、DLL 插件安装（zip/目录）、
+ * 已卸载核心插件一键恢复。分组/徽标/间距样式见 app.css .plugin-*。
+ */
+
 const RUNTIME_LABEL: Record<string, string> = {
   webview: "JS",
   process: "Python",
   native: "原生",
-};
-
-const STATUS_TEXT: Record<string, string> = {
+};const STATUS_TEXT: Record<string, string> = {
   ready: "就绪",
   stopped: "已停止",
   error: "错误",
