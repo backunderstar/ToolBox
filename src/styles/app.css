@@ -354,7 +354,8 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--space-4);
-  max-width: 760px;
+  /* 与 hero/页面内容对齐到头（此前 max-width 限制让卡片比页面窄） */
+  width: 100%;
   padding: var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -768,6 +769,8 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /* 操作反馈（editor-status）浮动定位的包含块 */
+  position: relative;
 }
 .editor-header {
   display: flex;
@@ -806,19 +809,30 @@
   height: 100%;
 }
 
-/* 编辑器底部状态条：flash 消息（保存/删除/重命名反馈与错误提示），信息态用 muted，错误态用 danger */
+/* 编辑器操作反馈（保存/删除/重命名 flash 消息）：浮动 toast 定位在编辑器
+   右下角，不占文档流（此前为底部常驻条，出现消息时挤压「从一篇笔记开始」
+   等页面内容）。空消息时隐藏。 */
 .editor-status {
-  flex-shrink: 0;
-  min-height: 24px;
-  padding: var(--space-1) var(--space-5);
-  border-top: 1px solid var(--border);
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  max-width: 70%;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-2);
   font-size: var(--text-xs);
-  line-height: 1.7;
+  line-height: 1.6;
   color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  z-index: 20;
   transition: color var(--dur) var(--ease);
+}
+.editor-status:empty {
+  display: none;
 }
 .editor-status.error {
   color: var(--danger);

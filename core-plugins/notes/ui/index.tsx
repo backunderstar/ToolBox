@@ -523,11 +523,12 @@ export function NotesPluginUi({ api }: { api: PluginBridgeApi }) {
             </button>
           </div>
         )}
-      </div>
 
-      {/* 状态条：保存/删除/重命名等操作反馈与错误提示（flash 消息，4s 自动清除） */}
-      <div className={`editor-status${statusErr ? " error" : ""}`} role="status" aria-live="polite">
-        {status}
+        {/* 操作反馈（flash 消息，4s 自动清除）：浮动在编辑器右下角，
+            不占文档流——不再挤压「从一篇笔记开始」等页面内容 */}
+        <div className={`editor-status${statusErr ? " error" : ""}`} role="status" aria-live="polite">
+          {status}
+        </div>
       </div>
     </div>
   );

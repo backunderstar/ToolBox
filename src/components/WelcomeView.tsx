@@ -32,12 +32,12 @@ export function WelcomeView({
         <div className="hero-overline">ToolBox · Personal Workbench</div>
         <h1>个人工具箱</h1>
         <p>
-          笔记、数据、清单与博客发布，围绕一个普通文件夹展开。
-          数据始终是你的，随时可迁移、可备份、可发布。
+          你的笔记、文件与工具，围绕一个普通文件夹展开。
+          数据始终是你的——随时可迁移、可备份、可发布。
         </p>
         <div className="hero-actions">
           <button className="btn-primary" onClick={onOpenNotes}>
-            进入笔记
+            开始使用
           </button>
         </div>
       </section>
@@ -59,7 +59,7 @@ export function WelcomeView({
         </div>
         <div className="env-item">
           <span className="env-key">主题</span>
-          <span className="env-value">{themeName}（设置页可选 / 顶栏切换亮暗）</span>
+          <span className="env-value">{themeName}</span>
         </div>
       </section>
 

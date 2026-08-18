@@ -45,3 +45,8 @@ tauri-plugin-updater = "2.10.1"
 
 # Windows 上链接 WebView2 需要，Tauri 2 默认启用
 [target.'cfg(windows)'.dependencies]
+# 标题栏近似色（主题联动）：DwmSetWindowAttribute(DWMWA_CAPTION_COLOR)，
+# 让窗口标题栏颜色跟随主题画布背景（Windows 11 起支持；失败静默忽略）
+windows-sys = { version = "0.59", features = ["Win32_Graphics_Dwm", "Win32_Foundation"] }
+# 取窗口句柄（HWND）的标准方式（tauri 传递依赖同版本，显式声明以便使用）
+raw-window-handle = "0.6"

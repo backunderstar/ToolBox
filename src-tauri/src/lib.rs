@@ -79,6 +79,65 @@ fn app_config_dir(app: &tauri::AppHandle) -> Result<String, String> {
 
 /* ---- 自动备份（宿主内嵌 core::backup；原 core-backup 插件命令） ---- */
 
+/// 设置窗口标题栏近似色（主题联动，M5 增强）：
+/// 前端在应用主题时把画布背景色（--bg 计算值）传过来，标题栏背景跟随主题
+/// 大致色相变化（如暖色主题 → 米色标题栏、午夜蓝主题 → 深蓝标题栏）。
+/// 实现：Windows 11 的 DwmSetWindowAttribute(DWMWA_CAPTION_COLOR)；不支持或
+/// 调用失败时静默忽略（系统仍按亮/暗模式渲染标题栏，行为不劣化）。
+/// color 传 null 恢复系统默认；非 Windows 平台为 no-op。
+#[tauri::command]
+fn set_window_caption_color(window: tauri::Window, color: Option<String>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+
+        // DWMWA_CAPTION_COLOR = 35（Windows 11 22000+）
+        const DWMWA_CAPTION_COLOR: u32 = 35;
+        // DWMWA_COLOR_DEFAULT：恢复系统默认标题栏颜色
+        const DWMWA_COLOR_DEFAULT: u32 = 0xFFFF_FFFF;
+
+        let dwm_color: u32 = match color {
+            Some(hex) => parse_hex_color(&hex)?,
+            None => DWMWA_COLOR_DEFAULT,
+        };
+        let Ok(handle) = window.window_handle() else {
+            return Ok(());
+        };
+        let RawWindowHandle::Win32(h) = handle.as_raw() else {
+            return Ok(());
+        };
+        let hwnd = h.hwnd.get() as *mut std::ffi::c_void;
+        unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_CAPTION_COLOR,
+                &dwm_color as *const u32 as *const _,
+                std::mem::size_of::<u32>() as u32,
+            );
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (window, color);
+    }
+    Ok(())
+}
+
+/// 解析 CSS 十六进制颜色 "#RRGGBB" → Windows COLORREF（0x00BBGGRR）。
+fn parse_hex_color(s: &str) -> Result<u32, String> {
+    let h = s.trim().trim_start_matches('#');
+    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!("非法标题栏颜色（需 #RRGGBB）: {s}"));
+    }
+    let r = u32::from_str_radix(&h[0..2], 16).map_err(|_| "非法颜色".to_string())?;
+    let g = u32::from_str_radix(&h[2..4], 16).map_err(|_| "非法颜色".to_string())?;
+    let b = u32::from_str_radix(&h[4..6], 16).map_err(|_| "非法颜色".to_string())?;
+    Ok((b << 16) | (g << 8) | r)
+}
+
+/* ---- 自动备份（宿主内嵌 core::backup；原 core-backup 插件命令） ---- */
+
 #[tauri::command]
 fn backup_now(app: tauri::AppHandle, vault: String) -> Result<backup::BackupInfo, String> {
     // 安全（S1c）：备份会读取并复制 vault 全量内容，作用域必须绑定已配置工作区
@@ -190,6 +249,7 @@ pub fn run() {
             backup_restore,
             float_toggle,
             float_set_locked,
+            set_window_caption_color,
         ])
         .setup(|app| {
             // 打包版：把安装包资源里的核心插件部署到 %APPDATA%（dev 由 build:core 管理）

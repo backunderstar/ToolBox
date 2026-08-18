@@ -136,6 +136,11 @@ export const pluginCall = (vault: string, id: string, command: string, args: unk
 /** 在系统文件管理器中打开路径（Windows：资源管理器） */
 export const openInExplorer = (path: string) => invoke<void>("open_in_explorer", { path });
 
+/** 设置窗口标题栏近似色（主题联动）：color 为 CSS 十六进制 "#RRGGBB"；
+ *  传 null 恢复系统默认；非 Windows 平台静默忽略。 */
+export const setWindowCaptionColor = (color: string | null) =>
+  invoke<void>("set_window_caption_color", { color });
+
 /* ---- M6 AI 配置（经 core-ai 原生插件；无显式 vault 用当前工作区） ---- */
 
 export interface AiConfig {

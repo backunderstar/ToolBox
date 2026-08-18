@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { pluginsReadFile } from "../core/api";
+import { pluginsReadFile, setWindowCaptionColor } from "../core/api";
 
 /**
  * 主题系统（M5）：
@@ -241,6 +241,7 @@ export async function applyTheme(id: string): Promise<void> {
     // **不覆盖持久化值**——避免启动瞬间插件未就绪时把用户的选择冲掉
     applyThemeStyle("light", "default-light", {});
     clearPluginCss();
+    syncCaptionColor(); // 标题栏回到默认（浅色）画布色
     return;
   }
   applyThemeStyle(theme.base, id, theme.tokens);
@@ -255,6 +256,8 @@ export async function applyTheme(id: string): Promise<void> {
   if (document.documentElement.dataset.themeId !== id) return;
   localStorage.setItem(STORAGE_KEY, id);
   void syncWindowTheme(theme.base);
+  // 标题栏近似色跟随主题画布背景（Windows 11 原生标题栏；失败静默）
+  syncCaptionColor();
 }
 
 /** 纯 DOM 应用（预览用，不持久化） */
@@ -296,6 +299,16 @@ async function syncWindowTheme(mode: ThemeMode): Promise<void> {
   } catch {
     /* 非 Tauri 环境（浏览器预览）：标题栏由系统接管，忽略即可 */
   }
+}
+
+/** 窗口标题栏近似色（主题联动）：把画布背景色（--bg 计算值）同步给原生
+ *  标题栏，让外框颜色跟随主题大致色相（暖色 → 米色、午夜蓝 → 深蓝）。
+ *  仅支持 #RRGGBB（内置/示例主题都是）；否则恢复系统默认。非 Windows
+ *  平台与调用失败都静默（标题栏仍按亮/暗模式渲染，不劣化）。 */
+function syncCaptionColor(): void {
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  const color = /^#[0-9a-f]{6}$/i.test(bg) ? bg : null;
+  setWindowCaptionColor(color).catch(() => undefined);
 }
 
 /** 内置主题的近似色块（用于选择器预览）。插件主题优先用声明的 preview 色板
