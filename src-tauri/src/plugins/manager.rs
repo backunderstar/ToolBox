@@ -118,22 +118,35 @@ pub(crate) fn plugins_snapshot(dir: &Path) -> Vec<String> {
     out
 }
 
-/* ---------------- 全局插件目录与启用状态（%APPDATA%） ----------------
-   插件是"工具/程序"，不属于某个工作区数据：统一装在应用配置目录
-   （%APPDATA%/com.toolbox.desktop/plugins/），换工作区无需重装。
+/* ---------------- 全局插件目录与启用状态（默认 %APPDATA%，可自定义） ----------------
+   插件是"工具/程序"，不属于某个工作区数据：统一装在全局插件目录，换工作区无需
+   重装。默认 %APPDATA%/com.toolbox.desktop/plugins/；用户可在插件页自定义
+   （plugins.json 顶层 "plugins_dir" 键），缺省回退默认目录。
    启用状态同样全局（plugins.json 顶层 {enabled:[...]}）。
    兼容迁移：
    - 旧状态格式（按 vault 分键的 map）首次读取时并集迁移
    - 旧 vault/.toolbox/plugins.json 迁移进全局后删除
    - 旧 vault/plugins 目录中的插件自动复制到全局后整体进回收站 */
 
-/// 全局插件根目录（%APPDATA%/com.toolbox.desktop/plugins/）。
-pub(crate) fn global_plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+/// 默认全局插件根目录（%APPDATA%/com.toolbox.desktop/plugins/）。
+pub(crate) fn default_plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_config_dir()
         .map_err(|e| format!("定位配置目录失败: {e}"))?;
-    let p = dir.join("plugins");
+    Ok(dir.join("plugins"))
+}
+
+/// 当前生效的全局插件根目录：优先用户自定义（plugins.json 的 "plugins_dir" 键），
+/// 缺省用默认目录。所有"插件装哪/从哪发现"都经这里（manager/commands 统一入口）。
+pub(crate) fn global_plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let p = match load_state_map(app)
+        .get("plugins_dir")
+        .and_then(|v| v.as_str())
+    {
+        Some(custom) if !custom.trim().is_empty() => PathBuf::from(custom.trim()),
+        _ => default_plugins_dir(app)?,
+    };
     std::fs::create_dir_all(&p).map_err(|e| format!("创建插件目录失败: {e}"))?;
     Ok(p)
 }
@@ -156,10 +169,10 @@ pub fn ensure_core_plugins(app: &tauri::AppHandle) {
     if !src.is_dir() {
         return;
     }
-    let Ok(cfg) = app.path().app_config_dir() else {
+    // 部署到当前生效的全局插件目录（跟随用户自定义）
+    let Ok(dst) = global_plugins_dir(app).map(|p| p.join(CORE_DIR)) else {
         return;
     };
-    let dst = cfg.join("plugins").join(CORE_DIR);
     let removed = load_removed_core(app);
     match deploy_core_plugins(&src, &dst, &removed) {
         Ok(()) => eprintln!("[plugin] 已部署随应用分发的核心插件到 {:?}", dst),
@@ -248,7 +261,7 @@ fn state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("plugins.json"))
 }
 
-fn load_state_map(app: &tauri::AppHandle) -> serde_json::Map<String, Value> {
+pub(crate) fn load_state_map(app: &tauri::AppHandle) -> serde_json::Map<String, Value> {
     let Ok(p) = state_path(app) else {
         return serde_json::Map::new();
     };
@@ -259,7 +272,7 @@ fn load_state_map(app: &tauri::AppHandle) -> serde_json::Map<String, Value> {
         .unwrap_or_default()
 }
 
-fn save_state_map(app: &tauri::AppHandle, map: &serde_json::Map<String, Value>) -> Result<(), String> {
+pub(crate) fn save_state_map(app: &tauri::AppHandle, map: &serde_json::Map<String, Value>) -> Result<(), String> {
     let p = state_path(app)?;
     let raw = serde_json::to_string_pretty(&Value::Object(map.clone())).map_err(|e| e.to_string())?;
     std::fs::write(&p, raw).map_err(|e| format!("保存启用状态失败: {e}"))
@@ -337,7 +350,7 @@ fn migrate_legacy_enabled(app: &tauri::AppHandle, vault: &Path) {
 }
 
 /// 递归复制目录。
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dst).map_err(|e| format!("创建目录失败 {dst:?}: {e}"))?;
     let read = std::fs::read_dir(src).map_err(|e| format!("读取目录失败 {src:?}: {e}"))?;
     for entry in read.flatten() {
@@ -694,10 +707,15 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 界面安装 DLL 插件（用户选择的 .zip 包或插件目录）：
-    /// 解包/复制到临时目录 → 定位 plugin.json 校验（native + command + id）→
-    /// 部署到 _core/<id> → 扫描并启用启动。zip 解压带 zip-slip 防护。
-    pub fn install_native(
+    /// 界面安装插件（用户选择的 .zip 包或插件目录）：通用 runtime。
+    /// 解包/复制到临时目录 → 定位 plugin.json 校验（id 合法 + 清单完整）→
+    /// 按 runtime 部署：
+    /// - native（DLL）→ `_core/<id>`（DLL 加载进宿主进程 = 完全控制，仅允许
+    ///   核心容器，安全模型同 §start_native 的 S1b）
+    /// - webview / process / 主题皮肤 → `plugins/<id>`（外部插件目录，与手动
+    ///   复制同安全边界：process 权限门控、webview 受限 API、主题纯数据）
+    /// → 扫描并启用启动。zip 解压带 zip-slip 防护。
+    pub fn install(
         &mut self,
         app: &tauri::AppHandle,
         source: &str,
@@ -706,15 +724,8 @@ impl PluginManager {
         if kind != "zip" && kind != "dir" {
             return Err(format!("未知安装来源: {kind}"));
         }
-        let cfg = app
-            .path()
-            .app_config_dir()
-            .map_err(|e| format!("定位配置目录失败: {e}"))?;
-        let core_root = cfg.join("plugins").join(CORE_DIR);
-        std::fs::create_dir_all(&core_root).map_err(|e| format!("创建插件目录失败: {e}"))?;
-        let tmp = cfg
-            .join("plugins")
-            .join(format!(".install-{}", std::process::id()));
+        let plugins_root = global_plugins_dir(app)?;
+        let tmp = plugins_root.join(format!(".install-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).map_err(|e| format!("创建临时目录失败: {e}"))?;
 
@@ -764,32 +775,54 @@ impl PluginManager {
             let _ = std::fs::remove_dir_all(&tmp);
             e
         };
-        if manifest.runtime != PluginRuntime::Native {
-            return Err(bad(format!(
-                "仅支持安装 native（DLL）插件（清单 runtime 为其他类型）: {}",
-                manifest.id
-            )));
-        }
-        if manifest
-            .command
-            .as_ref()
-            .map(|c| c.is_empty())
-            .unwrap_or(true)
-        {
-            return Err(bad(format!(
-                "native 插件清单缺少 command（DLL 文件名）: {}",
-                manifest.id
-            )));
-        }
         if !is_safe_plugin_id(&manifest.id) {
             return Err(bad(format!("非法插件 id: {}", manifest.id)));
         }
+        // 按 runtime 校验清单完整性（与 manifest::validate 同规则，这里覆盖
+        // UI 安装路径——用户可能绕过插件页直接给目录）
+        match manifest.runtime {
+            PluginRuntime::Native | PluginRuntime::Process => {
+                if manifest
+                    .command
+                    .as_ref()
+                    .map(|c| c.is_empty())
+                    .unwrap_or(true)
+                {
+                    return Err(bad(format!(
+                        "插件清单缺少 command（{} 运行时需要启动命令）: {}",
+                        match manifest.runtime {
+                            PluginRuntime::Native => "native（DLL 文件名）",
+                            _ => "process（启动命令 argv）",
+                        },
+                        manifest.id
+                    )));
+                }
+            }
+            PluginRuntime::Webview => {
+                // 纯主题插件（声明 theme）可无 entry
+                if manifest.entry.as_deref().unwrap_or("").trim().is_empty()
+                    && manifest.theme.is_none()
+                {
+                    return Err(bad(format!(
+                        "webview 插件清单缺少 entry（JS 入口）: {}",
+                        manifest.id
+                    )));
+                }
+            }
+        }
         let id = manifest.id.clone();
-        let dst = core_root.join(&id);
+        let is_native = manifest.runtime == PluginRuntime::Native;
+        let dst = if is_native {
+            // native 只进 _core 容器（S1b：DLL 进宿主进程 = 完全控制）
+            let core_root = plugins_root.join(CORE_DIR);
+            std::fs::create_dir_all(&core_root)
+                .map_err(|e| format!("创建核心插件目录失败: {e}"))?;
+            core_root.join(&id)
+        } else {
+            plugins_root.join(&id)
+        };
         if dst.exists() {
-            return Err(bad(format!(
-                "插件已存在: {id}（如需重装请先卸载）"
-            )));
+            return Err(bad(format!("插件已存在: {id}（如需重装请先卸载）")));
         }
         copy_dir_recursive(&manifest_dir, &dst).map_err(|e| {
             let _ = std::fs::remove_dir_all(&tmp);
@@ -819,11 +852,8 @@ impl PluginManager {
             return Err(format!("非法插件 id: {id}"));
         }
         let src = core_plugin_source(app, id)?;
-        let cfg = app
-            .path()
-            .app_config_dir()
-            .map_err(|e| format!("定位配置目录失败: {e}"))?;
-        let dst = cfg.join("plugins").join(CORE_DIR).join(id);
+        // 部署到当前生效的全局插件目录（跟随用户自定义）
+        let dst = global_plugins_dir(app)?.join(CORE_DIR).join(id);
         if dst.exists() {
             return Err(format!("插件已存在: {id}（如需重装请先卸载）"));
         }
@@ -1032,6 +1062,18 @@ impl PluginManager {
         // native：Drop 即销毁插件实例并释放 DLL（Windows 上文件随即可覆盖）
         self.records[idx].native.take();
         self.records[idx].commands.clear();
+    }
+
+    /// 停掉全部 native 插件实例（释放 DLL 文件锁）。
+    /// 插件目录迁移（plugins_dir_set）复制 `_core` 前必须调用——否则宿主
+    /// 正加载的 DLL 在 Windows 上被独占锁住，复制报"另一个程序正在使用此文件"。
+    /// 迁移后由调用方 refresh 重新发现并启动。
+    pub(crate) fn stop_all_native(&mut self) {
+        for rec in &mut self.records {
+            if rec.manifest.runtime == PluginRuntime::Native {
+                rec.native.take();
+            }
+        }
     }
 
     fn may_restart(&mut self, idx: usize) -> bool {

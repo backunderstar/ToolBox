@@ -5,7 +5,13 @@ import { usePlugins } from "../core/plugins";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
 import type { PluginInfo } from "../core/api";
-import { pluginsRemovedCore, pluginsReinstallCore, pluginsInstallNative } from "../core/api";
+import {
+  pluginsRemovedCore,
+  pluginsReinstallCore,
+  pluginsInstall,
+  pluginsDirGet,
+  pluginsDirSet,
+} from "../core/api";
 import { CommandTry } from "./CommandTry";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { IconGear, IconRefresh, IconTrash } from "./icons";
@@ -60,6 +66,8 @@ export function PluginsView() {
     path: string;
     kind: "zip" | "dir";
   } | null>(null);
+  /** 全局插件目录（当前生效；可自定义，切换时自动迁移） */
+  const [pluginsDir, setPluginsDir] = useState<string | null>(null);
   const [events, setEvents] = useState<PluginEventLog[]>([]);
   /** 已卸载的核心插件 id（显示"重新安装"入口；核心插件真实卸载后不随启动恢复） */
   const [removedCore, setRemovedCore] = useState<string[]>([]);
@@ -89,12 +97,47 @@ export function PluginsView() {
     setPendingInstall(null);
     setBusy((b) => ({ ...b, ["@install"]: true }));
     try {
-      await pluginsInstallNative(v, src, kind);
+      await pluginsInstall(v, src, kind);
       await refresh();
     } catch (e) {
       setActionError(`安装失败: ${e}`);
     } finally {
       setBusy((b) => ({ ...b, ["@install"]: false }));
+    }
+  };
+
+  /* 读取当前插件目录（自定义或默认） */
+  useEffect(() => {
+    pluginsDirGet()
+      .then(setPluginsDir)
+      .catch(() => setPluginsDir(null));
+  }, [vault.path]);
+
+  /** 更改插件目录：选择新目录 → 后端自动迁移（旧目录进回收站）→ 刷新 */
+  const changePluginsDir = async () => {
+    try {
+      const sel = (await open({
+        directory: true,
+        title: "选择插件目录（现有插件将自动迁移）",
+      })) as string | null;
+      if (!sel) return;
+      const effective = await pluginsDirSet(sel);
+      setPluginsDir(effective);
+      await refresh();
+      setActionError(null);
+    } catch (e) {
+      setActionError(`更改插件目录失败: ${e}`);
+    }
+  };
+
+  /** 恢复默认插件目录（%APPDATA%）；现有插件自动迁移 */
+  const resetPluginsDir = async () => {
+    try {
+      const effective = await pluginsDirSet("");
+      setPluginsDir(effective);
+      await refresh();
+    } catch (e) {
+      setActionError(`恢复默认插件目录失败: ${e}`);
     }
   };
 
@@ -287,7 +330,7 @@ export function PluginsView() {
         <div className="view-actions">
           <button
             className="btn"
-            title="安装本地 DLL 插件（.zip 压缩包，含 plugin.json 声明 runtime: native）"
+            title="安装插件包（.zip 压缩包，含 plugin.json；按运行时自动部署到对应位置）"
             onClick={() => void pickInstall("zip")}
             disabled={!vault.path || loading}
           >
@@ -295,7 +338,7 @@ export function PluginsView() {
           </button>
           <button
             className="btn"
-            title="安装本地 DLL 插件（插件目录，含 plugin.json 声明 runtime: native）"
+            title="安装插件目录（含 plugin.json；DLL 装到 _core\，JS/Python/主题皮肤装到插件目录根）"
             onClick={() => void pickInstall("dir")}
             disabled={!vault.path || loading}
           >
@@ -307,6 +350,25 @@ export function PluginsView() {
           </button>
         </div>
       </header>
+
+      {/* 插件目录：默认 %APPDATA%，可自定义（切换时自动迁移） */}
+      {pluginsDir && (
+        <div className="plugins-dir-row">
+          <span className="plugins-dir-label">插件目录</span>
+          <code className="plugins-dir-path" title={pluginsDir}>
+            {pluginsDir}
+          </code>
+          <button className="btn btn-sm" onClick={() => void changePluginsDir()}>
+            更改…
+          </button>
+          <button className="btn btn-sm" onClick={() => void resetPluginsDir()}>
+            恢复默认
+          </button>
+          <span className="settings-hint">
+            DLL 装到 <code>_core\</code>，JS / Python / 主题皮肤装到根目录；更改时现有插件自动迁移
+          </span>
+        </div>
+      )}
 
       {actionError && (
         <div className="empty-state" style={{ marginBottom: 12 }}>
@@ -331,9 +393,9 @@ export function PluginsView() {
       ) : (
         <div className="plugin-list">
           <div className="plugin-group-label plugin-mount-hint">
-            手动安装本地 DLL 插件：把含 plugin.json（runtime: "native"）的插件目录放入
-            <code>%APPDATA%\com.toolbox.desktop\plugins\_core\</code>
-            后点「刷新」，自动识别为原生插件并可启用。
+            手动安装：把含 plugin.json 的插件目录放入插件目录——DLL（native）放
+            <code>_core\&lt;id&gt;</code>，JS / Python / 主题皮肤直接放根目录
+            （<code>plugins\&lt;id&gt;</code>），点「刷新」自动识别。
             <span style={{ opacity: 0.7 }}>
               原生插件为本地代码，加载即在本机执行，仅安装可信来源。
             </span>

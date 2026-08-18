@@ -119,9 +119,14 @@ export const pluginsReinstallCore = (vault: string, id: string) =>
   invoke<void>("plugins_reinstall_core", { vault, id });
 /** 已卸载的核心插件 id 列表（前端展示"重新安装"入口） */
 export const pluginsRemovedCore = () => invoke<string[]>("plugins_removed_core");
-/** 界面安装 DLL 插件：source = 用户选择的 .zip 包路径或插件目录路径；kind = "zip" | "dir" */
-export const pluginsInstallNative = (vault: string, source: string, kind: string) =>
-  invoke<string>("plugins_install_native", { vault, source, kind });
+/** 界面安装插件（通用 runtime）：source = .zip 包路径或插件目录路径；kind = "zip" | "dir"。
+ *  按清单 runtime 部署（native → _core/；webview/process/主题皮肤 → plugins/）。 */
+export const pluginsInstall = (vault: string, source: string, kind: string) =>
+  invoke<string>("plugins_install", { vault, source, kind });
+/** 当前生效的全局插件目录（自定义或默认 %APPDATA%） */
+export const pluginsDirGet = () => invoke<string>("plugins_dir_get");
+/** 设置全局插件目录（自动迁移现有插件，旧目录进回收站）；传空恢复默认 */
+export const pluginsDirSet = (path: string) => invoke<string>("plugins_dir_set", { path });
 /** 读取全局插件目录内的文件（webview 插件入口加载用，插件已不在 vault 内） */
 export const pluginsReadFile = (id: string, rel: string) =>
   invoke<string>("plugins_read_file", { id, rel });

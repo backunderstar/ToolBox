@@ -1,7 +1,7 @@
-// cdp-native-install.mjs — 安装 DLL 插件 E2E（手动 + 界面安装）：
+// cdp-native-install.mjs — 安装插件 E2E（手动 + 界面安装，通用 runtime）：
 // 1) 手动放目录到 %APPDATA%/plugins/_core/ → 刷新自动识别为原生插件（就绪 + 命令可用）
-// 2) 界面安装 .zip 包（plugins_install_native，PowerShell 构造 zip）
-// 3) 界面安装插件目录（plugins_install_native kind=dir）
+// 2) 界面安装 .zip 包（plugins_install，PowerShell 构造 zip）
+// 3) 界面安装插件目录（plugins_install kind=dir）
 // 全部验证 DLL 真实加载，最后清理（不留残留）。
 import { execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -95,7 +95,7 @@ log(`PASS 手动安装插件自动识别并加载 DLL（${m1.id} · 命令 ${c1}
 await cleanup(m1.id, vault);
 log("PASS 手动安装清理完成");
 
-// ---- 2. 界面安装 .zip 包（plugins_install_native kind=zip）----
+// ---- 2. 界面安装 .zip 包（plugins_install kind=zip）----
 const zsrc = path.join(os.tmpdir(), `tb-e2e-zip-${Date.now().toString(36)}`);
 const zid = `e2e-native-zip-${Date.now().toString(36)}`;
 mkdirSync(path.join(zsrc, zid), { recursive: true });
@@ -113,7 +113,7 @@ execSync(
   { stdio: "ignore" },
 );
 const zipInstalled = await ev(
-  `window.__TAURI_INTERNALS__.invoke('plugins_install_native', { vault: ${JSON.stringify(vault)}, source: ${JSON.stringify(zfile)}, kind: 'zip' })`,
+  `window.__TAURI_INTERNALS__.invoke('plugins_install', { vault: ${JSON.stringify(vault)}, source: ${JSON.stringify(zfile)}, kind: 'zip' })`,
 );
 if (zipInstalled !== zid) throw new Error(`zip 安装返回异常: ${JSON.stringify(zipInstalled)}`);
 await clickText(".view-actions button", "刷新");
@@ -124,7 +124,7 @@ rmSync(zsrc, { recursive: true, force: true });
 rmSync(zfile, { force: true });
 log("PASS zip 安装清理完成");
 
-// ---- 3. 界面安装插件目录（plugins_install_native kind=dir）----
+// ---- 3. 界面安装插件目录（plugins_install kind=dir）----
 const dsrc = path.join(os.tmpdir(), `tb-e2e-dir-${Date.now().toString(36)}`);
 const did = `e2e-native-dir-${Date.now().toString(36)}`;
 mkdirSync(dsrc, { recursive: true });
@@ -137,7 +137,7 @@ cpSync(srcDir, dsrc, { recursive: true });
   writeFileSync(mp, JSON.stringify(m, null, 2), "utf8");
 }
 const dirInstalled = await ev(
-  `window.__TAURI_INTERNALS__.invoke('plugins_install_native', { vault: ${JSON.stringify(vault)}, source: ${JSON.stringify(dsrc)}, kind: 'dir' })`,
+  `window.__TAURI_INTERNALS__.invoke('plugins_install', { vault: ${JSON.stringify(vault)}, source: ${JSON.stringify(dsrc)}, kind: 'dir' })`,
 );
 if (dirInstalled !== did) throw new Error(`目录安装返回异常: ${JSON.stringify(dirInstalled)}`);
 await clickText(".view-actions button", "刷新");

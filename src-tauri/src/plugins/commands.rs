@@ -4,7 +4,8 @@
 //! 最后在锁内操作 PluginManager。
 
 use crate::plugins::manager::{
-    global_plugins_dir, is_safe_plugin_id, load_removed_core, plugins_snapshot, PluginInfo,
+    copy_dir_recursive, default_plugins_dir, global_plugins_dir, is_safe_plugin_id,
+    load_removed_core, load_state_map, plugins_snapshot, save_state_map, PluginInfo,
     PluginManager, CORE_DIR,
 };
 use serde_json::Value;
@@ -112,10 +113,11 @@ pub async fn plugins_removed_core(app: tauri::AppHandle) -> Vec<String> {
     v
 }
 
-/// 界面安装 DLL 插件：source = 用户选择的 .zip 包路径或插件目录路径；kind = "zip" | "dir"。
+/// 界面安装插件（通用 runtime）：source = 用户选择的 .zip 包路径或插件目录路径；
+/// kind = "zip" | "dir"。按清单 runtime 部署（native → _core/；其余 → plugins/），
 /// 返回安装后的插件 id。
 #[tauri::command]
-pub async fn plugins_install_native(
+pub async fn plugins_install(
     app: tauri::AppHandle,
     state: State<'_, Mutex<PluginManager>>,
     vault: String,
@@ -125,7 +127,70 @@ pub async fn plugins_install_native(
     crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
-    m.install_native(&app, &source, &kind)
+    m.install(&app, &source, &kind)
+}
+
+/// 读取当前生效的全局插件目录（自定义或默认 %APPDATA%）。
+#[tauri::command]
+pub fn plugins_dir_get(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(global_plugins_dir(&app)?.to_string_lossy().to_string())
+}
+
+/// 设置全局插件目录：迁移现有插件（复制到新目录，旧目录进回收站）后切换。
+/// path 传空字符串/None 恢复默认（%APPDATA%/com.toolbox.desktop/plugins）。
+/// 迁移前停掉全部 native 插件释放 DLL 文件锁（否则 Windows 上复制 _core 失败）。
+/// 返回生效后的目录路径。
+#[tauri::command]
+pub fn plugins_dir_set(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<PluginManager>>,
+    path: Option<String>,
+) -> Result<String, String> {
+    let old = global_plugins_dir(&app)?;
+    let trimmed = path.as_deref().unwrap_or("").trim();
+    // 恢复默认：清配置键
+    let mut map = load_state_map(&app);
+    let new = if trimmed.is_empty() {
+        map.remove("plugins_dir");
+        default_plugins_dir(&app)?
+    } else {
+        let p = PathBuf::from(trimmed);
+        // 防呆：新目录不能是旧目录内部（迁移时复制进自己子目录会混乱）
+        if p.starts_with(&old) {
+            return Err("新插件目录不能位于当前插件目录内部".to_string());
+        }
+        map.insert("plugins_dir".into(), Value::String(trimmed.to_string()));
+        p
+    };
+    if new == old {
+        return Ok(new.to_string_lossy().to_string());
+    }
+    // 迁移前：停掉全部 native 插件（释放 DLL 文件锁），迁移后 refresh 重新发现启动
+    let mut m = state.lock().map_err(|e| e.to_string())?;
+    m.stop_all_native();
+    // 迁移：复制旧目录全部子目录（含 _core）到新目录，旧目录进回收站
+    std::fs::create_dir_all(&new).map_err(|e| format!("创建插件目录失败: {e}"))?;
+    if old.is_dir() {
+        let read = std::fs::read_dir(&old).map_err(|e| format!("读取插件目录失败: {e}"))?;
+        for entry in read.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            let dst = new.join(&name);
+            let _ = std::fs::remove_dir_all(&dst);
+            copy_dir_recursive(&dir, &dst).map_err(|e| format!("迁移插件 {name} 失败: {e}"))?;
+        }
+        // 旧目录进回收站（可反悔）；失败只告警不阻断（新目录已就绪）
+        let _ = trash::delete(&old);
+    }
+    save_state_map(&app, &map)?;
+    // 迁移后：按已配置工作区重新发现（native 会随启用状态重新启动）
+    if let Some(v) = m.vault.clone() {
+        let _ = m.refresh(&app, &v);
+    }
+    Ok(new.to_string_lossy().to_string())
 }
 
 /// 在解包目录中定位插件清单：根 plugin.json，或唯一子目录下的 plugin.json
