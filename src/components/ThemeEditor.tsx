@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   applyTheme,
   applyThemeStyle,
   upsertCustomTheme,
+  findTheme,
   EDITABLE_TOKENS,
   type ThemeDef,
   type ThemeMode,
@@ -23,6 +24,19 @@ export function ThemeEditor({
 }) {
   const [draft, setDraft] = useState<ThemeDef>(initial);
   const [name, setName] = useState(initial.name);
+
+  /* 进入编辑器时记住当前主题 id：预览 applyThemeStyle 直接污染 documentElement
+     （data-theme-id 被改成 draft.id），取消时 AppInner 的 themeId state 未变
+     （React bail out，不会重跑 apply）——必须在卸载时手动恢复进入前主题。
+     否则从内置主题「基于当前主题新建」后取消，界面会卡在预览的 custom-xxx。 */
+  const prevThemeIdRef = useRef(document.documentElement.dataset.themeId ?? "default-light");
+  useEffect(() => {
+    return () => {
+      const t = findTheme(prevThemeIdRef.current);
+      if (t) applyThemeStyle(t.base, t.id, t.tokens);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* 实时预览（不持久化） */
   useEffect(() => {

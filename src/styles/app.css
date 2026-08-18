@@ -1676,6 +1676,18 @@
   font-weight: 600;
   color: var(--fg);
 }
+/* 主题来源徽标（插件主题）：与名称同行，圆角胶囊 */
+.theme-card-name .theme-card-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: var(--pastel-blue-bg);
+  color: var(--pastel-blue-fg);
+  vertical-align: 1px;
+}
 .theme-card-desc {
   font-size: 10px;
   color: var(--fg-faint);

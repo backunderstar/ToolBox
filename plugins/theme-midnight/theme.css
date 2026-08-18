@@ -1,0 +1,48 @@
+/* ============================================================
+   午夜蓝皮肤 · 组件级覆盖示例（CSS 通道，base: dark）
+   ------------------------------------------------------------
+   与 theme-maple（亮色示例）对照：同一套契约，暗色基调。
+   令牌在 plugin.json theme.tokens（深蓝午夜），本文件只做形状/细节。
+   ============================================================ */
+
+/* 顶栏：星蓝细底边 + 品牌区亮色 */
+:root[data-theme-id="theme-midnight"] [data-part="topbar"] {
+  border-bottom-color: var(--accent-soft);
+}
+:root[data-theme-id="theme-midnight"] .topbar-title {
+  color: var(--accent-strong);
+}
+
+/* 搜索框：圆角 + 聚焦星蓝描边 */
+:root[data-theme-id="theme-midnight"] .search {
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+:root[data-theme-id="theme-midnight"] .search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* 侧栏：当前导航项星蓝高亮 */
+:root[data-theme-id="theme-midnight"] [data-part="sidebar"] {
+  background: var(--bg);
+}
+:root[data-theme-id="theme-midnight"] .nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* 状态栏指示灯：星蓝 */
+:root[data-theme-id="theme-midnight"] .status-dot {
+  background: var(--accent);
+}
+
+/* 卡片：深蓝边界，弱化圆角 */
+:root[data-theme-id="theme-midnight"] .settings-card,
+:root[data-theme-id="theme-midnight"] .theme-card {
+  border-color: var(--border);
+  border-radius: var(--radius-md);
+}

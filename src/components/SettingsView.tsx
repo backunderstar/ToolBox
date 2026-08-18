@@ -99,7 +99,10 @@ export function SettingsView({
       name: "新主题",
       base,
       description: "自定义主题",
-      tokens: {},
+      // 复制当前主题的令牌作起点（内置/自定义/插件主题均可）：
+      // 让"基于 XX 新建"真正以 XX 为底，而不是从默认色板白手起家
+      // （spread undefined 是安全的，等价于空对象）
+      tokens: { ...current?.tokens },
       custom: true,
     });
   };
@@ -181,7 +184,14 @@ export function SettingsView({
                         <span key={i} className="theme-swatch" style={{ background: c }} />
                       ))}
                     </div>
-                    <div className="theme-card-name">{t.name}</div>
+                    <div className="theme-card-name">
+                      {t.name}
+                      {t.source === "plugin" && (
+                        <span className="theme-card-badge" title="来自插件（皮肤插件，在插件页管理）">
+                          插件
+                        </span>
+                      )}
+                    </div>
                     <div className="theme-card-desc">{t.description}</div>
                     {t.custom && (
                       <button

@@ -1,0 +1,35 @@
+{
+  "id": "theme-midnight",
+  "name": "午夜蓝",
+  "version": "0.1.0",
+  "description": "皮肤插件示例（暗色）：深蓝午夜 · 星蓝强调，演示 base: dark 路径",
+  "runtime": "webview",
+  "theme": {
+    "base": "dark",
+    "tokens": {
+      "--bg": "#101418",
+      "--bg-soft": "#161b21",
+      "--bg-elevated": "#1c232b",
+      "--fg": "#dbe4ee",
+      "--fg-muted": "#8fa0b3",
+      "--fg-faint": "#6f7f91",
+      "--border": "#26303c",
+      "--border-strong": "#34404e",
+      "--accent": "#5b9bd5",
+      "--accent-strong": "#7ab8e8",
+      "--accent-soft": "#1e2c3a",
+      "--on-accent": "#0d1117",
+      "--danger": "#e08a86",
+      "--pastel-blue-bg": "#1a2c3c",
+      "--pastel-blue-fg": "#7cc0e8",
+      "--pastel-green-bg": "#1f2e24",
+      "--pastel-green-fg": "#8fc494",
+      "--pastel-yellow-bg": "#332d18",
+      "--pastel-yellow-fg": "#d9b45c",
+      "--pastel-red-bg": "#3d2526",
+      "--pastel-red-fg": "#e08a86"
+    },
+    "css": "theme.css"
+  },
+  "config": {}
+}
