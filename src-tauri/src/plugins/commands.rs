@@ -259,6 +259,24 @@ pub async fn plugins_read_file(
     std::fs::read_to_string(&p).map_err(|e| format!("读取插件文件失败: {e}"))
 }
 
+/// 统一插件命令调用的共享实现（去重：`plugins_invoke` 与 `plugin_call` 历史双命名，
+/// 逻辑完全相同，收敛到此处）。native → FFI；process → JSON-RPC；webview → 拒绝。
+fn invoke_plugin(
+    app: &tauri::AppHandle,
+    state: &State<'_, Mutex<PluginManager>>,
+    vault: &str,
+    id: &str,
+    command: &str,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
+    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
+    crate::core::vault::ensure_vault_matches(app, vault)?;
+    let mut m = state.lock().map_err(|e| e.to_string())?;
+    ensure_refreshed(&mut m, app, vault)?;
+    m.invoke(id, command, args)
+}
+
 #[tauri::command]
 pub async fn plugins_invoke(
     app: tauri::AppHandle,
@@ -268,16 +286,11 @@ pub async fn plugins_invoke(
     command: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
-    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
-    let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &app, &vault)?;
-    m.invoke(&id, &command, args)
+    invoke_plugin(&app, &state, &vault, &id, &command, args)
 }
 
 /// 统一插件命令调用（任何 runtime）：native → FFI；process → JSON-RPC；
-/// webview → 拒绝（由前端注册表调用）。核心插件（如 records）走这里。
+/// webview → 拒绝（由前端注册表调用）。核心插件（如 notes）走这里。
 #[tauri::command]
 pub async fn plugin_call(
     app: tauri::AppHandle,
@@ -287,12 +300,7 @@ pub async fn plugin_call(
     command: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
-    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
-    let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &app, &vault)?;
-    m.invoke(&id, &command, args)
+    invoke_plugin(&app, &state, &vault, &id, &command, args)
 }
 
 /// 聚合搜索：宿主内嵌全文搜索（FTS，core::search）+ 所有启用的搜索提供者

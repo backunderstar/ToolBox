@@ -2,12 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 
 /* ---- 类型（与 Rust 侧 serde camelCase 对应） ---- */
 
-export interface PingInfo {
-  message: string;
-  coreVersion: string;
-  os: string;
-}
-
 export interface VaultSettings {
   path: string | null;
 }
@@ -80,8 +74,6 @@ export interface PluginInfo {
 }
 
 /* ---- IPC 封装 ---- */
-
-export const ping = () => invoke<PingInfo>("ping");
 
 export const vaultGet = () => invoke<VaultSettings>("vault_get");
 export const vaultSet = (path: string) => invoke<void>("vault_set", { path });
