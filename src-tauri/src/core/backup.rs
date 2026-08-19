@@ -117,11 +117,10 @@ fn is_skipped(parent: &Path, name: &str, at_root: bool) -> bool {
     if at_root && (name == CONFIG_ARCHIVE || name == PLUGINS_ARCHIVE) {
         return true;
     }
-    if parent.file_name().map(|n| n == ".toolbox").unwrap_or(false) {
-        if name == "backups" || name.starts_with("search-fts.sqlite") {
+    if parent.file_name().map(|n| n == ".toolbox").unwrap_or(false)
+        && (name == "backups" || name.starts_with("search-fts.sqlite")) {
             return true;
         }
-    }
     // 备份/恢复的中间目录：.backup-*.tmp（快照暂存，rename 前）、
     // .restore-stage-*（恢复暂存，覆盖前校验用）。崩溃残留也被忽略。
     if name.starts_with(".backup-") || name.starts_with(".restore-stage") {

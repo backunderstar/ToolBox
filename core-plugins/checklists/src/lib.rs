@@ -4,6 +4,12 @@
 //! （Checklist/ChecklistItem 结构、camelCase 字段不变）；id 生成与
 //! 同名冲突加序号逻辑移入插件（宿主进程内，独立于前端 UI 状态）。
 
+// tb_plugin! 展开的 FFI 入口（tb_create/tb_call）带裸指针参数，属 C ABI 语义；
+// clippy 的 not_unsafe_ptr_arg_deref 对宏展开的 span 无法用局部 allow 压制
+// （宏内/调用点 allow 均失效），文件级统一豁免。本文件除宏样板外无其他
+// 裸指针公共 API（如有需单独复核）。
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;

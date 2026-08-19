@@ -4,6 +4,12 @@
 //! 凭据管理器（keyring）。流式对话：SSE 增量经 host.emit_event 推
 //! `ai-chunk` 事件（前端监听 plugin-event 过滤）。
 
+// tb_plugin! 展开的 FFI 入口（tb_create/tb_call）带裸指针参数，属 C ABI 语义；
+// clippy 的 not_unsafe_ptr_arg_deref 对宏展开的 span 无法用局部 allow 压制
+// （宏内/调用点 allow 均失效），文件级统一豁免。本文件除宏样板外无其他
+// 裸指针公共 API（如有需单独复核）。
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 mod chat;
 
 use serde::{Deserialize, Serialize};
@@ -20,9 +26,9 @@ const KEYRING_USER: &str = "ai-api-key";
 /// 跨线程安全包装（std::thread::spawn / rt().spawn 要求捕获的变量实现 Send）：
 /// - 宿主回调表 `TbHostApi` 含函数指针 + `*mut c_void`，本身不是 Send；
 /// - 上下文指针 `*mut c_void` 同理。
-/// 这里只把它们**原样透传**到流式任务（不解引用、不释放、不改写），
-/// 实际使用方（emit 回调 → 宿主 mpsc Sender）是线程安全的，故 unsafe impl Send
-/// 是安全的。这是 FFI 边界常见的"指针搬运"模式，务必保持"只透传"约定。
+///   这里只把它们**原样透传**到流式任务（不解引用、不释放、不改写），
+///   实际使用方（emit 回调 → 宿主 mpsc Sender）是线程安全的，故 unsafe impl Send
+///   是安全的。这是 FFI 边界常见的"指针搬运"模式，务必保持"只透传"约定。
 ///
 /// 注意：解包必须经 `get()` 方法（借用 self 返回 Copy 值）——若在闭包里直接写
 /// `host.0`，Rust 的分离捕获（RFC 2229）会捕获解包后的 `TbHostApi`（非 Send）

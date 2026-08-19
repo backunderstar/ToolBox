@@ -3,6 +3,12 @@
 //! 由宿主 core/projects.rs 移植。打开文件/文件夹经宿主回灌的
 //! `TbHostApi::open_path`（系统默认应用 / 资源管理器）。
 
+// tb_plugin! 展开的 FFI 入口（tb_create/tb_call）带裸指针参数，属 C ABI 语义；
+// clippy 的 not_unsafe_ptr_arg_deref 对宏展开的 span 无法用局部 allow 压制
+// （宏内/调用点 allow 均失效），文件级统一豁免；手写的 `open`（ctx 透传）
+// 已就地 allow 并注释。
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 use serde::Serialize;
 use serde_json::Value;
 use std::ffi::{c_char, c_void, CString};
@@ -248,6 +254,8 @@ pub fn files(vault: &str, name: &str, dir: &str) -> Result<Vec<ProjectFile>, Str
 }
 
 /// 用系统默认应用打开项目内文件 / 资源管理器打开文件夹（经宿主 open_path 回调）。
+// allow：ctx 是宿主透传句柄（不解引用），仅转发给宿主回调，同 tb-sdk emit/log 约定。
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn open(
     vault: &str,
     name: &str,

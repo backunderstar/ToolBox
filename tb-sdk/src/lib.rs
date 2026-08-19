@@ -41,6 +41,10 @@ pub struct TbHostApi {
 
 impl TbHostApi {
     /// 从原始指针读取（null 安全：测试或无宿主时用空表）。
+    ///
+    /// # Safety
+    /// `p` 必须为空指针，或指向一个与宿主 ABI 版本匹配、由 `tb_create` 宿主
+    /// 传入并保持存活的 `TbHostApi`（拷贝后不再读原指针）。
     pub unsafe fn from_ptr(p: *const TbHostApi) -> Self {
         if p.is_null() {
             Self {
@@ -65,6 +69,9 @@ pub struct PluginBox<T> {
 }
 
 /// 安全读取 C 字符串（null 返回 None）。
+///
+/// # Safety
+/// `p` 必须为空指针，或指向以 NUL 结尾、在调用期间保持存活的 C 字符串。
 pub unsafe fn read_str<'a>(p: *const c_char) -> Option<&'a str> {
     if p.is_null() {
         return None;
@@ -106,6 +113,9 @@ pub fn decode_result(raw: &str) -> Result<Value, String> {
 /// 一起释放（`tb_destroy` 后失效）。插件自建后台线程若在实例销毁后仍调用本函数
 /// 会 use-after-free——**仅允许在实例存活期间（命令调用栈内）发送事件**，不要
 /// 把 `ctx`/`host` 泄漏到超出实例生命周期的线程中。
+// allow：ctx 是透传句柄（宿主分配、见生命周期约束），本函数不解引用其内容，
+// 仅作为回调参数原样转发——标记 unsafe 会破坏插件侧安全包装的易用性。
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn emit(host: TbHostApi, ctx: *mut c_void, event: &str, data: Value) {
     if let Some(f) = host.emit_event {
         let ev = CString::new(event);
@@ -117,6 +127,8 @@ pub fn emit(host: TbHostApi, ctx: *mut c_void, event: &str, data: Value) {
 }
 
 /// 日志（经宿主回调；无宿主时打到 stderr）。
+// allow：同 `emit`——ctx 为透传句柄，不解引用，仅转发给宿主回调。
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn log(host: TbHostApi, ctx: *mut c_void, level: i32, msg: &str) {
     if let Some(f) = host.log {
         if let Ok(m) = CString::new(msg) {
@@ -187,9 +199,7 @@ fn canonical_parent(p: &Path) -> Option<PathBuf> {
     let mut cur = p.to_path_buf();
     let mut tail: Vec<std::ffi::OsString> = Vec::new();
     while !cur.exists() {
-        let Some(name) = cur.file_name().map(|n| n.to_os_string()) else {
-            return None;
-        };
+        let name = cur.file_name().map(|n| n.to_os_string())?;
         tail.push(name);
         if !cur.pop() {
             return None;
@@ -202,40 +212,6 @@ fn canonical_parent(p: &Path) -> Option<PathBuf> {
     Some(base)
 }
 
-#[cfg(test)]
-mod path_tests {
-    use super::*;
-
-    #[test]
-    fn rejects_empty_and_curdir() {
-        let vault = "C:/vault";
-        assert!(resolve_safe(vault, "").is_err());
-        assert!(resolve_safe(vault, "  ").is_err());
-        assert!(resolve_safe(vault, ".").is_err());
-        assert!(resolve_safe(vault, "./x.md").is_err());
-    }
-
-    #[test]
-    fn rejects_escape() {
-        let vault = "C:/vault";
-        assert!(resolve_safe(vault, "../x.md").is_err());
-        assert!(resolve_safe(vault, "a/../../x").is_err());
-        assert!(resolve_safe(vault, "/abs").is_err());
-        assert!(resolve_safe(vault, "C:/other").is_err());
-        assert!(resolve_safe(vault, "\\\\.\\pipe\\x").is_err());
-    }
-
-    #[test]
-    fn accepts_normal() {
-        let vault = "C:/vault";
-        let p = resolve_safe(vault, "notes/你好.md").unwrap();
-        assert_eq!(p, std::path::PathBuf::from("C:/vault/notes/你好.md"));
-        // 反斜杠归一化 + 前后空白裁剪
-        let p2 = resolve_safe(vault, "  notes\\a.md ").unwrap();
-        assert_eq!(p2, std::path::PathBuf::from("C:/vault/notes/a.md"));
-    }
-}
-
 #[cfg(windows)]
 #[link(name = "kernel32")]
 extern "system" {
@@ -244,7 +220,9 @@ extern "system" {
 
 #[cfg(windows)]
 #[repr(C)]
-#[allow(non_snake_case)] // Win32 SYSTEMTIME 字段名（wYear 等）保持原样
+// Win32 SYSTEMTIME 类型/字段名（wYear 等）保持原样：FFI 布局与符号需与
+// Windows API 一致，禁止按 Rust 命名惯例改名。
+#[allow(non_snake_case, clippy::upper_case_acronyms)]
 struct SYSTEMTIME {
     wYear: u16,
     wMonth: u16,
@@ -387,4 +365,40 @@ macro_rules! tb_plugin {
             }
         }
     };
+}
+
+/* ---------------- 测试（置于文件末尾，避免 items_after_test_module） ---------------- */
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_empty_and_curdir() {
+        let vault = "C:/vault";
+        assert!(resolve_safe(vault, "").is_err());
+        assert!(resolve_safe(vault, "  ").is_err());
+        assert!(resolve_safe(vault, ".").is_err());
+        assert!(resolve_safe(vault, "./x.md").is_err());
+    }
+
+    #[test]
+    fn rejects_escape() {
+        let vault = "C:/vault";
+        assert!(resolve_safe(vault, "../x.md").is_err());
+        assert!(resolve_safe(vault, "a/../../x").is_err());
+        assert!(resolve_safe(vault, "/abs").is_err());
+        assert!(resolve_safe(vault, "C:/other").is_err());
+        assert!(resolve_safe(vault, "\\\\.\\pipe\\x").is_err());
+    }
+
+    #[test]
+    fn accepts_normal() {
+        let vault = "C:/vault";
+        let p = resolve_safe(vault, "notes/你好.md").unwrap();
+        assert_eq!(p, std::path::PathBuf::from("C:/vault/notes/你好.md"));
+        // 反斜杠归一化 + 前后空白裁剪
+        let p2 = resolve_safe(vault, "  notes\\a.md ").unwrap();
+        assert_eq!(p2, std::path::PathBuf::from("C:/vault/notes/a.md"));
+    }
 }

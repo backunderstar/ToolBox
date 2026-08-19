@@ -47,5 +47,8 @@ jobs:
       - name: Frontend unit tests (vitest)
         run: pnpm test
 
+      - name: Clippy (workspace, warnings denied)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
       - name: Rust tests (workspace)
         run: cargo test --workspace

@@ -3,8 +3,8 @@
 //! 结构（2026-08 拆分，原 1935 行单文件）：
 //! - `manager`：PluginManager 核心（发现/启停/卸载/安装）与工具函数
 //! - `commands`：全部 IPC 命令（tauri::command 层）
-//! - `manifest` / `native` / `process` / `events`：类型与运行时
-//! 本文件保留模块声明、re-export（lib.rs 沿用 `plugins::*` 路径）与集成测试。
+//! - `manifest` / `native` / `process` / `events`：类型与运行时。
+//!   本文件保留模块声明、re-export（lib.rs 沿用 `plugins::*` 路径）与集成测试。
 
 pub mod commands;
 pub mod events;
@@ -19,12 +19,10 @@ pub use manager::PluginManager;
 // 非测试编译不产生，避免 unused 警告）
 #[cfg(test)]
 pub(crate) use manager::{
-    core_plugin_source, deploy_core_plugins, global_plugins_dir, is_safe_plugin_id,
-    load_removed_core, migrate_vault_plugins, plugins_snapshot, save_removed_core, API_TIMEOUT,
-    CORE_DIR, PluginInfo, PluginRecord,
+    deploy_core_plugins, is_safe_plugin_id, migrate_vault_plugins, PluginRecord,
 };
 #[cfg(test)]
-pub(crate) use manifest::{NavDecl, PluginManifest, PluginRuntime, ThemeDecl};
+pub(crate) use manifest::{PluginManifest, PluginRuntime};
 #[cfg(test)]
 pub(crate) use native::NativePlugin;
 #[cfg(test)]
@@ -63,8 +61,10 @@ mod tests {
     /// native 运行时只允许 _core 目录（S1b）：外部目录的 native 插件拒绝启动。
     #[test]
     fn start_native_rejects_non_core_dir() {
-        let mut m = PluginManager::default();
-        m.vault = Some(PathBuf::from("C:/vault"));
+        let mut m = PluginManager {
+            vault: Some(PathBuf::from("C:/vault")),
+            ..Default::default()
+        };
         m.records.push(PluginRecord {
             manifest: PluginManifest {
                 id: "evil".into(),
@@ -111,9 +111,11 @@ mod tests {
         std::fs::create_dir_all(&core_dir).unwrap();
         std::fs::copy(&dll, core_dir.join("tb_notes.dll")).unwrap();
 
-        let mut m = PluginManager::default();
-        m.vault = Some(PathBuf::from("C:/vault"));
-        m.config_dir = Some(base.to_string_lossy().to_string());
+        let mut m = PluginManager {
+            vault: Some(PathBuf::from("C:/vault")),
+            config_dir: Some(base.to_string_lossy().to_string()),
+            ..Default::default()
+        };
         m.records.push(PluginRecord {
             manifest: PluginManifest {
                 id: "core-notes".into(),
@@ -171,9 +173,11 @@ mod tests {
         )
         .unwrap();
 
-        let mut m = PluginManager::default();
-        m.vault = Some(PathBuf::from("C:/vault"));
-        m.config_dir = Some(base.to_string_lossy().to_string());
+        let mut m = PluginManager {
+            vault: Some(PathBuf::from("C:/vault")),
+            config_dir: Some(base.to_string_lossy().to_string()),
+            ..Default::default()
+        };
         m.scan_plugin_dir(&core_dir); // records 为空时的首次扫描
         assert_eq!(m.records.len(), 1);
         assert!(m.records[0].native.is_some(), "首次扫描即应启动 native 插件");

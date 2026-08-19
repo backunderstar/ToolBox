@@ -47,9 +47,7 @@ fn canonical_parent(p: &Path) -> Option<PathBuf> {
     let mut cur = p.to_path_buf();
     let mut tail: Vec<std::ffi::OsString> = Vec::new();
     while !cur.exists() {
-        let Some(name) = cur.file_name().map(|n| n.to_os_string()) else {
-            return None;
-        };
+        let name = cur.file_name().map(|n| n.to_os_string())?;
         tail.push(name);
         if !cur.pop() {
             return None;

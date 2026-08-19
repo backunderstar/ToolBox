@@ -74,7 +74,7 @@ pub fn vault_set(app: tauri::AppHandle, path: String) -> Result<(), String> {
 /// 避免 `C:\vault` vs `C:/vault`、`C:\vault\` vs `C:\vault` 这类等价写法被误判不一致。
 fn normalize_vault_path(s: &str) -> String {
     s.trim()
-        .trim_end_matches(|c| c == '/' || c == '\\')
+        .trim_end_matches(['/', '\\'])
         .replace('\\', "/")
 }
 

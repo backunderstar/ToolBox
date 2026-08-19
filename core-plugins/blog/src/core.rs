@@ -100,7 +100,7 @@ fn is_published(fm: &BTreeMap<String, String>) -> bool {
 
 /* ---------------- 扫描 ---------------- */
 
-fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
+fn collect_md(dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -116,7 +116,7 @@ fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBu
         };
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
         if is_dir {
-            collect_md(root, &entry.path(), &rel, out);
+            collect_md(&entry.path(), &rel, out);
         } else if name.ends_with(".md") {
             out.push((rel, entry.path()));
         }
@@ -129,7 +129,7 @@ fn scan_posts(vault: &str) -> Vec<PostMeta> {
         return Vec::new();
     }
     let mut files = Vec::new();
-    collect_md(&root, &root, "notes", &mut files);
+    collect_md(&root, "notes", &mut files);
     let mut posts = Vec::new();
     for (rel, abs) in files {
         let Ok(content) = std::fs::read_to_string(&abs) else {

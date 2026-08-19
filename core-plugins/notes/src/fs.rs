@@ -65,11 +65,11 @@ pub fn list(vault: &str) -> Result<Vec<FileEntry>, String> {
     }
     let notes = ensure_notes_dir(&root)?;
     let mut out = Vec::new();
-    walk(&notes, &notes, NOTES_DIR, &mut out);
+    walk(&notes, NOTES_DIR, &mut out);
     Ok(out)
 }
 
-fn walk(root: &Path, dir: &Path, base: &str, out: &mut Vec<FileEntry>) {
+fn walk(dir: &Path, base: &str, out: &mut Vec<FileEntry>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -94,7 +94,7 @@ fn walk(root: &Path, dir: &Path, base: &str, out: &mut Vec<FileEntry>) {
                 is_dir: true,
                 size: None,
             });
-            walk(root, &entry.path(), &rel, out);
+            walk(&entry.path(), &rel, out);
         } else if name.ends_with(".md") {
             let size = entry.metadata().ok().map(|m| m.len());
             out.push(FileEntry {

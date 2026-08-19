@@ -302,10 +302,7 @@ impl ProcessPlugin {
 
     /// 进程是否已退出。
     pub fn has_exited(&mut self) -> bool {
-        match self.child.try_wait() {
-            Ok(Some(_)) => true,
-            _ => false,
-        }
+        matches!(self.child.try_wait(), Ok(Some(_)))
     }
 
     /// 写一条消息到插件 stdin，带超时兜底：

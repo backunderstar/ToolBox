@@ -3,6 +3,12 @@
 //! 由宿主 core/todos.rs 移植：文件为唯一真源，损坏文件隔离保留现场、
 //! 原子写（临时文件 + rename）；变更后经 host 发 `todos-changed` 事件。
 
+// tb_plugin! 展开的 FFI 入口（tb_create/tb_call）带裸指针参数，属 C ABI 语义；
+// clippy 的 not_unsafe_ptr_arg_deref 对宏展开的 span 无法用局部 allow 压制
+// （宏内/调用点 allow 均失效），文件级统一豁免。本文件除宏样板外无其他
+// 裸指针公共 API（如有需单独复核）。
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};

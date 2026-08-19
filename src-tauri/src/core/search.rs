@@ -79,7 +79,7 @@ fn maybe_sync_index(conn: &mut Connection, root: &Path) -> Result<bool, String> 
 fn dir_tree_signature(root: &Path) -> String {
     use std::hash::{Hash, Hasher};
     let mut sig: Vec<String> = Vec::new();
-    collect_dirs(root, root, "", &mut sig, 0);
+    collect_dirs(root, "", &mut sig, 0);
     sig.sort();
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for s in sig {
@@ -89,7 +89,6 @@ fn dir_tree_signature(root: &Path) -> String {
 }
 
 fn collect_dirs(
-    root: &Path,
     dir: &Path,
     base: &str,
     out: &mut Vec<String>,
@@ -122,7 +121,7 @@ fn collect_dirs(
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         out.push(format!("{rel}|{mtime_ns}"));
-        collect_dirs(root, &entry.path(), &rel, out, depth + 1);
+        collect_dirs(&entry.path(), &rel, out, depth + 1);
     }
 }
 
@@ -151,8 +150,8 @@ fn is_indexed_json(rel: &str) -> bool {
 /// 文件名的拼音键（全拼 + 首字母，均小写、去空白），用于拼音搜索：
 /// - 全拼："项目计划" → "xiangmujihua"
 /// - 首字母："项目计划" → "xmjh"
-/// 非汉字字符（ASCII 字母/数字）原样保留并与拼音串串联——"API 计划" 可被
-/// "api" 命中。多音字取第一个读音（pinyin crate 默认行为），足够日常使用。
+///   非汉字字符（ASCII 字母/数字）原样保留并与拼音串串联——"API 计划" 可被
+///   "api" 命中。多音字取第一个读音（pinyin crate 默认行为），足够日常使用。
 fn pinyin_keys(stem: &str) -> (String, String) {
     let mut full = String::new();
     let mut initials = String::new();
@@ -180,12 +179,11 @@ fn escape_like(q: &str) -> String {
 }
 
 /// 递归收集 notes/ 下全部 .md（相对路径 + 绝对路径）。
-fn collect_md(root: &Path, dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
-    collect_md_depth(root, dir, base, out, 0);
+fn collect_md(dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
+    collect_md_depth(dir, base, out, 0);
 }
 
 fn collect_md_depth(
-    root: &Path,
     dir: &Path,
     base: &str,
     out: &mut Vec<(String, PathBuf)>,
@@ -210,7 +208,7 @@ fn collect_md_depth(
         };
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
         if is_dir {
-            collect_md_depth(root, &entry.path(), &rel, out, depth + 1);
+            collect_md_depth(&entry.path(), &rel, out, depth + 1);
         } else if name.ends_with(".md") || is_indexed_json(&rel) {
             out.push((rel, entry.path()));
         }
@@ -258,7 +256,7 @@ fn open_index(root: &Path) -> Result<Connection, String> {
 /// 顶栏"全局搜索"搜索所有位置，不只 notes/（用户决策）。
 fn sync_index(conn: &mut Connection, root: &Path) -> Result<(), String> {
     let mut files = Vec::new();
-    collect_md(root, root, "", &mut files);
+    collect_md(root, "", &mut files);
 
     let tx = conn.transaction().map_err(|e| format!("开启事务失败: {e}"))?;
     let mut seen: HashSet<String> = HashSet::new();
@@ -650,7 +648,7 @@ fn linear_content_scan(
     hits: &mut Vec<SearchHit>,
 ) {
     let mut files = Vec::new();
-    collect_md(root, root, "", &mut files);
+    collect_md(root, "", &mut files);
     let ql = q.to_lowercase();
     for (rel, abs) in files {
         if seen.contains(&rel) {

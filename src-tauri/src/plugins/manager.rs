@@ -61,6 +61,7 @@ pub struct PluginInfo {
     pub theme: Option<ThemeDecl>,
 }
 
+#[derive(Default)]
 pub struct PluginManager {
     pub vault: Option<PathBuf>,
     pub records: Vec<PluginRecord>,
@@ -75,18 +76,6 @@ pub struct PluginManager {
     pub last_snapshot: Option<Vec<String>>,
 }
 
-impl Default for PluginManager {
-    fn default() -> Self {
-        Self {
-            vault: None,
-            records: Vec::new(),
-            enabled: HashSet::new(),
-            disabled: HashSet::new(),
-            config_dir: None,
-            last_snapshot: None,
-        }
-    }
-}
 
 /// plugins/ 目录内容快照：有 plugin.json 的目录名（排序）+ `_core` 容器下的
 /// 子目录名（核心/手动安装插件）。任何增删/清单变化都会改变快照，从而触发
@@ -183,6 +172,9 @@ pub fn ensure_core_plugins(app: &tauri::AppHandle) {
 /// 部署实现（可测）：**随包插件逐个覆盖部署**，不清空整个目标——
 /// `_core` 下用户手动安装的本地 DLL 插件（非随包）保留，刷新后自动识别为原生插件。
 /// 已卸载的核心插件（removed_core）跳过部署。
+/// 仅打包构建（`#[cfg(not(dev))]` 的 ensure_core_plugins）与测试使用；dev 下无
+/// 调用方，压制 dead_code 避免告警（release 仍在用）。
+#[cfg_attr(dev, allow(dead_code))]
 pub(crate) fn deploy_core_plugins(src: &Path, dst: &Path, removed: &HashSet<String>) -> Result<(), String> {
     std::fs::create_dir_all(dst).map_err(|e| format!("创建目录失败: {e}"))?;
     let read = std::fs::read_dir(src).map_err(|e| format!("读取资源目录失败 {src:?}: {e}"))?;
@@ -720,7 +712,7 @@ impl PluginManager {
     ///   核心容器，安全模型同 §start_native 的 S1b）
     /// - webview / process / 主题皮肤 → `plugins/<id>`（外部插件目录，与手动
     ///   复制同安全边界：process 权限门控、webview 受限 API、主题纯数据）
-    /// → 扫描并启用启动。zip 解压带 zip-slip 防护。
+    ///   → 扫描并启用启动。zip 解压带 zip-slip 防护。
     pub fn install(
         &mut self,
         app: &tauri::AppHandle,
@@ -767,15 +759,13 @@ impl PluginManager {
                 copy_dir_recursive(Path::new(source), &tmp)
             }
         };
-        unpack().map_err(|e| {
+        unpack().inspect_err(|_e| {
             let _ = std::fs::remove_dir_all(&tmp);
-            e
         })?;
 
         // 2. 定位 plugin.json（根或唯一子目录——常见打包结构 <id>/plugin.json）
-        let (manifest_dir, manifest) = find_plugin_manifest(&tmp).map_err(|e| {
+        let (manifest_dir, manifest) = find_plugin_manifest(&tmp).inspect_err(|_e| {
             let _ = std::fs::remove_dir_all(&tmp);
-            e
         })?;
         let bad = |e: String| {
             let _ = std::fs::remove_dir_all(&tmp);
@@ -830,9 +820,8 @@ impl PluginManager {
         if dst.exists() {
             return Err(bad(format!("插件已存在: {id}（如需重装请先卸载）")));
         }
-        copy_dir_recursive(&manifest_dir, &dst).map_err(|e| {
+        copy_dir_recursive(&manifest_dir, &dst).inspect_err(|_e| {
             let _ = std::fs::remove_dir_all(&tmp);
-            e
         })?;
         let _ = std::fs::remove_dir_all(&tmp);
 
@@ -843,9 +832,8 @@ impl PluginManager {
         save_state(app, &self.enabled, &self.disabled)?;
         if let Some(idx) = self.records.iter().position(|r| r.manifest.id == id) {
             if self.plugin_enabled(&id) {
-                self.start_record(idx).map_err(|e| {
+                self.start_record(idx).inspect_err(|e| {
                     self.records[idx].error = Some(e.clone());
-                    e
                 })?;
             }
         }
@@ -877,9 +865,8 @@ impl PluginManager {
         self.scan_plugin_dir(&dst);
         if let Some(idx) = self.records.iter().position(|r| r.manifest.id == id) {
             if self.plugin_enabled(id) {
-                self.start_record(idx).map_err(|e| {
+                self.start_record(idx).inspect_err(|e| {
                     self.records[idx].error = Some(e.clone());
-                    e
                 })?;
             }
         }
@@ -898,9 +885,8 @@ impl PluginManager {
         if self.plugin_enabled(id) && self.records[idx].manifest.runtime != PluginRuntime::Webview
         {
             self.start_record(idx)
-                .map_err(|e| {
+                .inspect_err(|e| {
                     self.records[idx].error = Some(e.clone());
-                    e
                 })?;
         }
         Ok(())

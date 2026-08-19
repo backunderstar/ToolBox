@@ -5,6 +5,12 @@
 //!
 //! 前端 api.ts 的 fs* 系列透明转发到这里（同一契约：vault 相对路径 + `/` 分隔）。
 
+// tb_plugin! 展开的 FFI 入口（tb_create/tb_call）带裸指针参数，属 C ABI 语义；
+// clippy 的 not_unsafe_ptr_arg_deref 对宏展开的 span 无法用局部 allow 压制
+// （宏内/调用点 allow 均失效），文件级统一豁免。本文件除宏样板外无其他
+// 裸指针公共 API（如有需单独复核）。
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 mod fs;
 
 use serde_json::Value;
