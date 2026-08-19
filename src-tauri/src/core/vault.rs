@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[derive(Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -49,7 +49,7 @@ pub fn vault_set(app: tauri::AppHandle, path: String) -> Result<(), String> {
     if !dir.is_dir() {
         return Err(format!("路径不是有效文件夹: {path}"));
     }
-    let settings = VaultSettings { path: Some(path) };
+    let settings = VaultSettings { path: Some(path.clone()) };
     let raw = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     let p = settings_path(&app)?;
     // 原子写：临时文件 + rename。直接 fs::write 崩溃（断电/杀进程）会留下
@@ -57,6 +57,8 @@ pub fn vault_set(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let tmp = p.with_extension("json.tmp");
     std::fs::write(&tmp, &raw).map_err(|e| format!("保存配置失败: {e}"))?;
     std::fs::rename(&tmp, &p).map_err(|e| format!("保存配置失败: {e}"))?;
+    // 广播工作区变更：浮窗（独立窗口）据此重读 vault，避免主窗切换后继续写旧工作区
+    let _ = app.emit("vault-changed", &path);
     Ok(())
 }
 

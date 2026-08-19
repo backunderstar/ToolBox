@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { pluginsReadFile, vaultGet, floatSetLocked } from "../core/api";
 import { buildBridgeApi, injectPluginScript, type PluginBridgeApi } from "../core/pluginRuntime";
 import "./float.css";
@@ -49,6 +50,32 @@ export function FloatApp() {
       });
     return () => {
       alive = false;
+    };
+  }, []);
+
+  /* 主窗口切换工作区后 Rust 广播 vault-changed：浮窗据此重读，避免继续写旧工作区。
+     初始读取在上方 effect（只跑一次），这里订阅变更事件增量更新。 */
+  useEffect(() => {
+    let un: (() => void) | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        un = await listen("vault-changed", () => {
+          vaultGet()
+            .then((s) => {
+              if (!cancelled) setVaultPath(s.path);
+            })
+            .catch(() => {
+              if (!cancelled) setVaultPath(null);
+            });
+        });
+      } catch {
+        /* 非 Tauri 环境（浏览器 mock）无事件总线，忽略 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      un?.();
     };
   }, []);
 

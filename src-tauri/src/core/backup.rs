@@ -139,6 +139,25 @@ fn copy_dir_all(src: &Path, dst: &Path, at_root: bool) -> Result<(u64, usize), S
     copy_dir_all_depth(src, dst, at_root, 0)
 }
 
+/// 判断路径是否为符号链接 / junction（Windows 重解析点）。
+/// 备份时跳过：跟随会复制 vault 外的目录树，或把目录当文件复制导致整个备份中止。
+fn is_symlink_or_junction(p: &Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // FILE_ATTRIBUTE_REPARSE_POINT = 0x400：符号链接与 junction 都是重解析点
+        std::fs::symlink_metadata(p)
+            .map(|m| m.file_attributes() & 0x400 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::fs::symlink_metadata(p)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+    }
+}
+
 fn copy_dir_all_depth(
     src: &Path,
     dst: &Path,
@@ -164,6 +183,11 @@ fn copy_dir_all_depth(
         }
         let s = entry.path();
         let d = dst.join(&name);
+        // 跳过符号链接 / junction：跟随会复制 vault 外的目录树，
+        // 或把目录当文件复制导致整个备份中止
+        if is_symlink_or_junction(&s) {
+            continue;
+        }
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             let (sz, c) = copy_dir_all_depth(&s, &d, false, depth + 1)?;
             total += sz;

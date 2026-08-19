@@ -214,7 +214,11 @@ async function loadPluginCss(pluginId: string, rel: string, themeId: string): Pr
   } catch (e) {
     // CSS 可选：文件缺失/读取失败不阻断令牌通道
     console.warn(`[theme] 插件主题 CSS 加载失败（${pluginId}/${rel}）`, e);
-    document.getElementById(PLUGIN_CSS_ID)?.remove();
+    // 竞态防护（与成功路径对称）：仅当仍是当前主题时才移除节点，否则可能
+    // 误删已切换到的另一主题刚注入成功的 CSS 覆盖层（挂起的旧调用失败回落）
+    if (document.documentElement.dataset.themeId === themeId) {
+      document.getElementById(PLUGIN_CSS_ID)?.remove();
+    }
     return;
   }
   // 竞态防护：await 期间用户可能已切走主题，此时丢弃（避免旧主题覆盖新主题）

@@ -166,14 +166,26 @@ export function PluginsView() {
   /* 事件桥：进程插件推送的事件（plugin-event）实时追加到日志 */
   useEffect(() => {
     let un: (() => void) | null = null;
+    let cancelled = false;
     listen<PluginEventPayload>("plugin-event", (e) => {
       setEvents((prev) => [...prev, { ...e.payload, time: Date.now() }].slice(-50));
     })
-      .then((fn) => (un = fn))
+      .then((fn) => {
+        // cancelled 竞态防护：组件在 listen resolve 前卸载时，un 尚未赋值，
+        // 清理函数拿不到取消函数 → 监听器泄漏。这里补一道兜底。
+        if (cancelled) {
+          fn();
+        } else {
+          un = fn;
+        }
+      })
       .catch(() => {
         /* 浏览器预览环境无事件桥 */
       });
-    return () => un?.();
+    return () => {
+      cancelled = true;
+      un?.();
+    };
   }, []);
 
   const doUninstall = async (id: string) => {

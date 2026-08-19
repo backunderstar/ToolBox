@@ -147,6 +147,28 @@ body.float-mode {
   font-size: 12px;
   color: rgba(236, 235, 231, 0.4);
 }
+/* 插件操作错误提示条（todos 等复用）：可见反馈，替代静默吞错 */
+.float-error {
+  margin: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #ffb4ab;
+  background: rgba(255, 99, 80, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.float-error button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
 .float-item {
   display: flex;
   align-items: center;

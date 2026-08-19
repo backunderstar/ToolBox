@@ -139,11 +139,14 @@ fn parse_hex_color(s: &str) -> Result<u32, String> {
 /* ---- 自动备份（宿主内嵌 core::backup；原 core-backup 插件命令） ---- */
 
 #[tauri::command]
-fn backup_now(app: tauri::AppHandle, vault: String) -> Result<backup::BackupInfo, String> {
+async fn backup_now(app: tauri::AppHandle, vault: String) -> Result<backup::BackupInfo, String> {
     // 安全（S1c）：备份会读取并复制 vault 全量内容，作用域必须绑定已配置工作区
     core::vault::ensure_vault_matches(&app, &vault)?;
     let cfg = app_config_dir(&app)?;
-    backup::backup_now_cmd(&cfg, &vault)
+    // 全量复制是重 IO：放阻塞线程池，避免冻结主线程（同步命令在主线程执行）
+    tauri::async_runtime::spawn_blocking(move || backup::backup_now_cmd(&cfg, &vault))
+        .await
+        .map_err(|e| format!("备份任务异常: {e}"))?
 }
 
 #[tauri::command]
@@ -162,13 +165,16 @@ fn backup_config_set(
 }
 
 #[tauri::command]
-fn backup_list(app: tauri::AppHandle, vault: String) -> Result<Vec<backup::BackupEntry>, String> {
+async fn backup_list(app: tauri::AppHandle, vault: String) -> Result<Vec<backup::BackupEntry>, String> {
     core::vault::ensure_vault_matches(&app, &vault)?;
-    Ok(backup::backup_list(&vault))
+    // 递归 stat 全部备份目录是重 IO：放阻塞线程池
+    tauri::async_runtime::spawn_blocking(move || backup::backup_list(&vault))
+        .await
+        .map_err(|e| format!("读取备份列表异常: {e}"))
 }
 
 #[tauri::command]
-fn backup_restore(
+async fn backup_restore(
     app: tauri::AppHandle,
     vault: String,
     name: String,
@@ -176,7 +182,10 @@ fn backup_restore(
     // 恢复会向 vault 覆盖写入，同样绑定已配置工作区
     core::vault::ensure_vault_matches(&app, &vault)?;
     let cfg = app_config_dir(&app)?;
-    backup::restore_backup(&cfg, &vault, &name)
+    // 恢复 = 全量复制 vault（两遍）：放阻塞线程池
+    tauri::async_runtime::spawn_blocking(move || backup::restore_backup(&cfg, &vault, &name))
+        .await
+        .map_err(|e| format!("恢复任务异常: {e}"))?
 }
 
 /// 启动应用。

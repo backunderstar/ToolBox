@@ -341,7 +341,16 @@ fn escape(s: &str) -> String {
 }
 
 fn render_md(md: &str) -> String {
-    let parser = pulldown_cmark::Parser::new(md);
+    // 原始 HTML（块/内联）默认被 pulldown-cmark 原样透传。笔记内容不可信时，
+    // <script>/<img onerror> 会被直接写进生成的静态站点（存储型 XSS）——
+    // 这里把原始 HTML 转义为纯文本展示（Markdown 派生的标签不受影响，仍正常渲染）。
+    let parser = pulldown_cmark::Parser::new(md).map(|event| match event {
+        pulldown_cmark::Event::Html(text) => pulldown_cmark::Event::Text(escape(&text).into()),
+        pulldown_cmark::Event::InlineHtml(text) => {
+            pulldown_cmark::Event::Text(escape(&text).into())
+        }
+        other => other,
+    });
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, parser);
     html

@@ -141,7 +141,7 @@ pub fn plugins_dir_get(app: tauri::AppHandle) -> Result<String, String> {
 /// 迁移前停掉全部 native 插件释放 DLL 文件锁（否则 Windows 上复制 _core 失败）。
 /// 返回生效后的目录路径。
 #[tauri::command]
-pub fn plugins_dir_set(
+pub async fn plugins_dir_set(
     app: tauri::AppHandle,
     state: State<'_, Mutex<PluginManager>>,
     path: Option<String>,

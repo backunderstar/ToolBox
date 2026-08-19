@@ -23,8 +23,12 @@ export function TodosPluginUi({ api }: { api: PluginBridgeApi }) {
   const [items, setItems] = useState<TodosItem[]>([]);
   const [text, setText] = useState("");
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const vaultMissing = !api.context.vault;
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // 并发守卫：读-改-写命令是异步的，连按/双击会并发调用；后端无串行化时
+  // 后写覆盖先写会丢条目。命令在途时拒绝新命令（同 ai 插件的 busyRef 模式）。
+  const busyRef = useRef(false);
 
   /* 加载数据 + 订阅变更事件（主窗口/浮窗任意改动都刷新） */
   useEffect(() => {
@@ -37,8 +41,8 @@ export function TodosPluginUi({ api }: { api: PluginBridgeApi }) {
         }
         if (!alive) return;
         setItems((await api.call("todos.list")) as TodosItem[]);
-      } catch {
-        /* 读取失败保持空列表 */
+      } catch (e) {
+        if (alive) setError(String(e));
       } finally {
         if (alive) setReady(true);
       }
@@ -59,37 +63,57 @@ export function TodosPluginUi({ api }: { api: PluginBridgeApi }) {
 
   const add = async () => {
     const t = text.trim();
-    if (!t) return;
+    if (!t || busyRef.current) return;
+    busyRef.current = true;
     setText("");
     try {
       setItems((await api.call("todos.add", { text: t })) as TodosItem[]);
-    } catch {
-      /* 忽略 */
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+      setText(t); // 失败恢复输入，避免用户输入丢失
+    } finally {
+      busyRef.current = false;
+      inputRef.current?.focus();
     }
-    inputRef.current?.focus();
   };
 
   const toggle = async (id: string) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
       setItems((await api.call("todos.toggle", { id })) as TodosItem[]);
-    } catch {
-      /* 忽略 */
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      busyRef.current = false;
     }
   };
 
   const remove = async (id: string) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
       setItems((await api.call("todos.delete", { id })) as TodosItem[]);
-    } catch {
-      /* 忽略 */
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      busyRef.current = false;
     }
   };
 
   const clearDone = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
       setItems((await api.call("todos.clearDone")) as TodosItem[]);
-    } catch {
-      /* 忽略 */
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      busyRef.current = false;
     }
   };
 
@@ -130,6 +154,16 @@ export function TodosPluginUi({ api }: { api: PluginBridgeApi }) {
           </svg>
         </button>
       </div>
+
+      {/* 错误提示条：可见反馈，替代静默吞错 */}
+      {error && (
+        <div className="float-error" role="alert">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} aria-label="关闭错误提示">
+            ×
+          </button>
+        </div>
+      )}
 
       {/* 待办列表 */}
       <div className="float-list" aria-live="polite">
