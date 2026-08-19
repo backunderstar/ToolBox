@@ -202,6 +202,26 @@ export const backupList = (vault: string) => invoke<BackupEntry[]>("backup_list"
 export const backupRestore = (vault: string, name: string) =>
   invoke<BackupInfo>("backup_restore", { vault, name });
 
+/* ---- 配置导入导出（换机迁移；core::config） ---- */
+
+export interface ConfigBundle {
+  format: string;
+  version: number;
+  exportedAt: string;
+  appVersion: string;
+  /** localStorage 段（键 → 原始字符串，写回保真） */
+  frontend: Record<string, string>;
+  /** 宿主侧段（插件启停/已卸载核心/备份/AI 设置等） */
+  backend: Record<string, unknown>;
+}
+
+/** 导出配置到指定文件（前端 localStorage 段 + 宿主配置段合成；不含 API Key 与 plugins_dir） */
+export const configExport = (path: string, frontend: Record<string, string>) =>
+  invoke<void>("config_export", { path, frontend });
+
+/** 导入配置：宿主侧已写回；返回完整配置包供前端写回 localStorage */
+export const configImport = (path: string) => invoke<ConfigBundle>("config_import", { path });
+
 /* ---- 浮窗快速待办（经 core-todos 原生插件；当前工作区来自 vault 配置） ---- */
 
 /** 读取当前工作区路径（todos/plugin_call 等无显式 vault 的命令用） */

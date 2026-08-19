@@ -2,7 +2,8 @@ import { useReducer, useState } from "react";
 import type { PingInfo } from "../core/ipc";
 import type { NavConfig, NavItemDef } from "../core/navPrefs";
 import { useVault } from "../core/vault";
-import { openInExplorer } from "../core/api";
+import { openInExplorer, configExport, configImport } from "../core/api";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   listThemes,
   findTheme,
@@ -65,6 +66,62 @@ export function SettingsView({
   >("idle");
   const [updateVersion, setUpdateVersion] = useState("");
   const [updateErr, setUpdateErr] = useState("");
+  /* 配置迁移：exporting/importing 进行中；msg 操作结果提示 */
+  const [configBusy, setConfigBusy] = useState<"" | "exporting" | "importing">("");
+  const [configMsg, setConfigMsg] = useState("");
+
+  /* 前端 localStorage 配置段（键集合；导入/导出共用） */
+  const FRONTEND_KEYS = ["toolbox.theme", "toolbox.custom-themes", "toolbox.nav", "toolbox.layout"];
+
+  const collectFrontend = (): Record<string, string> => {
+    const o: Record<string, string> = {};
+    for (const k of FRONTEND_KEYS) {
+      const v = localStorage.getItem(k);
+      if (v !== null) o[k] = v;
+    }
+    return o;
+  };
+
+  const onExportConfig = async () => {
+    try {
+      setConfigBusy("exporting");
+      const path = await save({
+        defaultPath: "toolbox-config.json",
+        filters: [{ name: "ToolBox 配置", extensions: ["json"] }],
+      });
+      if (typeof path !== "string") return; // 用户取消
+      await configExport(path, collectFrontend());
+      setConfigMsg("配置已导出（不含 API Key 与笔记数据）");
+    } catch (e) {
+      setConfigMsg(`导出失败: ${String(e)}`);
+    } finally {
+      setConfigBusy("");
+    }
+  };
+
+  const onImportConfig = async () => {
+    try {
+      setConfigBusy("importing");
+      const path = await open({
+        multiple: false,
+        filters: [{ name: "ToolBox 配置", extensions: ["json"] }],
+      });
+      if (typeof path !== "string") return; // 用户取消
+      const cfg = await configImport(path); // 宿主侧（插件状态/备份/AI）已写回
+      // 写回前端 localStorage 段
+      for (const [k, v] of Object.entries(cfg.frontend ?? {})) {
+        if (typeof v === "string" && v) localStorage.setItem(k, v);
+      }
+      setConfigMsg("配置已导入，正在刷新界面…");
+      // 主题/导航是 React 初始 state，刷新后从 localStorage 重读；
+      // 插件启停也随 PluginProvider 重新拉取生效
+      setTimeout(() => window.location.reload(), 900);
+    } catch (e) {
+      setConfigMsg(`导入失败: ${String(e)}`);
+    } finally {
+      setConfigBusy("");
+    }
+  };
 
   const onCheckUpdate = async () => {
     try {
@@ -288,6 +345,34 @@ export function SettingsView({
 
         {/* ---- 导航栏 ---- */}
         <NavSettings config={navConfig} defs={defs} onChange={onNavChange} />
+
+        {/* ---- 配置迁移 ---- */}
+        <section className="settings-card">
+          <h2 className="settings-title">配置迁移</h2>
+          <div className="settings-row">
+            <span className="settings-label">导入 / 导出</span>
+            <div className="settings-actions">
+              <button
+                className="btn"
+                onClick={() => void onExportConfig()}
+                disabled={configBusy !== ""}
+              >
+                {configBusy === "exporting" ? "导出中…" : "导出配置"}
+              </button>
+              <button
+                className="btn"
+                onClick={() => void onImportConfig()}
+                disabled={configBusy !== ""}
+              >
+                {configBusy === "importing" ? "导入中…" : "导入配置"}
+              </button>
+              <span className="settings-hint">
+                主题、导航、AI 设置与插件启停状态（不含笔记数据与 API Key）
+              </span>
+            </div>
+          </div>
+          {configMsg && <div className="settings-value">{configMsg}</div>}
+        </section>
 
         {/* ---- 关于 ---- */}
         <section className="settings-card">

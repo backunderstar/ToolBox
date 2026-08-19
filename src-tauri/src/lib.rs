@@ -190,6 +190,24 @@ async fn backup_restore(
         .map_err(|e| format!("恢复任务异常: {e}"))?
 }
 
+/* ---- 配置导入导出（换机迁移；core::config） ---- */
+
+/// 导出配置到指定文件（前端传 localStorage 段，宿主合并自己的配置）。
+#[tauri::command]
+fn config_export(
+    app: tauri::AppHandle,
+    path: String,
+    frontend: serde_json::Value,
+) -> Result<(), String> {
+    core::config::export_config(&app, &path, frontend)
+}
+
+/// 导入配置：宿主侧已写回；返回完整配置包供前端写回 localStorage。
+#[tauri::command]
+fn config_import(app: tauri::AppHandle, path: String) -> Result<serde_json::Value, String> {
+    core::config::import_config(&app, &path)
+}
+
 /// 启动应用。
 ///
 /// M1 已注册：`ping` + vault 工作区 + 笔记文件操作 + 文件夹选择对话框。
@@ -262,6 +280,8 @@ pub fn run() {
             backup_config_set,
             backup_list,
             backup_restore,
+            config_export,
+            config_import,
             float_toggle,
             float_set_locked,
             set_window_caption_color,
