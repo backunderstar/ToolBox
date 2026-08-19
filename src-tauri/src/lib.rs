@@ -303,6 +303,31 @@ pub fn run() {
                     plugins::ensure_core_plugins(&h);
                 });
             }
+            // 插件预热：首次 plugins_list 的 refresh（扫描插件目录 + 启动启用插件）
+            // 是重活，启动后后台提前执行，让用户首次打开应用/插件页时列表立即可用。
+            // 与命令层同一 ensure_refreshed（快照检测，幂等——若用户先触发过
+            // plugins_list，这里快照无变化直接跳过）。release 下等 2s 给核心插件
+            // 部署线程留完成时间；部署未完成扫到不完整 _core 也只临时缺插件，
+            // 用户调用时快照变化会重新 refresh 自愈。
+            {
+                let h = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(2000));
+                    let Ok(vault) = core::vault::vault_get(h.clone()) else {
+                        return;
+                    };
+                    let Some(path) = vault.path else {
+                        return; // vault 未配置：没有可预热的插件列表
+                    };
+                    let state = h.state::<Mutex<plugins::PluginManager>>();
+                    let Ok(mut m) = state.lock() else {
+                        return;
+                    };
+                    if let Err(e) = m.ensure_refreshed(&h, &path) {
+                        core::log::warn(&format!("[plugin] 预热刷新失败: {e}"));
+                    }
+                });
+            }
             // 插件事件桥：进程插件事件 → 前端 plugin-event 事件
             plugins::events::spawn_event_forwarder(app.handle().clone());
             // 原生插件事件回调需要 AppHandle（host 回调）

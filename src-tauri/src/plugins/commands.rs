@@ -13,23 +13,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::State;
 
-fn ensure_refreshed(m: &mut PluginManager, app: &tauri::AppHandle, vault: &str) -> Result<(), String> {
-    let v = PathBuf::from(vault);
-    let changed_vault = match &m.vault {
-        Some(cur) => !paths_equal(cur, &v),
-        None => true,
-    };
-    // 插件目录增删但 vault 路径未变：靠全局目录快照检测（否则前端"刷新"发现不了新插件）
-    let global = global_plugins_dir(app)?;
-    let snapshot = plugins_snapshot(&global);
-    let changed_plugins = m.last_snapshot.as_ref() != Some(&snapshot);
-    if changed_vault || changed_plugins {
-        m.refresh(app, &v)?;
-        m.last_snapshot = Some(snapshot);
-    }
-    Ok(())
-}
-
 /// 目录修改类操作（install/uninstall/reinstall_core/plugins_dir_set）后立即更新
 /// last_snapshot：这些操作已 scan/refresh 过，若不更新快照，下一次 ensure_refreshed
 /// 会因快照不一致而全量重启所有 process 插件（无谓的启停抖动）。
@@ -37,17 +20,6 @@ fn sync_snapshot(m: &mut PluginManager, app: &tauri::AppHandle) -> Result<(), St
     let global = global_plugins_dir(app)?;
     m.last_snapshot = Some(plugins_snapshot(&global));
     Ok(())
-}
-
-/// 路径比较：Windows 下大小写不敏感（避免用户传 C:/A 与 c:/a 导致反复刷新重启插件）。
-#[cfg(target_os = "windows")]
-fn paths_equal(a: &Path, b: &Path) -> bool {
-    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
-}
-
-#[cfg(not(target_os = "windows"))]
-fn paths_equal(a: &Path, b: &Path) -> bool {
-    a == b
 }
 
 #[tauri::command]
@@ -60,7 +32,7 @@ pub async fn plugins_list(
     // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
     crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &app, &vault)?;
+    m.ensure_refreshed(&app, &vault)?;
     Ok(m.list())
 }
 
@@ -76,7 +48,7 @@ pub async fn plugins_set_enabled(
     // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
     crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &app, &vault)?;
+    m.ensure_refreshed(&app, &vault)?;
     m.set_enabled(&app, &id, enabled)
 }
 
@@ -92,7 +64,7 @@ pub async fn plugins_uninstall(
     // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
     crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &app, &vault)?;
+    m.ensure_refreshed(&app, &vault)?;
     m.uninstall(&app, &id)?;
     sync_snapshot(&mut m, &app)
 }
@@ -110,7 +82,7 @@ pub async fn plugins_reinstall_core(
         return Err(format!("非法插件 id: {id}"));
     }
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &app, &vault)?;
+    m.ensure_refreshed(&app, &vault)?;
     m.reinstall_core(&app, &id)?;
     sync_snapshot(&mut m, &app)
 }
@@ -137,7 +109,7 @@ pub async fn plugins_install(
 ) -> Result<String, String> {
     crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &app, &vault)?;
+    m.ensure_refreshed(&app, &vault)?;
     let id = m.install(&app, &source, &kind)?;
     sync_snapshot(&mut m, &app)?;
     Ok(id)
@@ -225,7 +197,7 @@ pub async fn plugins_reload(
     // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
     crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, &app, &vault)?;
+    m.ensure_refreshed(&app, &vault)?;
     m.reload(&id)
 }
 
@@ -294,7 +266,7 @@ fn invoke_plugin(
     // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
     crate::core::vault::ensure_vault_matches(app, vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
-    ensure_refreshed(&mut m, app, vault)?;
+    m.ensure_refreshed(app, vault)?;
     m.invoke(id, command, args)
 }
 
@@ -339,7 +311,7 @@ pub async fn search_all(
     // 锁内只做"刷新 + 收集提供者列表"（快）；FTS 与提供者聚合都在锁外执行
     let providers: Vec<String> = {
         let mut m = state.lock().map_err(|e| e.to_string())?;
-        ensure_refreshed(&mut m, &app, &vault)?;
+        m.ensure_refreshed(&app, &vault)?;
         m.records
             .iter()
             .filter(|r| r.manifest.search_provider && m.plugin_enabled(&r.manifest.id))

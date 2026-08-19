@@ -402,7 +402,41 @@ pub(crate) fn migrate_vault_plugins(vault: &Path, global: &Path) -> Result<usize
 
 /* ---------------- 管理器 ---------------- */
 
+/// 路径比较：Windows 下大小写不敏感（避免用户传 C:/A 与 c:/a 导致反复刷新重启插件）。
+#[cfg(target_os = "windows")]
+fn paths_equal(a: &Path, b: &Path) -> bool {
+    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn paths_equal(a: &Path, b: &Path) -> bool {
+    a == b
+}
+
 impl PluginManager {
+    /// 列表前的"确保已刷新"：vault 或全局插件目录快照变化时重新发现/启动插件。
+    /// 命令层各命令与 lib.rs 启动预热共用——预热提前执行首次 refresh，避免用户
+    /// 首次打开应用/插件页时阻塞；快照未变则直接跳过（幂等）。
+    pub(crate) fn ensure_refreshed(
+        &mut self,
+        app: &tauri::AppHandle,
+        vault: &str,
+    ) -> Result<(), String> {
+        let v = PathBuf::from(vault);
+        let changed_vault = match &self.vault {
+            Some(cur) => !paths_equal(cur, &v),
+            None => true,
+        };
+        let global = global_plugins_dir(app)?;
+        let snapshot = plugins_snapshot(&global);
+        let changed_plugins = self.last_snapshot.as_ref() != Some(&snapshot);
+        if changed_vault || changed_plugins {
+            self.refresh(app, &v)?;
+            self.last_snapshot = Some(snapshot);
+        }
+        Ok(())
+    }
+
     /// 重新发现全局插件目录（%APPDATA%/com.toolbox.desktop/plugins/）中的插件；
     /// 同时执行旧布局迁移（vault/plugins → 全局，启用状态 → 全局）。
     /// 已启用且为 process 的插件自动启动；错误逐条记录不阻断其他插件。

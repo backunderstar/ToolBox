@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
@@ -21,9 +21,7 @@ import { TopBar } from "./components/TopBar";
 import { Sidebar, type ViewId } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { WelcomeView } from "./components/WelcomeView";
-import { PluginsView } from "./components/PluginsView";
 import { PluginUiView } from "./components/PluginUiView";
-import { SettingsView } from "./components/SettingsView";
 import { FloatApp } from "./components/FloatApp";
 import "./styles/tokens.css";
 import "./styles/base.css";
@@ -37,6 +35,15 @@ import "./styles/settings.css";
 import "./styles/ai.css";
 import "./styles/checklists.css";
 import "./styles/projects.css";
+
+/* 低频视图懒加载（React.lazy + 代码分割）：设置页/插件页包含较多组件与样式，
+   按需加载减小首屏 JS parse 量；概览等首屏视图保持静态 import。 */
+const SettingsView = lazy(() =>
+  import("./components/SettingsView").then((m) => ({ default: m.SettingsView })),
+);
+const PluginsView = lazy(() =>
+  import("./components/PluginsView").then((m) => ({ default: m.PluginsView })),
+);
 
 /** 宿主固定路由的视图 id（ViewId 联合）。外部插件声明同名 nav id 会与内置路由
  *  冲突（侧边栏显示被覆盖，点击仍走内置分支，显示与跳转不一致）——渲染前过滤。
@@ -282,7 +289,8 @@ function AppInner() {
             onToggleGroup={toggleNavGroup}
           />
           <main className="main" data-part="main">
-            {view === "overview" ? (
+            <Suspense fallback={<div className="empty-state">加载中…</div>}>
+              {view === "overview" ? (
               <WelcomeView
                 ping={pingInfo}
                 themeName={themeName}
@@ -365,6 +373,7 @@ function AppInner() {
                 </div>
               ))
             )}
+            </Suspense>
           </main>
         </div>
         <StatusBar ping={pingInfo} theme={themeMode} vaultName={vaultName} status={vault.status} />
