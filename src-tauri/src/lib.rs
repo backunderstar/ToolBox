@@ -267,9 +267,18 @@ pub fn run() {
             set_window_caption_color,
         ])
         .setup(|app| {
-            // 打包版：把安装包资源里的核心插件部署到 %APPDATA%（dev 由 build:core 管理）
+            // 打包版：把安装包资源里的核心插件部署到 %APPDATA%（dev 由 build:core 管理）。
+            // 首次启动/升级时递归复制 DLL 是重 IO，放后台线程避免阻塞窗口创建与首帧
+            // 渲染。部署只写插件目录、无返回值供后续使用（插件扫描发生在前端调
+            // plugins_list 时），即使竞态（用户启动后立刻打开插件页且部署未完成）也
+            // 只表现为缺插件，reload 即恢复，不破坏正确性。
             #[cfg(not(dev))]
-            plugins::ensure_core_plugins(app.handle());
+            {
+                let h = app.handle().clone();
+                std::thread::spawn(move || {
+                    plugins::ensure_core_plugins(&h);
+                });
+            }
             // 插件事件桥：进程插件事件 → 前端 plugin-event 事件
             plugins::events::spawn_event_forwarder(app.handle().clone());
             // 原生插件事件回调需要 AppHandle（host 回调）
