@@ -402,16 +402,35 @@ pub fn preview_start(vault: &str) -> Result<String, String> {
         s.server_addr().to_ip().map(|a| a.port()).unwrap_or(0)
     };
     let st = preview_state();
-    let same_vault = {
-        let cur = st.lock().map_err(|e| e.to_string())?;
-        cur.vault.as_ref().map(|p| p == Path::new(vault)).unwrap_or(false)
-    };
-    if let Some(s) = st.lock().map_err(|e| e.to_string())?.server.as_ref() {
+
+    // 单次加锁内完成「复用判断 / 取走旧服务器」：
+    // 原实现 `if let Some(s) = st.lock()...?.server.as_ref()` 的 MutexGuard 临时值
+    // 存活到整个 if-let 语句结束，分支体内再次 st.lock() 会二次加同一把不可重入锁
+    // → 不同 vault 重启预览时死锁。这里合并为一次 lock()，锁外再做 unblock/join。
+    let old: Option<(Arc<tiny_http::Server>, Option<std::thread::JoinHandle<()>>)> = {
+        let mut inner = st.lock().map_err(|e| e.to_string())?;
+        let same_vault = inner
+            .vault
+            .as_ref()
+            .map(|p| p == Path::new(vault))
+            .unwrap_or(false);
         if same_vault {
-            return Ok(format!("http://127.0.0.1:{}/", port_of(s)));
+            if let Some(s) = inner.server.as_ref() {
+                return Ok(format!("http://127.0.0.1:{}/", port_of(s)));
+            }
+            None // 同 vault 但服务器意外不存在：走下面新建
+        } else {
+            // 不同 vault：取走旧服务器与旧线程句柄（一并解决旧句柄被覆盖未 join 的问题）
+            inner.server.take().map(|s| (s, inner.thread.take()))
         }
-        if let Some(old) = st.lock().map_err(|e| e.to_string())?.server.take() {
-            old.unblock();
+    };
+
+    // 锁外释放旧服务器与旧线程：unblock + join 需等待线程退出，不能持锁
+    // （否则 preview_stop / 并发的 preview_start 会被阻塞）。
+    if let Some((old_server, old_thread)) = old {
+        old_server.unblock();
+        if let Some(t) = old_thread {
+            let _ = t.join();
         }
     }
     let public_dir = PathBuf::from(vault).join("site").join("public");

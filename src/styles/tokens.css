@@ -66,6 +66,11 @@
   --pastel-yellow-fg: #956400;
   --pastel-red-bg: #fdebec;
   --pastel-red-fg: #9f2f2d;
+  /* 紫/琥珀补充色：笔记「来源」徽标、插件页「核心/provider」徽标 */
+  --pastel-purple-bg: #efe9f7;
+  --pastel-purple-fg: #5f4b8b;
+  --pastel-amber-bg: #fbf0dc;
+  --pastel-amber-fg: #8a5a00;
 
   /* 错误/危险语义色（状态条、删除确认等） */
   --danger: #9f2f2d;
@@ -102,6 +107,11 @@
   --pastel-yellow-fg: #d9b45c;
   --pastel-red-bg: #3d2526;
   --pastel-red-fg: #e08a86;
+  /* 紫/琥珀补充色（暗色）：与亮色同名令牌对应 */
+  --pastel-purple-bg: #2a2538;
+  --pastel-purple-fg: #b7a6e0;
+  --pastel-amber-bg: #38301d;
+  --pastel-amber-fg: #e0b45c;
 
   /* 错误/危险语义色（状态条、删除确认等） */
   --danger: #e08a86;

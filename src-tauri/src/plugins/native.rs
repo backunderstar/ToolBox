@@ -132,7 +132,18 @@ impl NativePlugin {
                     open_path: Some(host_open_path),
                 };
                 let cfg = CString::new(config_json).map_err(|e| e.to_string())?;
-                let handle = create(cfg.as_ptr(), &host);
+                // tb_create 也可能 panic（旧版/未用 SDK 宏的 DLL），panic 跨 FFI 边界是 UB
+                // → 宿主侧再包一层 catch_unwind 兜底隔离（SDK 侧已有 state_from_cfg 隔离）。
+                let handle = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    create(cfg.as_ptr(), &host)
+                }));
+                let handle = match handle {
+                    Ok(h) => h,
+                    Err(_) => {
+                        drop(Box::from_raw(ctx as *mut HostCtx));
+                        return Err("插件初始化 panic（已隔离）".to_string());
+                    }
+                };
                 if handle.is_null() {
                     drop(Box::from_raw(ctx as *mut HostCtx));
                     return Err("插件初始化失败（tb_create 返回空）".to_string());

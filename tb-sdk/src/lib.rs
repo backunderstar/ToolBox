@@ -314,10 +314,17 @@ macro_rules! tb_plugin {
             let cfg = unsafe { $crate::read_str(config_json) }
                 .and_then(|s| $crate::parse_params(s).ok())
                 .unwrap_or(serde_json::Value::Null);
-            let state = match $state_from_cfg(&cfg) {
-                Ok(s) => s,
-                Err(e) => {
+            let state = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                $state_from_cfg(&cfg)
+            })) {
+                Ok(Ok(s)) => s,
+                Ok(Err(e)) => {
                     eprintln!("[plugin] 初始化失败: {e}");
+                    return std::ptr::null_mut();
+                }
+                Err(_) => {
+                    // panic 跨 extern "C" 边界是 UB：兜底隔离，返回空让宿主报错
+                    eprintln!("[plugin] 初始化 panic（已隔离）");
                     return std::ptr::null_mut();
                 }
             };

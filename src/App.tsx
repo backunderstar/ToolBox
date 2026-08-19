@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
@@ -35,11 +35,8 @@ import "./styles/notes.css";
 import "./styles/plugins.css";
 import "./styles/settings.css";
 import "./styles/ai.css";
-import "./styles/blog.css";
 import "./styles/checklists.css";
-import "./styles/records.css";
 import "./styles/projects.css";
-import "./styles/history.css";
 
 /** 是否为浮窗窗口（加载同一前端入口，按窗口 label 分流） */
 function isFloatWindow(): boolean {
@@ -174,10 +171,6 @@ function AppInner() {
 
   const vaultName = vault.path ? (vault.path.split(/[\\/]/).pop() ?? vault.path) : null;
 
-  /* 跨视图导航（供双向链接跳转）。
-     openFile 来自 vault（每次渲染新对象），但 openNote 只需稳定引用：用 ref 包住 */
-  const openFileRef = useRef(vault.openFile);
-  openFileRef.current = vault.openFile;
   /* 外部插件自带前端的动态路由：非内置 view（如插件 nav 声明的 id）时，
      查插件导航表 → 命中且插件启用且自带前端 → 渲染该插件的 PluginUiView。
      这样任何插件声明 nav + ui 即可获得侧边栏入口与独立页面（无需宿主改代码）。 */
@@ -212,10 +205,11 @@ function AppInner() {
       openNote: (rel: string) => {
         setView("notes");
         setViewParams({});
-        // 笔记视图是插件自带前端时，插件从标记/事件拿到要打开的笔记（宿主 vault 不持有插件 UI 状态）
+        // 笔记视图是插件自带前端：插件从标记/事件拿到要打开的笔记并自行读盘，
+        // 打开后经 tb:vault-active 回写宿主状态。宿主不再调 openFile 二次读盘——
+        // 那会造成重复读盘，且与插件回写 content 竞争触发「已取消切换」误报。
         (window as unknown as Record<string, unknown>).__TB_PENDING_NOTE__ = rel;
         window.dispatchEvent(new CustomEvent("tb:open-note", { detail: rel }));
-        void openFileRef.current(rel);
       },
       openChecklist: (id: string) => {
         setView("checklist");

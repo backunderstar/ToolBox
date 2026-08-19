@@ -8,7 +8,7 @@ use crate::core::path::resolve_safe;
 use crate::plugins::events::PluginEvent;
 use crate::rpc::{self, Message, RpcError};
 use serde_json::{json, Value};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -411,26 +411,49 @@ impl Drop for ProcessPlugin {
 /// 单行最大字节数：异常/恶意插件打印无换行大块数据时防止内存被撑爆。
 const MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
 
+/// 丢弃超长行的剩余字节直到换行（固定小缓冲循环读，避免再引入无上限读）。
+fn drain_overlong_line(reader: &mut impl Read) {
+    let mut sink = [0u8; 8192];
+    loop {
+        match reader.read(&mut sink) {
+            Ok(0) => break, // EOF：无更多数据
+            Ok(n) => {
+                if sink[..n].contains(&b'\n') {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+}
+
 fn read_loop(stdout: ChildStdout, tx: Sender<Incoming>) {
     let mut reader = BufReader::new(stdout);
-    let mut buf: Vec<u8> = Vec::new();
+    let mut buf: Vec<u8> = Vec::with_capacity(8192);
     loop {
         buf.clear();
-        // 按字节读 + lossy 解码：插件输出非法 UTF-8（如 GBK）时不应误判进程退出
-        match reader.read_until(b'\n', &mut buf) {
+        // 按字节读 + lossy 解码：插件输出非法 UTF-8（如 GBK）时不应误判进程退出。
+        // 用 take 在读取阶段就封顶（而非读完整行后才发现超长），防止失控/恶意
+        // 插件打印无换行大块数据把宿主内存撑爆。
+        let mut limited = (&mut reader).take((MAX_LINE_BYTES + 1) as u64);
+        let read = limited.read_until(b'\n', &mut buf);
+        // 命中 take 上限且末尾不是换行 → 行被截断，判定为超长行
+        let overlong = buf.len() == MAX_LINE_BYTES + 1 && buf.last() != Some(&b'\n');
+        match read {
             Ok(0) => {
                 let _ = tx.send(Incoming::Eof);
                 break;
             }
+            Ok(_) if overlong => {
+                // 超长行：丢弃该行（含剩余字节）并记事件，不中断读循环
+                let _ = tx.send(Incoming::Event {
+                    event: "__line_too_long__".to_string(),
+                    data: json!({ "bytes": MAX_LINE_BYTES + 1 }),
+                });
+                drain_overlong_line(&mut reader);
+                continue;
+            }
             Ok(_) => {
-                if buf.len() > MAX_LINE_BYTES {
-                    // 超长行：丢弃该行并记事件（不中断读循环）
-                    let _ = tx.send(Incoming::Event {
-                        event: "__line_too_long__".to_string(),
-                        data: json!({ "bytes": buf.len() }),
-                    });
-                    continue;
-                }
                 let line = String::from_utf8_lossy(&buf);
                 let trimmed = line.trim();
                 if trimmed.is_empty() {

@@ -43,6 +43,19 @@ fn ensure_notes_dir(root: &Path) -> Result<PathBuf, String> {
     Ok(notes)
 }
 
+/// 校验并解析 rel 到 notes/ 目录内（纵深防御：笔记命令只应操作 vault/notes/，
+/// 防止前端越权读写/删除 data/、site/、config 等其他数据文件）。
+/// 路径穿越已在 resolve_safe 拦截；这里只收口「仅限 notes/」这一契约。
+fn resolve_note(vault: &str, rel: &str) -> Result<PathBuf, String> {
+    let root = PathBuf::from(vault);
+    let notes = root.join(NOTES_DIR);
+    let p = resolve_safe(vault, rel)?;
+    if !p.starts_with(&notes) {
+        return Err(format!("仅允许操作 notes/ 目录内的文件: {rel}"));
+    }
+    Ok(p)
+}
+
 /// 递归列出 notes/ 目录下所有子目录与 .md 文件（忽略隐藏/无关目录），
 /// 目录优先、按名排序。返回路径带 `notes/` 前缀（相对 vault）。
 pub fn list(vault: &str) -> Result<Vec<FileEntry>, String> {
@@ -96,7 +109,7 @@ fn walk(root: &Path, dir: &Path, base: &str, out: &mut Vec<FileEntry>) {
 
 /// 读取笔记内容。超大文件拒绝（防卡死），提示用外部编辑器。
 pub fn read(vault: &str, rel: &str) -> Result<String, String> {
-    let p = resolve_safe(vault, rel)?;
+    let p = resolve_note(vault, rel)?;
     let size = std::fs::metadata(&p)
         .map_err(|e| format!("读取失败: {e}"))?
         .len();
@@ -109,7 +122,7 @@ pub fn read(vault: &str, rel: &str) -> Result<String, String> {
 
 /// 写入笔记内容（自动创建父目录）。原子写：临时文件 + rename。
 pub fn write(vault: &str, rel: &str, content: &str) -> Result<Value, String> {
-    let p = resolve_safe(vault, rel)?;
+    let p = resolve_note(vault, rel)?;
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
     }
@@ -121,7 +134,7 @@ pub fn write(vault: &str, rel: &str, content: &str) -> Result<Value, String> {
 
 /// 新建空笔记。原子写同 write。
 pub fn create(vault: &str, rel: &str) -> Result<Value, String> {
-    let p = resolve_safe(vault, rel)?;
+    let p = resolve_note(vault, rel)?;
     if p.exists() {
         return Err(format!("已存在: {rel}"));
     }
@@ -137,7 +150,7 @@ pub fn create(vault: &str, rel: &str) -> Result<Value, String> {
 /// 删除文件或目录（**进系统回收站**，可恢复）。
 /// 保护：不能删 vault 根、不能删 notes/ 目录本身。
 pub fn delete(vault: &str, rel: &str) -> Result<Value, String> {
-    let p = resolve_safe(vault, rel)?;
+    let p = resolve_note(vault, rel)?;
     let root = PathBuf::from(vault);
     let notes = root.join(NOTES_DIR);
     if p == root || p == notes {
@@ -149,8 +162,8 @@ pub fn delete(vault: &str, rel: &str) -> Result<Value, String> {
 
 /// 重命名 / 移动。目标已存在时拒绝（Windows rename 会静默覆盖）。
 pub fn rename(vault: &str, from: &str, to: &str) -> Result<Value, String> {
-    let a = resolve_safe(vault, from)?;
-    let b = resolve_safe(vault, to)?;
+    let a = resolve_note(vault, from)?;
+    let b = resolve_note(vault, to)?;
     if b.exists() {
         return Err(format!("目标已存在: {to}"));
     }
@@ -227,6 +240,23 @@ mod tests {
         std::fs::write(v.join("notes/small.md"), "ok").unwrap();
         let ok = read(v.to_str().unwrap(), "notes/small.md").unwrap();
         assert_eq!(ok, "ok");
+        std::fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn rejects_paths_outside_notes() {
+        let v = tmp_vault("prefix");
+        let vault = v.to_str().unwrap();
+        std::fs::create_dir_all(v.join("notes")).unwrap();
+        // 越权写 vault 根 / data / site 等非 notes 路径应被拒绝（纵深防御）
+        for bad in ["a.md", "data/todos.json", "site/index.html", "config.json"] {
+            assert!(write(vault, bad, "x").is_err(), "应拒绝写非 notes 路径: {bad}");
+            assert!(delete(vault, bad).is_err(), "应拒绝删非 notes 路径: {bad}");
+            assert!(rename(vault, "notes/不存在.md", bad).is_err(), "应拒绝重命名到非 notes 路径: {bad}");
+        }
+        // 正常 notes 路径仍可用
+        write(vault, "notes/ok.md", "# ok").unwrap();
+        assert_eq!(read(vault, "notes/ok.md").unwrap(), "# ok");
         std::fs::remove_dir_all(&v).ok();
     }
 

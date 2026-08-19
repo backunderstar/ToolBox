@@ -49,12 +49,12 @@ mod tests {
     /// 插件 id 白名单（S1a 第一道闸）：合法 id 通过，穿越/绝对路径/非法字符拒绝。
     #[test]
     fn safe_plugin_id_validation() {
-        for ok in ["core-notes", "a", "a1", "my_plugin", "x-y_z2"] {
+        for ok in ["core-notes", "a", "a1", "text-stats", "theme-maple", "x-y2"] {
             assert!(is_safe_plugin_id(ok), "{ok} 应合法");
         }
         for bad in [
             "", ".", "..", "../evil", "..\\evil", "/abs", "C:/evil", "a/b", "a b", "-lead",
-            "UPPER", "中文", "a..b",
+            "UPPER", "中文", "a..b", "my_plugin", "x-y_z2",
         ] {
             assert!(!is_safe_plugin_id(bad), "{bad:?} 应非法");
         }

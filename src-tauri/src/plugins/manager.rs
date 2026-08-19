@@ -6,7 +6,7 @@
 //! 被命令层与测试跨模块访问的私有项标 `pub(crate)`。
 
 use super::events;
-use super::manifest::{NavDecl, PluginManifest, PluginRuntime, ThemeDecl};
+use super::manifest::{is_valid_plugin_id, NavDecl, PluginManifest, PluginRuntime, ThemeDecl};
 use super::native::NativePlugin;
 use super::process::ProcessPlugin;
 use serde::Serialize;
@@ -275,7 +275,11 @@ pub(crate) fn load_state_map(app: &tauri::AppHandle) -> serde_json::Map<String, 
 pub(crate) fn save_state_map(app: &tauri::AppHandle, map: &serde_json::Map<String, Value>) -> Result<(), String> {
     let p = state_path(app)?;
     let raw = serde_json::to_string_pretty(&Value::Object(map.clone())).map_err(|e| e.to_string())?;
-    std::fs::write(&p, raw).map_err(|e| format!("保存启用状态失败: {e}"))
+    // 原子写：临时文件 + rename。避免写入中途崩溃/断电留下损坏 JSON，
+    // 否则 load_state_map 会静默返回空 map，全部插件启用状态丢失。
+    let tmp = p.with_extension("json.tmp");
+    std::fs::write(&tmp, &raw).map_err(|e| format!("保存启用状态失败: {e}"))?;
+    std::fs::rename(&tmp, &p).map_err(|e| format!("保存启用状态失败: {e}"))
 }
 
 /// 读取全局启用/禁用集合。新格式 `{"enabled": [...], "disabled": [...]}`；
@@ -1116,12 +1120,9 @@ fn find_plugin_manifest(root: &Path) -> Result<(PathBuf, PluginManifest), String
     Err("未找到 plugin.json（插件包应包含清单文件）".into())
 }
 
+/// 插件 id 安全校验：与 `manifest::is_valid_plugin_id` 完全一致（单一规则源），
+/// 安装路径（zip/目录）与清单加载共用，避免规则漂移。
 pub fn is_safe_plugin_id(id: &str) -> bool {
-    let mut chars = id.chars();
-    match chars.next() {
-        Some(c) if c.is_ascii_lowercase() || c.is_ascii_digit() => {}
-        _ => return false,
-    }
-    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+    is_valid_plugin_id(id)
 }
 

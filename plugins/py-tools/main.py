@@ -167,6 +167,13 @@ def search_provide(args):
 
 
 def main():
+    # 协议约定 UTF-8；Windows 管道下默认 ANSI 代码页（GBK），强制 UTF-8，
+    # 否则中文输出乱码、stdin 中文解析抛 UnicodeDecodeError 崩溃
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
     for line in sys.stdin:
         line = line.strip()
         if not line:

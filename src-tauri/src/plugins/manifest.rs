@@ -107,16 +107,23 @@ pub struct PluginManifest {
 /// v1 认识的权限（未知权限记录 warning，不阻止加载）。
 pub const KNOWN_PERMISSIONS: &[&str] = &["fs:read:vault", "fs:write:vault", "log", "network"];
 
+/// 插件 id 的规范校验（安装与清单加载**共用同一规则**，避免规则漂移导致
+/// 「安装通过但扫描时校验失败」）：首字符为小写字母或数字，其余仅小写字母/数字/连字符。
+/// 注意：不含下划线 `_`（与历史 manifest 校验一致；现有插件均用 `-` 分隔）。
+pub fn is_valid_plugin_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() || c.is_ascii_digit() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 impl PluginManifest {
     pub fn validate(&self) -> Result<(), String> {
-        let id_ok = !self.id.is_empty()
-            && self
-                .id
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-        if !id_ok {
+        if !is_valid_plugin_id(&self.id) {
             return Err(format!(
-                "插件 id 非法（仅允许小写字母/数字/连字符）: {:?}",
+                "插件 id 非法（首字符为小写字母/数字，其余仅小写字母/数字/连字符）: {:?}",
                 self.id
             ));
         }
