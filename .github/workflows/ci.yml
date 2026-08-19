@@ -21,9 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 不传 version：以 package.json 的 packageManager（pnpm@10.28.1）为唯一
+      # 版本来源，避免与 corepack 的 ERR_PNPM_BAD_PM_VERSION 冲突
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
