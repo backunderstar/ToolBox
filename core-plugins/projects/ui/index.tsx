@@ -81,6 +81,13 @@ export function ProjectsPluginUi({ api }: { api: PluginBridgeApi }) {
     noticeTimer.current = setTimeout(() => setNotice(null), 2500);
   };
 
+  /* 卸载时清理 notice 定时器，避免卸载后仍 setNotice */
+  useEffect(() => {
+    return () => {
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    };
+  }, []);
+
   const refresh = async () => {
     if (!vault) {
       setProjects([]);

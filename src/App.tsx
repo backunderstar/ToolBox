@@ -4,7 +4,7 @@ import { ping, type PingInfo } from "./core/ipc";
 import { VaultProvider, useVault } from "./core/vault";
 import { PluginProvider, usePlugins } from "./core/plugins";
 import { NavProvider } from "./core/navigation";
-import type { ViewParams } from "./core/navigation";
+
 import { loadLayoutPrefs, saveLayoutPrefs } from "./core/layout";
 import {
   loadNavConfig,
@@ -38,6 +38,20 @@ import "./styles/ai.css";
 import "./styles/checklists.css";
 import "./styles/projects.css";
 
+/** 宿主固定路由的视图 id（ViewId 联合）。外部插件声明同名 nav id 会与内置路由
+ *  冲突（侧边栏显示被覆盖，点击仍走内置分支，显示与跳转不一致）——渲染前过滤。
+ *  核心插件的同名声明（notes/checklist/…）是合法的，负责提供侧边栏标签/图标/分组。 */
+const RESERVED_VIEW_IDS = new Set<ViewId>([
+  "overview",
+  "notes",
+  "plugins",
+  "checklist",
+  "projects",
+  "ai",
+  "blog",
+  "settings",
+]);
+
 /** 是否为浮窗窗口（加载同一前端入口，按窗口 label 分流） */
 function isFloatWindow(): boolean {
   try {
@@ -69,7 +83,6 @@ function AppInner() {
   const [view, setView] = useState<ViewId>(() =>
     new URLSearchParams(window.location.search).has("mock") ? "notes" : "overview",
   );
-  const [viewParams, setViewParams] = useState<ViewParams>({});
   const [themeId, setThemeId] = useState<string>(getInitialTheme);
   const [pingInfo, setPingInfo] = useState<PingInfo | null>(null);
   /* Ctrl+K 聚焦信号（自增触发 TopBar 聚焦） */
@@ -89,12 +102,15 @@ function AppInner() {
       // 插件管理页归「系统」组（产品决策；老用户旧布局由 navPrefs 一次性迁移）
       { id: "plugins", label: "插件", icon: "puzzle", groupId: "system" },
       { id: "settings", label: "设置", icon: "gear", groupId: "system", fixed: true },
-      ...pluginCtx.navItems.map((n) => ({
-        id: n.id,
-        label: n.label,
-        icon: n.icon,
-        groupId: groupIdFor(n.group),
-      })),
+      ...pluginCtx.navItems
+        // 过滤与宿主固定路由冲突的外部插件 nav 声明（核心插件的同名声明合法）
+        .filter((n) => !RESERVED_VIEW_IDS.has(n.id as ViewId) || n.pluginId.startsWith("core-"))
+        .map((n) => ({
+          id: n.id,
+          label: n.label,
+          icon: n.icon,
+          groupId: groupIdFor(n.group),
+        })),
     ],
     [pluginCtx.navItems],
   );
@@ -197,26 +213,22 @@ function AppInner() {
   const navValue = useMemo(
     () => ({
       view,
-      params: viewParams,
-      go: (v: ViewId, params?: ViewParams) => {
+      go: (v: ViewId) => {
         setView(v);
-        setViewParams(params ?? {});
       },
       openNote: (rel: string) => {
         setView("notes");
-        setViewParams({});
         // 笔记视图是插件自带前端：插件从标记/事件拿到要打开的笔记并自行读盘，
         // 打开后经 tb:vault-active 回写宿主状态。宿主不再调 openFile 二次读盘——
         // 那会造成重复读盘，且与插件回写 content 竞争触发「已取消切换」误报。
         (window as unknown as Record<string, unknown>).__TB_PENDING_NOTE__ = rel;
         window.dispatchEvent(new CustomEvent("tb:open-note", { detail: rel }));
       },
-      openChecklist: (id: string) => {
+      openChecklist: () => {
         setView("checklist");
-        setViewParams({ openChecklistId: id });
       },
     }),
-    [view, viewParams],
+    [view],
   );
 
   return (
@@ -244,7 +256,7 @@ function AppInner() {
           onPickVault={vault.pickVault}
           navCollapsed={navCollapsed}
           onToggleNav={() => setNavCollapsed((c) => !c)}
-          onToggleFloat={() => void floatToggle()}
+          onToggleFloat={() => void floatToggle().catch(() => undefined)}
           focusSignal={focusTick}
         />
         <div className="body">
@@ -252,7 +264,6 @@ function AppInner() {
             activeView={view}
             onSelect={(v) => {
               setView(v);
-              setViewParams({});
             }}
             collapsed={navCollapsed}
             config={nav}
@@ -278,7 +289,6 @@ function AppInner() {
                   name="清单"
                   onGoPlugins={() => {
                     setView("plugins");
-                    setViewParams({});
                   }}
                 />
               )
@@ -290,7 +300,6 @@ function AppInner() {
                   name="项目"
                   onGoPlugins={() => {
                     setView("plugins");
-                    setViewParams({});
                   }}
                 />
               )
@@ -302,7 +311,6 @@ function AppInner() {
                   name="AI 整理"
                   onGoPlugins={() => {
                     setView("plugins");
-                    setViewParams({});
                   }}
                 />
               )
@@ -314,7 +322,6 @@ function AppInner() {
                   name="博客发布"
                   onGoPlugins={() => {
                     setView("plugins");
-                    setViewParams({});
                   }}
                 />
               )
@@ -335,7 +342,6 @@ function AppInner() {
                   name="笔记"
                   onGoPlugins={() => {
                     setView("plugins");
-                    setViewParams({});
                   }}
                 />
               )

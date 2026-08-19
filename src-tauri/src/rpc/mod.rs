@@ -92,5 +92,16 @@ pub fn encode(msg: &Message) -> Result<String, String> {
 
 /// 解析单行 NDJSON。
 pub fn decode(line: &str) -> Result<Message, String> {
-    serde_json::from_str(line).map_err(|e| format!("解析失败: {e}"))
+    let v: Value = serde_json::from_str(line).map_err(|e| format!("解析失败: {e}"))?;
+    // 严格字段组合校验：untagged 会静默忽略多余字段（如 {id, method, result}
+    // 被当 Request 解析、result 丢弃）。这里拒绝 method 与 result/error 同时出现的
+    // 歧义消息，避免协议误判。
+    if let Some(obj) = v.as_object() {
+        let has_method = obj.contains_key("method");
+        let has_result = obj.contains_key("result") || obj.contains_key("error");
+        if has_method && has_result {
+            return Err("RPC 消息字段冲突：method 与 result/error 不能同时出现".to_string());
+        }
+    }
+    serde_json::from_value(v).map_err(|e| format!("解析失败: {e}"))
 }

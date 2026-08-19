@@ -40,6 +40,20 @@ fn validate_project_name(name: &str) -> Result<(), String> {
     if t == "." || t == ".." || t.starts_with('.') {
         return Err(format!("项目名不合法: {name}"));
     }
+    // Windows 保留设备名（CON/NUL/COM1-9/LPT1-9 等，含 .ext 形式）会导致创建失败，
+    // 提前拦截给出友好提示（否则由 OS 报错，提示不友好）
+    let base = t.split('.').next().unwrap_or(t).to_ascii_uppercase();
+    let reserved = match base.as_str() {
+        "CON" | "PRN" | "AUX" | "NUL" => true,
+        _ => {
+            (base.starts_with("COM") || base.starts_with("LPT"))
+                && base.len() == 4
+                && matches!(base.as_bytes()[3], b'1'..=b'9')
+        }
+    };
+    if reserved {
+        return Err(format!("项目名不合法（Windows 保留名）: {name}"));
+    }
     for ch in t.chars() {
         // Windows 文件系统保留字符 + 控制字符
         if ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {

@@ -3,7 +3,6 @@ import {
   applyTheme,
   applyThemeStyle,
   upsertCustomTheme,
-  findTheme,
   EDITABLE_TOKENS,
   type ThemeDef,
   type ThemeMode,
@@ -32,8 +31,10 @@ export function ThemeEditor({
   const prevThemeIdRef = useRef(document.documentElement.dataset.themeId ?? "default-light");
   useEffect(() => {
     return () => {
-      const t = findTheme(prevThemeIdRef.current);
-      if (t) applyThemeStyle(t.base, t.id, t.tokens);
+      // 取消/卸载时完整恢复进入前主题：applyTheme 同时恢复令牌、插件 CSS、
+      // 标题栏近似色与持久化。预览只走 applyThemeStyle（仅改 DOM 样式与 data-theme-id，
+      // 不触发标题栏近似色/插件 CSS 同步），取消后必须重新应用一次以恢复这些副作用。
+      void applyTheme(prevThemeIdRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -101,6 +101,11 @@ pub fn decode_result(raw: &str) -> Result<Value, String> {
 }
 
 /// 事件发送（经宿主回调；无宿主/回调时静默丢弃）。
+///
+/// **生命周期约束**：`ctx` 是宿主在 `tb_create` 时分配的 HostCtx，随插件实例
+/// 一起释放（`tb_destroy` 后失效）。插件自建后台线程若在实例销毁后仍调用本函数
+/// 会 use-after-free——**仅允许在实例存活期间（命令调用栈内）发送事件**，不要
+/// 把 `ctx`/`host` 泄漏到超出实例生命周期的线程中。
 pub fn emit(host: TbHostApi, ctx: *mut c_void, event: &str, data: Value) {
     if let Some(f) = host.emit_event {
         let ev = CString::new(event);

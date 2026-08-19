@@ -3,7 +3,7 @@
 //   api.call(command, args?, targetPluginId?) —— plugin_call（默认调本插件）
 //   api.on(event, cb) -> unsubscribe —— 订阅本插件的 plugin-event
 //   api.context.vault —— 当前工作区路径
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import "./style.css";
 
@@ -34,6 +34,9 @@ export function BlogPluginUi({ api }: { api: PluginUiApi }) {
   const [result, setResult] = useState<BlogListResult | null>(null);
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
+  // 并发守卫：generate/preview 是异步的，busy state 更新有延迟（同帧双击/Enter
+  // 可并发触发，两个 generate 会同时 remove_dir_all 同一目录）——用 ref 同步拦截。
+  const busyRef = useRef(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [msgErr, setMsgErr] = useState(false);
   const show = (t: string, err = false) => {
@@ -56,6 +59,8 @@ export function BlogPluginUi({ api }: { api: PluginUiApi }) {
   }, [api]);
 
   const generate = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setMsg(null);
     try {
@@ -68,11 +73,14 @@ export function BlogPluginUi({ api }: { api: PluginUiApi }) {
     } catch (e) {
       show(String(e), true);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const preview = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setMsg(null);
     try {
@@ -82,6 +90,7 @@ export function BlogPluginUi({ api }: { api: PluginUiApi }) {
     } catch (e) {
       show(String(e), true);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };

@@ -512,7 +512,7 @@
 }
 .btn-danger {
   background: var(--pastel-red-fg) !important;
-  color: #fff !important;
+  color: var(--on-accent) !important;
   border-color: transparent !important;
 }
 .btn-danger:hover {

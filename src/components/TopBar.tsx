@@ -153,7 +153,8 @@ export function TopBar({
               <>
                 {results.map((r, i) => (
                   <button
-                    key={r.path}
+                    // 同一路径可能多来源（全文命中 + 搜索提供者），key 需含 source 去重
+                    key={`${r.source ?? "file"}:${r.path}`}
                     className={`search-item${i === activeIdx ? " active" : ""}`}
                     onClick={() => onOpenResult(r.path)}
                     onMouseEnter={() => setActiveIdx(i)}

@@ -46,9 +46,8 @@ fn call(
         tb_sdk::emit(host, ctx, "notes-changed", serde_json::json!({ "rel": rel }));
     };
     match method {
-        "notes.list" => {
-            fs::list(&vault).map(|v| serde_json::to_value(v).unwrap_or(Value::Null))
-        }
+        "notes.list" => fs::list(&vault)
+            .and_then(|v| serde_json::to_value(v).map_err(|e| format!("序列化失败: {e}"))),
         "notes.read" => {
             let rel = s("rel").ok_or("缺少 rel")?;
             fs::read(&vault, &rel).map(Value::String)

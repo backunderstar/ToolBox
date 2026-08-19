@@ -70,6 +70,14 @@ pub fn vault_set(app: tauri::AppHandle, path: String) -> Result<(), String> {
 /// 任意目录——`search_all` 变成"读取任意文件夹"原语，配合插件写命令可向
 /// 任意已存在目录注入文件（如写启动目录实现持久化）。把 vault 绑定到
 /// 设置页保存的唯一路径后，这些命令的作用域被限制在用户明确选择的工作区内。
+/// 规范化工作区路径用于比较：去首尾空白、去尾部分隔符、统一 `\` → `/`。
+/// 避免 `C:\vault` vs `C:/vault`、`C:\vault\` vs `C:\vault` 这类等价写法被误判不一致。
+fn normalize_vault_path(s: &str) -> String {
+    s.trim()
+        .trim_end_matches(|c| c == '/' || c == '\\')
+        .replace('\\', "/")
+}
+
 pub fn ensure_vault_matches(app: &tauri::AppHandle, vault: &str) -> Result<(), String> {
     let configured = read_vault_path(app)?;
     let Some(configured) = configured else {
@@ -78,11 +86,13 @@ pub fn ensure_vault_matches(app: &tauri::AppHandle, vault: &str) -> Result<(), S
     let same = {
         #[cfg(target_os = "windows")]
         {
-            configured.trim().to_lowercase() == vault.trim().to_lowercase()
+            // Windows 路径大小写不敏感（盘符 C: vs c:）
+            normalize_vault_path(&configured).to_lowercase()
+                == normalize_vault_path(vault).to_lowercase()
         }
         #[cfg(not(target_os = "windows"))]
         {
-            configured.trim() == vault.trim()
+            normalize_vault_path(&configured) == normalize_vault_path(vault)
         }
     };
     if !same {

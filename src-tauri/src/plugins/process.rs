@@ -430,6 +430,9 @@ fn drain_overlong_line(reader: &mut impl Read) {
 fn read_loop(stdout: ChildStdout, tx: Sender<Incoming>) {
     let mut reader = BufReader::new(stdout);
     let mut buf: Vec<u8> = Vec::with_capacity(8192);
+    // 错误事件限流：垃圾输出插件会每行都触发 __parse_error__/__line_too_long__，
+    // 不加限流会把前端事件总线刷爆。这里每 1 秒最多发一条（初始值提前，首条即发）。
+    let mut last_error_event = Instant::now() - Duration::from_secs(2);
     loop {
         buf.clear();
         // 按字节读 + lossy 解码：插件输出非法 UTF-8（如 GBK）时不应误判进程退出。
@@ -446,10 +449,13 @@ fn read_loop(stdout: ChildStdout, tx: Sender<Incoming>) {
             }
             Ok(_) if overlong => {
                 // 超长行：丢弃该行（含剩余字节）并记事件，不中断读循环
-                let _ = tx.send(Incoming::Event {
-                    event: "__line_too_long__".to_string(),
-                    data: json!({ "bytes": MAX_LINE_BYTES + 1 }),
-                });
+                if last_error_event.elapsed() >= Duration::from_secs(1) {
+                    last_error_event = Instant::now();
+                    let _ = tx.send(Incoming::Event {
+                        event: "__line_too_long__".to_string(),
+                        data: json!({ "bytes": MAX_LINE_BYTES + 1 }),
+                    });
+                }
                 drain_overlong_line(&mut reader);
                 continue;
             }
@@ -477,10 +483,13 @@ fn read_loop(stdout: ChildStdout, tx: Sender<Incoming>) {
                         });
                     }
                     Err(e) => {
-                        let _ = tx.send(Incoming::Event {
-                            event: "__parse_error__".to_string(),
-                            data: json!({ "line": trimmed, "error": e }),
-                        });
+                        if last_error_event.elapsed() >= Duration::from_secs(1) {
+                            last_error_event = Instant::now();
+                            let _ = tx.send(Incoming::Event {
+                                event: "__parse_error__".to_string(),
+                                data: json!({ "line": trimmed, "error": e }),
+                            });
+                        }
                     }
                 }
             }

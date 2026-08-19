@@ -21,7 +21,7 @@ def handle_request(msg):
     params = msg.get("params") or {}
     try:
         if method == "init":
-            result = {"apiVersion": 1, "commands": ["csv.convert", "csv.eventTest"]}
+            result = {"commands": ["csv.convert", "csv.eventTest"]}
         elif method == "call":
             command = params.get("command", "")
             if command == "csv.convert":
@@ -91,9 +91,6 @@ def main():
             sys.stdout.write(
                 json.dumps(handle_request(msg), ensure_ascii=False) + "\n"
             )
-            sys.stdout.flush()
-        elif msg.get("method") == "ping":
-            sys.stdout.write(json.dumps({"id": msg.get("id"), "result": "pong"}) + "\n")
             sys.stdout.flush()
 
 

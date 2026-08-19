@@ -125,6 +125,8 @@ fn set_window_caption_color(window: tauri::Window, color: Option<String>) -> Res
 }
 
 /// 解析 CSS 十六进制颜色 "#RRGGBB" → Windows COLORREF（0x00BBGGRR）。
+/// 仅 Windows 标题栏近似色使用；非 Windows 目标加 cfg 避免 dead_code 警告。
+#[cfg(target_os = "windows")]
 fn parse_hex_color(s: &str) -> Result<u32, String> {
     let h = s.trim().trim_start_matches('#');
     if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {

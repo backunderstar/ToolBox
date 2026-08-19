@@ -23,7 +23,8 @@ export type ViewId =
   | "overview"
   | "notes"
   | "plugins"
-  | "checklist"  | "projects"
+  | "checklist"
+  | "projects"
   | "ai"
   | "blog"
   | "settings";

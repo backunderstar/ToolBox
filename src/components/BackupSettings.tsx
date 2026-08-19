@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useVault } from "../core/vault";
 import {
   backupConfigGet,
@@ -29,6 +29,13 @@ export function BackupSettings() {
     setMsg(text);
     setMsgErr(isErr);
   };
+  /** 防抖定时器：连续输入间隔/保留份数只触发一次落盘与提示 */
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     void backupConfigGet()
@@ -50,6 +57,11 @@ export function BackupSettings() {
   }, [vault.path]);
 
   const save = async (next: BackupConfig) => {
+    // 立即保存（开关等单次操作）：先清掉在途的防抖定时器，避免旧值后到覆盖新值
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
     setConfig(next);
     try {
       await backupConfigSet(next);
@@ -57,6 +69,16 @@ export function BackupSettings() {
     } catch (e) {
       showMsg(String(e), true);
     }
+  };
+
+  /** 防抖保存：间隔/保留份数输入每键更新 UI，停顿 400ms 才落盘（避免每键一次 IPC） */
+  const saveSoon = (next: BackupConfig) => {
+    setConfig(next);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      void save(next);
+    }, 400);
   };
 
   const doBackup = async () => {
@@ -144,7 +166,7 @@ export function BackupSettings() {
           value={config?.intervalMinutes ?? 30}
           onChange={(e) =>
             config &&
-            save({ ...config, intervalMinutes: Math.max(1, Number(e.target.value) || 30) })
+            saveSoon({ ...config, intervalMinutes: Math.max(1, Number(e.target.value) || 30) })
           }
         />
       </div>
@@ -158,7 +180,7 @@ export function BackupSettings() {
           max={99}
           value={config?.keep ?? 10}
           onChange={(e) =>
-            config && save({ ...config, keep: Math.max(1, Number(e.target.value) || 10) })
+            config && saveSoon({ ...config, keep: Math.max(1, Number(e.target.value) || 10) })
           }
         />
       </div>

@@ -209,6 +209,20 @@ fn config_get(state: &AiState) -> Result<Value, String> {
 fn config_set(state: &AiState, params: &Value) -> Result<Value, String> {
     let cfg: AiConfig = serde_json::from_value(params.get("config").cloned().unwrap_or(Value::Null))
         .map_err(|e| format!("配置非法: {e}"))?;
+    // 校验 baseUrl / model：非法值此前只在请求时报错，这里提前拦截给用户明确反馈
+    let url = cfg.base_url.trim();
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("baseUrl 必须以 http:// 或 https:// 开头".to_string());
+    }
+    if url.len() > 2048 {
+        return Err("baseUrl 过长".to_string());
+    }
+    if cfg.model.trim().is_empty() {
+        return Err("model 不能为空".to_string());
+    }
+    if cfg.model.len() > 256 {
+        return Err("model 过长".to_string());
+    }
     save_config(state, &cfg)?;
     Ok(Value::Null)
 }

@@ -65,7 +65,7 @@ const svg = (children: React.ReactNode, size = 16) => (
   </svg>
 );
 /** 与宿主 src/components/icons.tsx 的 IconSparkle 同构（统一 1.6 描边） */
-const IconSparkle = (p: { width?: number; height?: number }) =>
+const IconSparkle = (p: { width?: number }) =>
   svg(
     <>
       <path d="M12 3.5l1.9 5.6 5.6 1.9-5.6 1.9L12 18.5l-1.9-5.6L4.5 11l5.6-1.9z" />

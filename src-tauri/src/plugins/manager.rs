@@ -394,9 +394,11 @@ pub(crate) fn migrate_vault_plugins(vault: &Path, global: &Path) -> Result<usize
         copy_dir_recursive(&dir, &dst)?;
         migrated += 1;
     }
-    // 有插件（或空目录）→ 整体进回收站，vault 保持纯净
+    // 有插件才整体进回收站，vault 保持纯净（空目录不回收，避免误删用户手动创建的目录）
     if has_plugin {
-        let _ = trash::delete(&src);
+        if let Err(e) = trash::delete(&src) {
+            eprintln!("[plugins] vault 旧插件目录移入回收站失败（{src:?}）: {e}");
+        }
     }
     Ok(migrated)
 }

@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { usePlugins } from "../core/plugins";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
-import type { PluginInfo } from "../core/api";
+import { RUNTIME_LABEL, type PluginInfo } from "../core/api";
 import {
   pluginsRemovedCore,
   pluginsReinstallCore,
@@ -23,11 +23,7 @@ import type { ViewId } from "./Sidebar";
  * 已卸载核心插件一键恢复。分组/徽标/间距样式见 app.css .plugin-*。
  */
 
-const RUNTIME_LABEL: Record<string, string> = {
-  webview: "JS",
-  process: "Python",
-  native: "原生",
-};const STATUS_TEXT: Record<string, string> = {
+const STATUS_TEXT: Record<string, string> = {
   ready: "就绪",
   stopped: "已停止",
   error: "错误",

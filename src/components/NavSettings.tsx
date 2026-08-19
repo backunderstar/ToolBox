@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   BUILTIN_GROUPS,
@@ -37,6 +37,13 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
   const [dragOver, setDragOver] = useState<string | null>(null);
   /** 拖拽源（pointer 事件闭包用 ref 读取，避免 state 异步） */
   const dragRef = useRef<{ itemId: string; from: string } | null>(null);
+  /** 拖拽期间的清理函数（pointer 监听移除），供组件卸载时兜底移除 */
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+
+  /* 卸载兜底：拖拽中离开设置页时移除 window 上的 pointer 监听，避免泄漏 */
+  useEffect(() => {
+    return () => dragCleanupRef.current?.();
+  }, []);
 
   const orderOf = (groupId: string): string[] => config.order[groupId] ?? [];
 
@@ -77,9 +84,14 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
       const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
       setDragOver(el?.closest<HTMLElement>(".nav-settings-group")?.dataset.groupId ?? null);
     };
-    const up = (ev: PointerEvent) => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      dragCleanupRef.current = null;
+    };
+    const up = (ev: PointerEvent) => {
+      cleanup();
       const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
       const to = el?.closest<HTMLElement>(".nav-settings-group")?.dataset.groupId;
       const d = dragRef.current;
@@ -88,8 +100,17 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
       setDragOver(null);
       if (d && to && d.from !== to) moveToGroup(d.itemId, d.from, to);
     };
+    // pointercancel（系统取消手势/窗口外松手）：只清理，不做 drop
+    const cancel = () => {
+      cleanup();
+      dragRef.current = null;
+      setDrag(null);
+      setDragOver(null);
+    };
+    dragCleanupRef.current = cleanup;
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
   };
 
   const toggleHidden = (itemId: string) => {
@@ -279,9 +300,7 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
                             ✎
                           </button>
                           <label
-                            className={`switch${hidden ? " off" : ""}${
-                              isSettings ? " disabled" : ""
-                            }`}
+                            className={`switch${isSettings ? " disabled" : ""}`}
                             title={isSettings ? "设置固定显示" : hidden ? "点击显示" : "点击隐藏"}
                           >
                             <input

@@ -103,22 +103,25 @@ window.addEventListener(
   true,
 );
 
-// 启动 3 秒后：dump 加载失败的资源条目（responseStatus=0 表示失败）
-setTimeout(() => {
-  try {
-    const failed = performance
-      .getEntriesByType("resource")
-      .filter((r) => (r as PerformanceResourceTiming).responseStatus === 0)
-      .map((r) => r.name);
-    if (failed.length > 0) {
-      console.error(`[failed-resources] ${failed.length} 个:\n${failed.join("\n")}`);
-    } else {
-      console.error("[failed-resources] 无失败资源");
+// 启动 3 秒后：dump 加载失败的资源条目（responseStatus=0 表示失败）。
+// 仅 dev 调试用：生产构建不执行，避免向用户终端输出无意义的 [failed-resources] 日志。
+if (import.meta.env.DEV) {
+  setTimeout(() => {
+    try {
+      const failed = performance
+        .getEntriesByType("resource")
+        .filter((r) => (r as PerformanceResourceTiming).responseStatus === 0)
+        .map((r) => r.name);
+      if (failed.length > 0) {
+        console.error(`[failed-resources] ${failed.length} 个:\n${failed.join("\n")}`);
+      } else {
+        console.error("[failed-resources] 无失败资源");
+      }
+    } catch {
+      /* 忽略 */
     }
-  } catch {
-    /* 忽略 */
-  }
-}, 3000);
+  }, 3000);
+}
 
 // 注意：不使用 StrictMode——Vditor 初始化是异步的，
 // StrictMode 的开发期双挂载会导致两个实例在同一容器上竞争（白屏）。

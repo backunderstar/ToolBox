@@ -7,19 +7,13 @@ import type { ViewId } from "../components/Sidebar";
  * 值由 AppInner 用 useMemo 构造，这里只定义 context 形状。
  */
 
-export interface ViewParams {
-  /** 跳转到清单视图并打开指定清单 */
-  openChecklistId?: string;
-}
-
 export interface NavContextValue {
   view: ViewId;
-  params: ViewParams;
-  go: (view: ViewId, params?: ViewParams) => void;
+  go: (view: ViewId) => void;
   /** 打开笔记（切到笔记视图并打开文件） */
   openNote: (rel: string) => void;
-  /** 打开清单（切到清单视图并加载） */
-  openChecklist: (id: string) => void;
+  /** 打开清单（切到清单视图；具体清单 id 经 tb:open-checklist 事件广播，宿主不持有） */
+  openChecklist: () => void;
 }
 
 const NavContext = createContext<NavContextValue | null>(null);

@@ -1,13 +1,6 @@
 import type { CSSProperties } from "react";
 import type { PingInfo } from "../core/ipc";
-import type { PluginInfo } from "../core/api";
-
-/** 运行时标签（与插件页一致） */
-const RUNTIME_LABEL: Record<string, string> = {
-  webview: "JS",
-  process: "Python",
-  native: "原生",
-};
+import { RUNTIME_LABEL, type PluginInfo } from "../core/api";
 
 interface WelcomeViewProps {
   ping: PingInfo | null;

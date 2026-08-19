@@ -14,19 +14,27 @@ where
     use futures_util::StreamExt;
     let mut stream = stream;
     let mut buf = String::new();
+    // 已消费前缀的起始偏移：避免每解析一行就重建整个 String（原实现 O(n²)）
+    let mut start = 0usize;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("读取流失败: {e}"))?;
         buf.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some(pos) = buf.find('\n') {
-            let line = buf[..pos].to_string();
-            buf = buf[pos + 1..].to_string();
+        while let Some(rel) = buf[start..].find('\n') {
+            let pos = start + rel;
+            let line = buf[start..pos].to_string();
+            start = pos + 1;
             if let Some(text) = parse_sse_line(&line) {
                 on_text(text);
             }
         }
+        // 已消费前缀过长时压缩一次（摊还 O(n)），避免 buf 无限增长
+        if start > 4096 {
+            buf.drain(..start);
+            start = 0;
+        }
     }
     // 尾部残余（无换行结尾的最后一行）
-    if let Some(text) = parse_sse_line(buf.trim()) {
+    if let Some(text) = parse_sse_line(buf[start..].trim()) {
         on_text(text);
     }
     Ok(())

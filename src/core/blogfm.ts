@@ -12,12 +12,13 @@ export interface FmResult {
 export function parseFrontmatter(content: string): FmResult {
   const body = content.startsWith("\uFEFF") ? content.slice(1) : content;
   if (!body.startsWith("---")) {
-    return { fm: {}, body: content, hasFm: false };
+    // 统一返回去掉 BOM 的 body（原来返回原 content，无 FM 时保留 BOM、有 FM 时去掉，不一致）
+    return { fm: {}, body, hasFm: false };
   }
   const rest = body.slice(3);
   const end = rest.indexOf("\n---");
   if (end < 0) {
-    return { fm: {}, body: content, hasFm: false };
+    return { fm: {}, body, hasFm: false };
   }
   const fmRaw = rest.slice(0, end);
   const restBody = rest.slice(end + 4);

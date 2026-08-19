@@ -930,7 +930,7 @@ function SearchResults({
               <div className="result-title">
                 {hit.source && (
                   <span className="result-source" title="来自插件搜索提供者">
-                    {SOURCE_LABEL[hit.source] ?? hit.source}
+                    {hit.source}
                   </span>
                 )}
                 {highlight(hit.path, query)}
@@ -943,9 +943,6 @@ function SearchResults({
     </div>
   );
 }
-
-/** 搜索来源显示名（插件 id → 中文；当前无搜索提供者插件，保留空表供未来扩展） */
-const SOURCE_LABEL: Record<string, string> = {};
 
 /** 大小写不敏感的关键词高亮（安全转义正则） */
 function highlight(text: string, query: string): React.ReactNode {

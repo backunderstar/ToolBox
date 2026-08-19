@@ -30,6 +30,15 @@ fn ensure_refreshed(m: &mut PluginManager, app: &tauri::AppHandle, vault: &str) 
     Ok(())
 }
 
+/// 目录修改类操作（install/uninstall/reinstall_core/plugins_dir_set）后立即更新
+/// last_snapshot：这些操作已 scan/refresh 过，若不更新快照，下一次 ensure_refreshed
+/// 会因快照不一致而全量重启所有 process 插件（无谓的启停抖动）。
+fn sync_snapshot(m: &mut PluginManager, app: &tauri::AppHandle) -> Result<(), String> {
+    let global = global_plugins_dir(app)?;
+    m.last_snapshot = Some(plugins_snapshot(&global));
+    Ok(())
+}
+
 /// 路径比较：Windows 下大小写不敏感（避免用户传 C:/A 与 c:/a 导致反复刷新重启插件）。
 #[cfg(target_os = "windows")]
 fn paths_equal(a: &Path, b: &Path) -> bool {
@@ -84,7 +93,8 @@ pub async fn plugins_uninstall(
     crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
-    m.uninstall(&app, &id)
+    m.uninstall(&app, &id)?;
+    sync_snapshot(&mut m, &app)
 }
 
 /// 重新安装已卸载的核心插件（从随应用分发的资源恢复）。
@@ -101,7 +111,8 @@ pub async fn plugins_reinstall_core(
     }
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
-    m.reinstall_core(&app, &id)
+    m.reinstall_core(&app, &id)?;
+    sync_snapshot(&mut m, &app)
 }
 
 /// 已卸载的核心插件 id 列表（前端"重新安装"入口用；全局状态，无需 vault）。
@@ -127,7 +138,9 @@ pub async fn plugins_install(
     crate::core::vault::ensure_vault_matches(&app, &vault)?;
     let mut m = state.lock().map_err(|e| e.to_string())?;
     ensure_refreshed(&mut m, &app, &vault)?;
-    m.install(&app, &source, &kind)
+    let id = m.install(&app, &source, &kind)?;
+    sync_snapshot(&mut m, &app)?;
+    Ok(id)
 }
 
 /// 读取当前生效的全局插件目录（自定义或默认 %APPDATA%）。
@@ -183,13 +196,17 @@ pub async fn plugins_dir_set(
             copy_dir_recursive(&dir, &dst).map_err(|e| format!("迁移插件 {name} 失败: {e}"))?;
         }
         // 旧目录进回收站（可反悔）；失败只告警不阻断（新目录已就绪）
-        let _ = trash::delete(&old);
+        if let Err(e) = trash::delete(&old) {
+            eprintln!("[plugins] 旧插件目录移入回收站失败（可手动清理 {old:?}）: {e}");
+        }
     }
     save_state_map(&app, &map)?;
     // 迁移后：按已配置工作区重新发现（native 会随启用状态重新启动）
     if let Some(v) = m.vault.clone() {
         let _ = m.refresh(&app, &v);
     }
+    // 目录已迁移 + refresh，同步快照避免下一次 ensure_refreshed 全量重启
+    sync_snapshot(&mut m, &app)?;
     Ok(new.to_string_lossy().to_string())
 }
 
@@ -247,6 +264,8 @@ pub async fn plugins_read_file(
                 std::path::Component::ParentDir
                     | std::path::Component::RootDir
                     | std::path::Component::Prefix(_)
+                    // 与 resolve_safe 一致：拒绝 CurDir（rel="." 会读目录报错）
+                    | std::path::Component::CurDir
             )
         });
     if bad {

@@ -73,6 +73,13 @@ export interface PluginInfo {
   theme: PluginThemeDecl | null;
 }
 
+/** 插件运行时 → 界面标签（插件页 / 概览页共用，避免各组件重复定义） */
+export const RUNTIME_LABEL: Record<string, string> = {
+  webview: "JS",
+  process: "Python",
+  native: "原生",
+};
+
 /* ---- IPC 封装 ---- */
 
 export const vaultGet = () => invoke<VaultSettings>("vault_get");

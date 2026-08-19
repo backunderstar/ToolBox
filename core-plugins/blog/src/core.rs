@@ -312,18 +312,17 @@ pub fn generate(vault: &str, site_title: &str) -> Result<BlogGenerateResult, Str
 }
 
 fn slugify(title: &str) -> String {
-    let mut slug: String = title
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    while slug.contains("--") {
-        slug = slug.replace("--", "-");
+    // 单遍折叠：非字母数字字符映射为 '-'，连续多个只保留一个（原 while+replace 是 O(n²)）
+    let mut slug = String::with_capacity(title.len());
+    let mut prev_dash = false;
+    for c in title.chars() {
+        if c.is_alphanumeric() {
+            slug.push(c);
+            prev_dash = false;
+        } else if !prev_dash {
+            slug.push('-');
+            prev_dash = true;
+        }
     }
     let slug = slug.trim_matches('-');
     if slug.is_empty() {

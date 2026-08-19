@@ -5,6 +5,6 @@
   "description": "CSV 转 JSON / TSV（Python 进程插件示例，JSON-RPC over stdio）",
   "runtime": "process",
   "command": ["python", "main.py"],
-  "permissions": ["fs:read:vault", "fs:write:vault", "log"],
+  "permissions": [],
   "config": {}
 }
