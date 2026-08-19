@@ -10,6 +10,8 @@ import {
   deleteCustomTheme,
   exportThemesJson,
   importThemesJson,
+  resolveThemeId,
+  SYSTEM_THEME_ID,
   type ThemeDef,
 } from "../themes/themes";
 import { ThemeEditor } from "./ThemeEditor";
@@ -83,7 +85,9 @@ export function SettingsView({
   };
 
   const themes = listThemes();
-  const current = findTheme(themeId);
+  // 跟随系统时 findTheme 直接查不到——解析到当前系统 base 的实际主题
+  // （ThemeEditor "基于当前主题新建" 的起点、描述文案等都用它）
+  const current = findTheme(resolveThemeId(themeId));
 
   const openFolder = async () => {
     if (!vault.path) return;
@@ -175,6 +179,32 @@ export function SettingsView({
           {!editing ? (
             <>
               <div className="theme-grid">
+                {/* 跟随系统：伪主题卡片（不在 listThemes 里，单独渲染） */}
+                <div
+                  key={SYSTEM_THEME_ID}
+                  className={`theme-card${themeId === SYSTEM_THEME_ID ? " active" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-current={themeId === SYSTEM_THEME_ID ? "true" : undefined}
+                  onClick={() => onSetThemeId(SYSTEM_THEME_ID)}
+                  onKeyDown={(e) => onRowKeyDown(e, () => onSetThemeId(SYSTEM_THEME_ID))}
+                  title="跟随系统亮/暗模式自动切换"
+                >
+                  <div className="theme-swatches">
+                    {/* 亮/暗/自动三个色块示意（不依赖 swatchOf——system 不是真实主题） */}
+                    <span className="theme-swatch" style={{ background: "#f6f5f2" }} />
+                    <span className="theme-swatch" style={{ background: "#1b1a17" }} />
+                    <span
+                      className="theme-swatch"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, #f6f5f2 50%, #1b1a17 50%)",
+                      }}
+                    />
+                  </div>
+                  <div className="theme-card-name">跟随系统</div>
+                  <div className="theme-card-desc">随系统亮/暗模式自动切换</div>
+                </div>
                 {themes.map((t) => (
                   <div
                     key={t.id}

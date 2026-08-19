@@ -57,6 +57,32 @@ export interface ThemeDef {
 const STORAGE_KEY = "toolbox.theme";
 const CUSTOM_KEY = "toolbox.custom-themes";
 
+/* ---------------- 跟随系统模式 ---------------- */
+
+/** 跟随系统伪主题 id：持久化/状态用，不进入 listThemes；
+ *  resolveThemeId 把它解析为系统亮暗对应的内置默认主题。 */
+export const SYSTEM_THEME_ID = "system";
+
+/** 当前系统偏好是否为暗色（浏览器/WebView matchMedia；不支持时按亮色） */
+function systemDark(): boolean {
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+}
+
+/** 解析实际主题 id：跟随系统 → 按系统亮暗取内置默认（default-light/dark） */
+export function resolveThemeId(id: string): string {
+  return id === SYSTEM_THEME_ID ? (systemDark() ? "default-dark" : "default-light") : id;
+}
+
+/** 是否为跟随系统模式 */
+export function isSystemTheme(id: string): boolean {
+  return id === SYSTEM_THEME_ID;
+}
+
+/** 读取持久化主题 id（空串 = 未存储；ThemeEditor 恢复进入前主题用，含 system） */
+export function getStoredThemeId(): string {
+  return localStorage.getItem(STORAGE_KEY) ?? "";
+}
+
 /* ---------------- 插件主题注册表（皮肤插件） ---------------- */
 
 /**
@@ -144,6 +170,9 @@ export function findTheme(id: string): ThemeDef | undefined {
 }
 
 export function getThemeBase(id: string): ThemeMode {
+  if (id === SYSTEM_THEME_ID) {
+    return resolveThemeId(id) === "default-dark" ? "dark" : "light";
+  }
   return findTheme(id)?.base ?? "light";
 }
 
@@ -242,7 +271,8 @@ function clearPluginCss(): void {
 /** 应用主题：base → data-theme（驱动 tokens.css），覆盖令牌注入 style，持久化。
  *  插件主题额外异步读取并注入 css 覆盖文件（双通道）；调用方无需 await。 */
 export async function applyTheme(id: string): Promise<void> {
-  const theme = findTheme(id);
+  const resolved = resolveThemeId(id);
+  const theme = findTheme(resolved);
   if (!theme) {
     // 主题暂不可用（插件主题尚未加载 / 插件被禁用）：应用默认外观但
     // **不覆盖持久化值**——避免启动瞬间插件未就绪时把用户的选择冲掉
@@ -251,16 +281,18 @@ export async function applyTheme(id: string): Promise<void> {
     syncCaptionColor(); // 标题栏回到默认（浅色）画布色
     return;
   }
-  applyThemeStyle(theme.base, id, theme.tokens);
+  applyThemeStyle(theme.base, resolved, theme.tokens);
   if (theme.source === "plugin" && theme.css && theme.pluginId) {
-    await loadPluginCss(theme.pluginId, theme.css, id);
+    await loadPluginCss(theme.pluginId, theme.css, resolved);
   } else {
     clearPluginCss();
   }
   // 竞态防护（与 loadPluginCss 同源）：await 期间用户可能已切走主题（含
   // 插件禁用触发的自动回落）——此时**丢弃本次的持久化**，否则挂起的旧调用
   // 恢复执行会把 localStorage 又写回旧主题 id（界面已切换，值却倒退）。
-  if (document.documentElement.dataset.themeId !== id) return;
+  if (document.documentElement.dataset.themeId !== resolved) return;
+  // 持久化**原始** id：system 保留 "system"（跟随系统状态），不落 resolved 值，
+  // 否则重启后丢失"跟随系统"模式
   localStorage.setItem(STORAGE_KEY, id);
   void syncWindowTheme(theme.base);
   // 标题栏近似色跟随主题画布背景（Windows 11 原生标题栏；失败静默）
@@ -280,21 +312,25 @@ export function applyThemeStyle(base: ThemeMode, id: string, tokens: Record<stri
   }
 }
 
-/** 初始主题：读持久化值，兼容旧版 "light"/"dark" */
+/** 初始主题：读持久化值（含 system），兼容旧版 "light"/"dark"；
+ *  无存储时默认**跟随系统**（随系统亮暗实时切换，比一次性选亮/暗更合理）。 */
 export function getInitialTheme(): string {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved === "light" || saved === "dark") {
     // 旧值迁移
     return saved === "light" ? "default-light" : "default-dark";
   }
+  if (saved === SYSTEM_THEME_ID) return SYSTEM_THEME_ID;
   if (saved && findTheme(saved)) return saved;
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
-    ? "default-dark"
-    : "default-light";
+  return SYSTEM_THEME_ID;
 }
 
-/** 顶栏切换：在当前主题的 base 与相反 base 的默认主题之间切换 */
+/** 顶栏切换：跟随系统时退出跟随（切到当前系统 base 的相反默认）；
+ *  其余在当前主题 base 与相反 base 的默认主题之间切换 */
 export function toggleTheme(currentId: string): string {
+  if (currentId === SYSTEM_THEME_ID) {
+    return resolveThemeId(currentId) === "default-dark" ? "default-light" : "default-dark";
+  }
   const base = getThemeBase(currentId);
   return base === "light" ? "default-dark" : "default-light";
 }

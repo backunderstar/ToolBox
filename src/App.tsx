@@ -16,7 +16,7 @@ import {
 } from "./core/navPrefs";
 import { floatToggle } from "./core/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { applyTheme, getInitialTheme, toggleTheme, getThemeBase, findTheme } from "./themes/themes";
+import { applyTheme, getInitialTheme, toggleTheme, getThemeBase, findTheme, SYSTEM_THEME_ID } from "./themes/themes";
 import { TopBar } from "./components/TopBar";
 import { Sidebar, type ViewId } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
@@ -144,6 +144,17 @@ function AppInner() {
   useEffect(() => {
     void applyTheme(themeId);
   }, [themeId, pluginCtx.pluginThemeKey]);
+
+  /* 跟随系统模式：监听系统亮暗切换，变化时实时重应用主题
+     （resolveThemeId 会把 system 解析成当前系统 base 的默认主题）。 */
+  useEffect(() => {
+    if (themeId !== SYSTEM_THEME_ID) return;
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!mq?.addEventListener) return;
+    const onChange = () => void applyTheme(SYSTEM_THEME_ID);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [themeId]);
 
   /* 当前主题是皮肤插件主题但插件已禁用/卸载：回落到默认亮色
      （applyTheme 对"暂不可用"主题只应用外观不覆盖持久化值，这里显式复位）。 */

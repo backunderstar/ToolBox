@@ -7,7 +7,9 @@ import {
   getThemeBase,
   getInitialTheme,
   importThemesJson,
+  resolveThemeId,
   swatchOf,
+  SYSTEM_THEME_ID,
   toggleTheme,
   upsertCustomTheme,
   type ThemeDef,
@@ -135,17 +137,34 @@ function loadThemes(): ThemeDef[] {
 }
 
 describe("getInitialTheme", () => {
-  it("无存储时跟随系统（mock 为 light）", () => {
-    expect(getInitialTheme()).toBe("default-light");
+  it("无存储时默认跟随系统", () => {
+    expect(getInitialTheme()).toBe(SYSTEM_THEME_ID);
   });
   it("旧值 light/dark 迁移到 default-*", () => {
     localStorage.setItem("toolbox.theme", "dark");
     expect(getInitialTheme()).toBe("default-dark");
   });
-  it("有效主题 id 原样返回，未知回默认", () => {
+  it("有效 id 原样返回；持久化 system 保留；未知回跟随系统", () => {
     localStorage.setItem("toolbox.theme", "warm");
     expect(getInitialTheme()).toBe("warm");
+    localStorage.setItem("toolbox.theme", SYSTEM_THEME_ID);
+    expect(getInitialTheme()).toBe(SYSTEM_THEME_ID);
     localStorage.setItem("toolbox.theme", "no-such");
-    expect(getInitialTheme()).toBe("default-light");
+    expect(getInitialTheme()).toBe(SYSTEM_THEME_ID);
+  });
+});
+
+describe("跟随系统（resolveThemeId / toggleTheme / getThemeBase）", () => {
+  it("system 解析为系统亮色默认（mock 亮色）", () => {
+    expect(resolveThemeId(SYSTEM_THEME_ID)).toBe("default-light");
+    expect(getThemeBase(SYSTEM_THEME_ID)).toBe("light");
+  });
+  it("系统暗色时解析为 default-dark", () => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
+    expect(resolveThemeId(SYSTEM_THEME_ID)).toBe("default-dark");
+    expect(getThemeBase(SYSTEM_THEME_ID)).toBe("dark");
+  });
+  it("跟随系统时顶栏切换退出跟随并切到相反默认（系统亮 → 暗）", () => {
+    expect(toggleTheme(SYSTEM_THEME_ID)).toBe("default-dark");
   });
 });

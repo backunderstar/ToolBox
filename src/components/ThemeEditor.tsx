@@ -3,6 +3,7 @@ import {
   applyTheme,
   applyThemeStyle,
   upsertCustomTheme,
+  getStoredThemeId,
   EDITABLE_TOKENS,
   type ThemeDef,
   type ThemeMode,
@@ -27,8 +28,12 @@ export function ThemeEditor({
   /* 进入编辑器时记住当前主题 id：预览 applyThemeStyle 直接污染 documentElement
      （data-theme-id 被改成 draft.id），取消时 AppInner 的 themeId state 未变
      （React bail out，不会重跑 apply）——必须在卸载时手动恢复进入前主题。
-     否则从内置主题「基于当前主题新建」后取消，界面会卡在预览的 custom-xxx。 */
-  const prevThemeIdRef = useRef(document.documentElement.dataset.themeId ?? "default-light");
+     否则从内置主题「基于当前主题新建」后取消，界面会卡在预览的 custom-xxx。
+     优先读持久化原始值（含 system 跟随模式——此时 dataset.themeId 是解析后的
+     resolved 值，直接用它恢复会丢失"跟随系统"状态）。 */
+  const prevThemeIdRef = useRef(
+    getStoredThemeId() || document.documentElement.dataset.themeId || "default-light",
+  );
   useEffect(() => {
     return () => {
       // 取消/卸载时完整恢复进入前主题：applyTheme 同时恢复令牌、插件 CSS、
