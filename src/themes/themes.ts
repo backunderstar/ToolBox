@@ -147,11 +147,15 @@ export function getThemeBase(id: string): ThemeMode {
   return findTheme(id)?.base ?? "light";
 }
 
-/** 保存/更新自定义主题（内置主题 id 拒绝覆盖） */
-export function upsertCustomTheme(def: ThemeDef): void {
+/** 保存/更新自定义主题（内置主题 id 拒绝覆盖——内置优先且不可被遮蔽；
+ *  导入含内置 id 的主题时该条被跳过，避免"存了却永远不可见"的幽灵主题）。
+ *  返回是否实际保存（内置 id 或写入失败返回 false）。 */
+export function upsertCustomTheme(def: ThemeDef): boolean {
+  if (BUILTIN_THEMES.some((t) => t.id === def.id)) return false;
   const list = loadCustomThemes().filter((t) => t.id !== def.id);
   list.push({ ...def, custom: true, source: "custom" });
   saveCustomThemes(list);
+  return true;
 }
 
 export function deleteCustomTheme(id: string): void {
@@ -171,21 +175,20 @@ export function importThemesJson(raw: string): number {
   let n = 0;
   for (const t of arr) {
     const d = t as Partial<ThemeDef>;
-    if (!d || typeof d.id !== "string" || !d.id || typeof d.name !== "string") continue;
+    if (!d || typeof d.id !== "string" || !d.id || typeof d.name !== "string" || !d.name.trim()) continue;
     if (d.base !== "light" && d.base !== "dark") continue;
     const tokens =
       d.tokens && typeof d.tokens === "object" && !Array.isArray(d.tokens)
         ? (d.tokens as Record<string, string>)
         : {};
-    upsertCustomTheme({
+    if (upsertCustomTheme({
       id: d.id,
       name: d.name,
       base: d.base,
       description: typeof d.description === "string" ? d.description : "",
       tokens,
       custom: true,
-    });
-    n++;
+    })) n++;
   }
   return n;
 }

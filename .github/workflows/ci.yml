@@ -1,0 +1,51 @@
+# ToolBox 轻量 CI：每次 push（main/master）与 PR 自动验证
+#   lint（oxlint）→ typecheck（tsc）→ 前端构建（vite）→ Rust 测试（workspace）
+# 不构建安装包、不做签名（那是 build-release.yml 的职责，v* tag / 手动触发）。
+# 让日常提交进主干前就有防线，避免回归。
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# 同分支并发只留最新（PR 反复提交时取消旧任务，省 runner 时间）
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint (oxlint)
+        run: pnpm lint
+
+      - name: Typecheck + frontend build
+        run: pnpm build
+
+      - name: Frontend unit tests (vitest)
+        run: pnpm test
+
+      - name: Rust tests (workspace)
+        run: cargo test --workspace
