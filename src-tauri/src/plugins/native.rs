@@ -47,13 +47,13 @@ unsafe extern "C" fn host_emit_event(
     0
 }
 
-/// 日志回调：打到宿主终端（`pnpm tauri dev` 可见）。
+/// 日志回调：经宿主日志落盘 + 终端（`pnpm tauri dev` 可见）。
 unsafe extern "C" fn host_log(_ctx: *mut c_void, level: i32, msg: *const c_char) {
     let msg = unsafe { tb_sdk::read_str(msg) }.unwrap_or("");
     match level {
-        0 => eprintln!("[plugin:log] {msg}"),
-        1 => eprintln!("[plugin:warn] {msg}"),
-        _ => eprintln!("[plugin:error] {msg}"),
+        0 => crate::core::log::info(&format!("[plugin:log] {msg}")),
+        1 => crate::core::log::warn(&format!("[plugin:warn] {msg}")),
+        _ => crate::core::log::error(&format!("[plugin:error] {msg}")),
     }
 }
 

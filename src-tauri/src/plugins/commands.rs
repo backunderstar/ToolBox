@@ -197,7 +197,9 @@ pub async fn plugins_dir_set(
         }
         // 旧目录进回收站（可反悔）；失败只告警不阻断（新目录已就绪）
         if let Err(e) = trash::delete(&old) {
-            eprintln!("[plugins] 旧插件目录移入回收站失败（可手动清理 {old:?}）: {e}");
+            crate::core::log::error(&format!(
+                "[plugins] 旧插件目录移入回收站失败（可手动清理 {old:?}）: {e}"
+            ));
         }
     }
     save_state_map(&app, &map)?;
@@ -386,8 +388,8 @@ pub async fn search_all(
                 }
             }
         }
-        Ok(Err(e)) => eprintln!("[search] 全文搜索失败: {e}"),
-        Err(_) => eprintln!("[search] 全文搜索线程异常"),
+        Ok(Err(e)) => crate::core::log::error(&format!("[search] 全文搜索失败: {e}")),
+        Err(_) => crate::core::log::error("[search] 全文搜索线程异常"),
     }
     hits.extend(provider_hits);
     Ok(Value::Array(hits))

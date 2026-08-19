@@ -38,7 +38,7 @@ fn ping() -> PingInfo {
 /// 打印到终端（`pnpm tauri dev` 的输出中可见，便于排查白屏/编辑器问题）。
 #[tauri::command]
 fn log_console(msg: String) {
-    eprintln!("[webview] {msg}");
+    core::log::error(&format!("[webview] {msg}"));
 }
 
 /// 在系统文件管理器中打开指定路径（Windows：explorer.exe）。
@@ -267,6 +267,10 @@ pub fn run() {
             set_window_caption_color,
         ])
         .setup(|app| {
+            // 运行日志目录（%APPDATA%/com.toolbox.desktop/logs/）；失败则日志仅终端
+            if let Ok(dir) = app_config_dir(app.handle()) {
+                core::log::init(&dir);
+            }
             // 打包版：把安装包资源里的核心插件部署到 %APPDATA%（dev 由 build:core 管理）。
             // 首次启动/升级时递归复制 DLL 是重 IO，放后台线程避免阻塞窗口创建与首帧
             // 渲染。部署只写插件目录、无返回值供后续使用（插件扫描发生在前端调
@@ -317,7 +321,10 @@ fn ensure_main_visible(app: &tauri::AppHandle) {
     };
     if let Ok(pos) = main.outer_position() {
         if pos.x < -10_000 || pos.y < -10_000 || pos.x > 100_000 || pos.y > 100_000 {
-            eprintln!("[main] 窗口位于屏幕外 ({},{})，已移回中心", pos.x, pos.y);
+            core::log::warn(&format!(
+                "[main] 窗口位于屏幕外 ({},{})，已移回中心",
+                pos.x, pos.y
+            ));
             main.center().ok();
             main.set_focus().ok();
         }
@@ -434,13 +441,13 @@ fn create_float_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     .build();
     match &win {
         Ok(w) => {
-            eprintln!("[float] 浮窗已创建 label={}", w.label());
+            core::log::info(&format!("[float] 浮窗已创建 label={}", w.label()));
             // 透明窗口在 Windows 上可能保持隐藏（等待 WebView 初始化），
             // 按记忆的可见性显式显示/隐藏（上次隐藏则不打扰）
             let visible = read_float_visible(app);
             if visible {
                 if let Err(e) = w.show() {
-                    eprintln!("[float] show 失败: {e}");
+                    core::log::error(&format!("[float] show 失败: {e}"));
                 }
             } else {
                 let _ = w.hide();
@@ -456,7 +463,7 @@ fn create_float_window(app: &tauri::AppHandle) -> tauri::Result<()> {
                 });
             }
         }
-        Err(e) => eprintln!("[float] 浮窗创建失败: {e}"),
+        Err(e) => core::log::error(&format!("[float] 浮窗创建失败: {e}")),
     }
     win.map(|_| ())
 }

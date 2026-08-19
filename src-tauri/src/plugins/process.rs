@@ -161,7 +161,10 @@ impl ProcessPlugin {
                     self.handle_core_request(rid, &m, p)?;
                 }
                 Incoming::Event { event, data } => {
-                    eprintln!("[plugin:{}] event {event}: {data}", self.plugin_id);
+                    crate::core::log::info(&format!(
+                        "[plugin:{}] event {event}: {data}",
+                        self.plugin_id
+                    ));
                     let _ = self.event_tx.send(PluginEvent {
                         plugin_id: self.plugin_id.clone(),
                         event,
@@ -293,7 +296,7 @@ impl ProcessPlugin {
             }
             "log" => {
                 let msg = params.get("message").map(|v| v.to_string()).unwrap_or_default();
-                eprintln!("[plugin:{}] {msg}", self.plugin_id);
+                crate::core::log::info(&format!("[plugin:{}] {msg}", self.plugin_id));
                 Ok(Value::Null)
             }
             other => Err(format!("插件调用了未开放的核心 API: {other}")),

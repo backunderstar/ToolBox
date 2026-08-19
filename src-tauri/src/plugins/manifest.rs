@@ -158,10 +158,10 @@ impl PluginManifest {
         }
         for p in &self.permissions {
             if !KNOWN_PERMISSIONS.contains(&p.as_str()) {
-                eprintln!(
+                crate::core::log::warn(&format!(
                     "[plugin] 警告: {} 声明了未知权限 {:?}（忽略）",
                     self.id, p
-                );
+                ));
             }
         }
         if let Some(t) = &self.theme {

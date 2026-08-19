@@ -164,8 +164,11 @@ pub fn ensure_core_plugins(app: &tauri::AppHandle) {
     };
     let removed = load_removed_core(app);
     match deploy_core_plugins(&src, &dst, &removed) {
-        Ok(()) => eprintln!("[plugin] 已部署随应用分发的核心插件到 {:?}", dst),
-        Err(e) => eprintln!("[plugin] 核心插件资源部署失败: {e}"),
+        Ok(()) => crate::core::log::info(&format!(
+            "[plugin] 已部署随应用分发的核心插件到 {:?}",
+            dst
+        )),
+        Err(e) => crate::core::log::error(&format!("[plugin] 核心插件资源部署失败: {e}")),
     }
 }
 
@@ -389,7 +392,9 @@ pub(crate) fn migrate_vault_plugins(vault: &Path, global: &Path) -> Result<usize
     // 有插件才整体进回收站，vault 保持纯净（空目录不回收，避免误删用户手动创建的目录）
     if has_plugin {
         if let Err(e) = trash::delete(&src) {
-            eprintln!("[plugins] vault 旧插件目录移入回收站失败（{src:?}）: {e}");
+            crate::core::log::error(&format!(
+                "[plugins] vault 旧插件目录移入回收站失败（{src:?}）: {e}"
+            ));
         }
     }
     Ok(migrated)
@@ -423,7 +428,7 @@ impl PluginManager {
         // 旧布局迁移：vault/plugins/* → 全局目录（复制后回收站清理）
         let global = global_plugins_dir(app)?;
         if let Err(e) = migrate_vault_plugins(vault, &global) {
-            eprintln!("[plugin] vault 插件迁移失败: {e}");
+            crate::core::log::error(&format!("[plugin] vault 插件迁移失败: {e}"));
         }
 
         let plugins_dir = global;
