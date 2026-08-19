@@ -15,6 +15,10 @@ pub mod process;
 
 // re-export：lib.rs 的 State<PluginManager> 沿用 plugins::* 路径
 pub use manager::PluginManager;
+// 打包版核心插件部署（仅 release 存在——manager.rs 同款 cfg；dev 由 build:core 管理，
+// 此处不 re-export 避免 dev 下引用不存在的项）
+#[cfg(not(dev))]
+pub use manager::ensure_core_plugins;
 // 以下 re-export 仅集成测试需要（tests 模块的 `use super::*` 拉取；
 // 非测试编译不产生，避免 unused 警告）
 #[cfg(test)]
