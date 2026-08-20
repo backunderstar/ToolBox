@@ -23,7 +23,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  WebView UI  (TypeScript + React)                        │
+│  WebView UI  (TypeScript + Vue 3)                          │
 │  ┌──────────┐ ┌───────────┐ ┌─────────────────────────┐  │
 │  │ 主题引擎  │ │ 组件库     │ │ JS 插件宿主（插件 API）  │  │
 │  └──────────┘ └───────────┘ └─────────────────────────┘  │
@@ -243,6 +243,42 @@ Vault（用户自选的工作区目录，纯数据）
 | P2 | 宿主进程 AppContainer 降权 | Windows AppContainer / Job Object / 受限 token，纵深防御 |
 
 **选型结论**：WASM 是 **native 插件**沙箱化的正确工具（内存安全 + 宿主内嵌 + capability 模型），但不是整个插件系统的通用沙箱——JS 插件用 ShadowRealm/iframe，Python 插件保持子进程。WASI 0.3 concurrency 落地前，SSE 流式 / AI 长阻塞类插件不宜迁 WASM（无线程/异步系统访问）。
+
+### 5.3 前端框架迁移：React → Vue 3（✅ 已完成）
+
+**决策**：宿主前端从 React 19 迁移到 Vue 3.5（用户决定以后主要用 Vue 3 开发）。
+React 版完整快照保存在本地 **`react` 分支**（冻结只读，不再维护，仅作历史参考）。
+
+**迁移范围（已本地提交，验证全绿）**：
+
+- **工具链**：`vue`/`@vitejs/plugin-vue`/`vue-tsc` 替换 React 全家；`build`/`typecheck`
+  改走 `vue-tsc`；`vite.config.ts` 换 vue 插件；`tsconfig.json` 移除 `jsx`；
+  `index.html` `#root` → `#app`、`main.tsx` → `main.ts`（启动逻辑：错误转发/外链
+  拦截/资源错误监听全部原样搬运）。
+- **状态层**（`src/core/*.tsx` → `*.ts`，模块级单例 store）：`vault.ts` / `plugins.ts` /
+  `navigation.ts` 用 `reactive` + `watch` 重写。React 的 `stateRef`/`useCallback` 闭包
+  过期问题被 Vue 响应式代理**天然消除**（读 reactive 对象永远是当前值）；
+  自动保存防抖、搜索/刷新请求序号（searchSeq/refreshSeq）、卸载竞态等逻辑 1:1 保留。
+- **组件层**（20 个 `.tsx` → `.vue` SFC）：App / TopBar / Sidebar / StatusBar /
+  WelcomeView / PluginUiView / FloatApp / ErrorBoundary / icons（`icons.ts` 数据表 +
+  `Icon.vue`）+ 设置页全家（Settings / Plugins / NavSettings / AISettings /
+  BackupSettings / ThemeEditor / ConfirmDialog / CommandTry / PluginCard /
+  MetaEditor / ThemeIoPanel）。懒加载保留（SettingsView 29.7kB、PluginsView 13.1kB
+  独立 chunk，主包 gzip 46.3kB）。
+- **框架无关部分 100% 复用**：`api.ts` / `ipc.ts` / `pluginRuntime.ts` / `navPrefs.ts` /
+  `themes/` / 全部 CSS / 全部测试，零改动。
+- **插件 UI 契约不变**：`__TB_PLUGIN_UI__[id].mount(el, api)` + api 桥原样；6 个核心
+  插件 UI 仍是 React 自包含 IIFE（React 依赖降级为 **devDependencies**，仅插件 UI
+  构建使用），在 Vue 宿主中原样工作。
+
+**验证基线**：`pnpm typecheck` / `lint`（0 警告）/ `test`（33）/ `build` /
+`build:core`（6 插件 UI + DLL 自检通过）；cargo 侧零改动。
+
+**二期计划（未排期）**：
+
+- 6 个核心插件 UI 逐个迁 Vue 3（notes 1115 行最大，建议最后；完成后可移除 React devDependencies）
+- 笔记编辑器 **Vditor → md-editor-v3**（Vue 3 生态 md 编辑器，随 notes 插件 UI 迁移一起做）
+- 外部插件 UI（text-stats 等）按需迁移
 
 ---
 

@@ -1,11 +1,11 @@
 // Vite+ 配置：Vite+ 是 Vite 8（rolldown）的超集 CLI，
 // defineConfig 从 "vite-plus" 导入即可同时使用标准 Vite 配置块与 Vite+ 专属块（lint/fmt/check）。
 import { defineConfig } from "vite-plus";
-import react from "@vitejs/plugin-react";
+import vue from "@vitejs/plugin-vue";
 
 // Tauri 2 + Vite 配置：端口固定为 1420（与 src-tauri/tauri.conf.json 的 devUrl 一致）
 export default defineConfig({
-  plugins: [react()],
+  plugins: [vue()],
   clearScreen: false,
   server: {
     port: 1420,

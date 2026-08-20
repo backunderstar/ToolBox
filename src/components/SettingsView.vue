@@ -1,0 +1,418 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, ref } from "vue";
+import { isCoreConnected, type PingInfo } from "../core/ipc";
+import type { NavConfig, NavItemDef } from "../core/navPrefs";
+import { useVault } from "../core/vault";
+import { openInExplorer, configExport, configImport } from "../core/api";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  listThemes,
+  findTheme,
+  swatchOf,
+  deleteCustomTheme,
+  resolveThemeId,
+  SYSTEM_THEME_ID,
+  type ThemeDef,
+} from "../themes/themes";
+import ThemeEditor from "./ThemeEditor.vue";
+import AISettings from "./AISettings.vue";
+import BackupSettings from "./BackupSettings.vue";
+import NavSettings from "./NavSettings.vue";
+import ThemeIoPanel from "./ThemeIoPanel.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
+import Icon from "./Icon.vue";
+import { APP_TAG } from "../core/version";
+import { onRowKeyDown } from "../core/keyboard";
+
+/**
+ * 设置页：工作区 / 主题（选择器 + 新建/删除/导出导入 + 编辑器）/
+ * 导航栏全配置（NavSettings）/ AI 提供商（AISettings）/ 备份（BackupSettings）/
+ * 关于与自动更新。
+ * 主题列表来自 themes.ts（内置 + 皮肤插件投影 + localStorage 自定义）。
+ */
+import { check as checkUpdate } from "@tauri-apps/plugin-updater";
+
+const props = defineProps<{
+  themeId: string;
+  onSetThemeId: (id: string) => void;
+  ping: PingInfo | null;
+  /** 归一化后的导航配置（分组/顺序/元数据） */
+  navConfig: NavConfig;
+  /** 全部导航项定义（静态 + 插件声明） */
+  defs: NavItemDef[];
+  /** 导航配置变更（保存用户编辑结果） */
+  onNavChange: (cfg: NavConfig) => void;
+}>();
+
+/** 前端 localStorage 配置段（键集合；导入/导出共用）。模块级常量：避免每次渲染重建 */
+const FRONTEND_KEYS = ["toolbox.theme", "toolbox.custom-themes", "toolbox.nav", "toolbox.layout"];
+
+const vault = useVault();
+const opening = ref(false);
+const editing = ref<ThemeDef | null>(null);
+const themeIo = ref(false);
+const confirmDelTheme = ref<ThemeDef | null>(null);
+/* 删除/新建自定义主题后强制重渲染（listThemes 读 localStorage） */
+const themeVersion = ref(0);
+/* 自动更新状态：idle 未检查 / checking 检查中 / latest 已最新 / installing 下载安装中 /
+   done 安装完成待重启 / error 失败 */
+const updateStatus = ref<"idle" | "checking" | "latest" | "installing" | "done" | "error">("idle");
+const updateVersion = ref("");
+const updateErr = ref("");
+/* 配置迁移：exporting/importing 进行中；msg 操作结果提示 */
+const configBusy = ref<"" | "exporting" | "importing">("");
+const configMsg = ref("");
+
+/* 配置导入后的延迟刷新定时器：组件卸载时清理（防止卸载后 reload） */
+let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+onBeforeUnmount(() => {
+  if (reloadTimer) clearTimeout(reloadTimer);
+});
+
+const collectFrontend = (): Record<string, string> => {
+  const o: Record<string, string> = {};
+  for (const k of FRONTEND_KEYS) {
+    const v = localStorage.getItem(k);
+    if (v !== null) o[k] = v;
+  }
+  return o;
+};
+
+async function onExportConfig(): Promise<void> {
+  try {
+    configBusy.value = "exporting";
+    const path = await save({
+      defaultPath: "toolbox-config.json",
+      filters: [{ name: "ToolBox 配置", extensions: ["json"] }],
+    });
+    if (typeof path !== "string") return; // 用户取消
+    await configExport(path, collectFrontend());
+    configMsg.value = "配置已导出（不含 API Key 与笔记数据）";
+  } catch (e) {
+    configMsg.value = `导出失败: ${String(e)}`;
+  } finally {
+    configBusy.value = "";
+  }
+}
+
+async function onImportConfig(): Promise<void> {
+  try {
+    configBusy.value = "importing";
+    const path = await open({
+      multiple: false,
+      filters: [{ name: "ToolBox 配置", extensions: ["json"] }],
+    });
+    if (typeof path !== "string") return; // 用户取消
+    const cfg = await configImport(path); // 宿主侧（插件状态/备份/AI）已写回
+    // 写回前端 localStorage 段
+    for (const [k, v] of Object.entries(cfg.frontend ?? {})) {
+      if (typeof v === "string" && v) localStorage.setItem(k, v);
+    }
+    configMsg.value = "配置已导入，正在刷新界面…";
+    // 主题/导航是初始 state，刷新后从 localStorage 重读；
+    // 插件启停也随插件 store 重新拉取生效
+    reloadTimer = setTimeout(() => window.location.reload(), 900);
+  } catch (e) {
+    configMsg.value = `导入失败: ${String(e)}`;
+  } finally {
+    configBusy.value = "";
+  }
+}
+
+async function onCheckUpdate(): Promise<void> {
+  try {
+    updateStatus.value = "checking";
+    const update = await checkUpdate();
+    if (!update) {
+      updateStatus.value = "latest";
+      return;
+    }
+    updateVersion.value = update.version;
+    updateStatus.value = "installing";
+    await update.downloadAndInstall();
+    updateStatus.value = "done";
+  } catch (e) {
+    updateStatus.value = "error";
+    updateErr.value = String(e);
+  }
+}
+
+const themes = computed(() => {
+  void themeVersion.value; // 删除/新建自定义主题后重算
+  return listThemes();
+});
+// 跟随系统时 findTheme 直接查不到——解析到当前系统 base 的实际主题
+// （ThemeEditor "基于当前主题新建" 的起点、描述文案等都用它）
+const current = computed(() => findTheme(resolveThemeId(props.themeId)));
+
+async function openFolder(): Promise<void> {
+  if (!vault.state.path) return;
+  opening.value = true;
+  try {
+    await openInExplorer(vault.state.path);
+  } catch (e) {
+    console.error("[settings] 打开工作区失败", e);
+  } finally {
+    opening.value = false;
+  }
+}
+
+const ok = computed(() => isCoreConnected(props.ping));
+
+function newTheme(): void {
+  const base = current.value?.base ?? "light";
+  editing.value = {
+    id: `custom-${Date.now().toString(36)}`,
+    name: "新主题",
+    base,
+    description: "自定义主题",
+    // 复制当前主题的令牌作起点（内置/自定义/插件主题均可）：
+    // 让"基于 XX 新建"真正以 XX 为底，而不是从默认色板白手起家
+    tokens: { ...current.value?.tokens },
+    custom: true,
+  };
+}
+
+function removeCustom(id: string): void {
+  deleteCustomTheme(id);
+  if (props.themeId === id) props.onSetThemeId("default-light");
+  editing.value = null;
+  confirmDelTheme.value = null;
+  themeVersion.value += 1;
+}
+</script>
+
+<template>
+  <div class="settings-view">
+    <header class="view-header">
+      <div>
+        <h1>设置</h1>
+        <p class="view-sub">工作区、主题与关于信息</p>
+      </div>
+    </header>
+
+    <div class="settings-sections">
+      <!-- ---- 工作区 ---- -->
+      <section class="settings-card">
+        <h2 class="settings-title">工作区</h2>
+        <template v-if="vault.state.path">
+          <div class="settings-row">
+            <span class="settings-label">当前工作区</span>
+            <code class="settings-path" :title="vault.state.path">{{ vault.state.path }}</code>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">操作</span>
+            <div class="settings-actions">
+              <button class="btn" @click="vault.pickVault">更换工作区</button>
+              <button class="btn" @click="openFolder" :disabled="opening">
+                <Icon name="folder" :size="13" />
+                {{ opening ? "打开中…" : "在资源管理器中打开" }}
+              </button>
+            </div>
+          </div>
+        </template>
+        <div v-else class="settings-row">
+          <span class="settings-label">工作区</span>
+          <div class="settings-actions">
+            <button class="btn" @click="vault.pickVault">选择工作区文件夹</button>
+            <span class="settings-hint">笔记、插件与数据都围绕一个普通文件夹展开</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---- 外观 / 主题 ---- -->
+      <section class="settings-card">
+        <h2 class="settings-title">主题</h2>
+        <template v-if="!editing">
+          <div class="theme-grid">
+            <!-- 跟随系统：伪主题卡片（不在 listThemes 里，单独渲染） -->
+            <div
+              class="theme-card"
+              :class="{ active: themeId === SYSTEM_THEME_ID }"
+              role="button"
+              tabindex="0"
+              :aria-current="themeId === SYSTEM_THEME_ID ? 'true' : undefined"
+              @click="onSetThemeId(SYSTEM_THEME_ID)"
+              @keydown="onRowKeyDown($event, () => onSetThemeId(SYSTEM_THEME_ID))"
+              title="跟随系统亮/暗模式自动切换"
+            >
+              <div class="theme-swatches">
+                <!-- 亮/暗/自动三个色块示意（不依赖 swatchOf——system 不是真实主题） -->
+                <span class="theme-swatch" style="background: #f6f5f2" />
+                <span class="theme-swatch" style="background: #1b1a17" />
+                <span
+                  class="theme-swatch"
+                  style="background: linear-gradient(90deg, #f6f5f2 50%, #1b1a17 50%)"
+                />
+              </div>
+              <div class="theme-card-name">跟随系统</div>
+              <div class="theme-card-desc">随系统亮/暗模式自动切换</div>
+            </div>
+            <div
+              v-for="t in themes"
+              :key="t.id"
+              class="theme-card"
+              :class="{ active: themeId === t.id }"
+              role="button"
+              tabindex="0"
+              :aria-current="themeId === t.id ? 'true' : undefined"
+              @click="onSetThemeId(t.id)"
+              @keydown="onRowKeyDown($event, () => onSetThemeId(t.id))"
+              :title="t.description"
+            >
+              <div class="theme-swatches">
+                <span
+                  v-for="(c, i) in swatchOf(t)"
+                  :key="i"
+                  class="theme-swatch"
+                  :style="{ background: c }"
+                />
+              </div>
+              <div class="theme-card-name">
+                {{ t.name }}
+                <span
+                  v-if="t.source === 'plugin'"
+                  class="theme-card-badge"
+                  title="来自插件（皮肤插件，在插件页管理）"
+                >
+                  插件
+                </span>
+              </div>
+              <div class="theme-card-desc">{{ t.description }}</div>
+              <button
+                v-if="t.custom"
+                class="theme-delete"
+                title="删除主题"
+                :aria-label="`删除主题 ${t.name}`"
+                @click.stop="confirmDelTheme = t"
+              >
+                <Icon name="trash" :size="12" />
+              </button>
+            </div>
+          </div>
+          <div class="theme-actions">
+            <button class="btn btn-sm" @click="newTheme">
+              <Icon name="plus" :size="12" />
+              基于当前主题新建
+            </button>
+            <button class="btn btn-sm" @click="themeIo = !themeIo">
+              {{ themeIo ? "收起导出/导入" : "导出 / 导入主题" }}
+            </button>
+            <span class="settings-hint">自定义主题保存在本机，可随时调整或删除</span>
+          </div>
+          <ThemeIoPanel
+            v-if="themeIo"
+            :on-done="() => {
+              themeIo = false;
+              themeVersion += 1;
+            }"
+          />
+        </template>
+        <ThemeEditor
+          v-else
+          :initial="editing"
+          :on-cancel="() => {
+            editing = null;
+            onSetThemeId(themeId); // 恢复原主题
+          }"
+          :on-saved="(id: string) => {
+            editing = null;
+            onSetThemeId(id);
+          }"
+        />
+      </section>
+
+      <!-- ---- AI 提供商 ---- -->
+      <AISettings />
+
+      <!-- ---- 备份 ---- -->
+      <BackupSettings />
+
+      <!-- ---- 导航栏 ---- -->
+      <NavSettings :config="navConfig" :defs="defs" :on-change="onNavChange" />
+
+      <!-- ---- 配置迁移 ---- -->
+      <section class="settings-card">
+        <h2 class="settings-title">配置迁移</h2>
+        <div class="settings-row">
+          <span class="settings-label">导入 / 导出</span>
+          <div class="settings-actions">
+            <button class="btn" @click="onExportConfig" :disabled="configBusy !== ''">
+              {{ configBusy === "exporting" ? "导出中…" : "导出配置" }}
+            </button>
+            <button class="btn" @click="onImportConfig" :disabled="configBusy !== ''">
+              {{ configBusy === "importing" ? "导入中…" : "导入配置" }}
+            </button>
+            <span class="settings-hint">
+              主题、导航、AI 设置与插件启停状态（不含笔记数据与 API Key）
+            </span>
+          </div>
+        </div>
+        <div v-if="configMsg" class="settings-value">{{ configMsg }}</div>
+      </section>
+
+      <!-- ---- 关于 ---- -->
+      <section class="settings-card">
+        <h2 class="settings-title">关于</h2>
+        <div class="settings-row">
+          <span class="settings-label">ToolBox</span>
+          <span class="settings-value">{{ APP_TAG }}</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">核心版本</span>
+          <span class="settings-value">{{ ping ? `v${ping.coreVersion}` : "—" }}</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">平台</span>
+          <span class="settings-value">{{ ping?.os ?? "—" }}</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">IPC 链路</span>
+          <span class="settings-value" :class="ok ? 'ok' : 'warn'">
+            {{ ping ? ping.message : "连接中…" }}
+          </span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">自动更新</span>
+          <span class="settings-value">
+            {{ updateStatus === "idle" && "从 GitHub Releases 检测新版本" }}
+            {{ updateStatus === "checking" && "正在检查…" }}
+            {{ updateStatus === "latest" && "已是最新版本" }}
+            {{ updateStatus === "installing" && `发现 v${updateVersion}，正在下载安装…` }}
+            {{ updateStatus === "done" && `v${updateVersion} 已安装，请重启应用生效` }}
+            {{ updateStatus === "error" && "检查失败（未配置发布源或网络异常）" }}
+          </span>
+          <button
+            class="btn-ghost sm"
+            @click="onCheckUpdate"
+            :disabled="updateStatus === 'checking' || updateStatus === 'installing'"
+            title="检查 GitHub Releases 是否有新版本"
+          >
+            {{
+              updateStatus === "checking"
+                ? "检查中…"
+                : updateStatus === "installing"
+                  ? "安装中…"
+                  : "检查更新"
+            }}
+          </button>
+        </div>
+        <div v-if="updateStatus === 'error' && updateErr" class="settings-value warn" style="font-size: 11px; margin-top: 4px">
+          {{ updateErr.slice(0, 120) }}
+        </div>
+      </section>
+    </div>
+
+    <ConfirmDialog
+      :open="confirmDelTheme !== null"
+      title="删除主题"
+      :message="confirmDelTheme ? `确定删除自定义主题「${confirmDelTheme.name}」？` : ''"
+      confirm-text="删除"
+      danger
+      :on-cancel="() => (confirmDelTheme = null)"
+      :on-confirm="() => {
+        if (confirmDelTheme) removeCustom(confirmDelTheme.id);
+      }"
+    />
+  </div>
+</template>

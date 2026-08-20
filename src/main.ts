@@ -1,6 +1,6 @@
-import ReactDOM from "react-dom/client";
+import { createApp } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import App from "./App";
+import App from "./App.vue";
 import { applyTheme, getInitialTheme } from "./themes/themes";
 
 // 渲染前应用初始主题（含原生标题栏同步），避免首帧闪烁
@@ -130,6 +130,4 @@ if (import.meta.env.DEV) {
   }, 3000);
 }
 
-// 注意：不使用 StrictMode——Vditor 初始化是异步的，
-// StrictMode 的开发期双挂载会导致两个实例在同一容器上竞争（白屏）。
-ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
+createApp(App).mount("#app");
