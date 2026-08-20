@@ -267,9 +267,9 @@ React 版完整快照保存在本地 **`react` 分支**（冻结只读，不再�
   独立 chunk，主包 gzip 46.3kB）。
 - **框架无关部分 100% 复用**：`api.ts` / `ipc.ts` / `pluginRuntime.ts` / `navPrefs.ts` /
   `themes/` / 全部 CSS / 全部测试，零改动。
-- **插件 UI 契约不变**：`__TB_PLUGIN_UI__[id].mount(el, api)` + api 桥原样；6 个核心
-  插件 UI 仍是 React 自包含 IIFE（React 依赖降级为 **devDependencies**，仅插件 UI
-  构建使用），在 Vue 宿主中原样工作。
+- **插件 UI 契约不变**：`__TB_PLUGIN_UI__[id].mount(el, api)` + api 桥原样；
+  迁移期间 6 个核心插件 UI 先保持 React 自包含 IIFE 在 Vue 宿主中原样工作
+  （过渡态），**二期已全部 Vue 化**（见下方"二期"）。
 
 **验证基线**：`pnpm typecheck` / `lint`（0 警告）/ `test`（33）/ `build` /
 `build:core`（6 插件 UI + DLL 自检通过）；cargo 侧零改动。
