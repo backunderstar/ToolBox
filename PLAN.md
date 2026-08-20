@@ -53,7 +53,7 @@
 
 - WebView2：Win10 较老版本需单独装运行时；办公内网机器需提前确认。
 - Python 插件依赖机器有 Python；后期可用 `uv` 管理的嵌入式 Python 打包进去。
-- JS 插件沙箱是最难的部分：v1 采用"信任自己写的插件"模型，后期再上 Deno 沙箱。
+- 插件沙箱（重点：webview 插件命令面全开 + CSP 侧信道、native 插件 FFI 崩溃拖垮宿主）：v1 采用"信任自己写的插件"模型；长期方案见 §5.2 插件沙箱（ShadowRealm / iframe sandbox / WASM 三路并行；嵌入式 JS 运行时方案已排除——成本高且与 ShadowRealm 收益重叠）。
 
 ---
 
@@ -220,6 +220,29 @@ Vault（用户自选的工作区目录，纯数据）
 | ✅ 已完成 | **整改批次 2（数据安全）** | 备份快照原子提交（先复制到隐藏 `.backup-*.tmp` 再 rename，崩溃只留被忽略的残留，杜绝"半截备份被恢复覆盖线上数据"）；恢复两阶段（先复制到暂存目录校验源完整再覆盖，失败可手工补救）；`backup_config_set` 范围钳制 + 后台线程 clamp/saturating_sub 防整数溢出 panic（debug）；prune 改按时间戳排序（修复跨位数边界删错备份）。验证：cargo 54 测试（新增 3 个边界测试） |
 | ✅ 已完成 | **整改批次 0（轻量安全）** | S1a `plugins_read_file` id 白名单 + root 规范化复核（堵 `../` 穿越任意文件读取）；S1b native 运行时强制 `_core` 目录（第三方插件声明 native 直接拒绝，堵任意 DLL 加载进宿主进程）；S1c vault 参数服务端校验（所有带 vault 命令绑定已配置工作区，防作用域指向任意目录）；S3 清单 get/save/delete 统一 id 校验（堵 `../` 越出清单目录读写）；S4 插件卸载崩溃（ai runtime 从 static 移入实例 drop 时 shutdown、blog 预览线程可停止 + 实例 Drop 时 join，FreeLibrary 后无残留线程执行已卸载代码）。验证：cargo 58 测试、E2E 4/4（notes/checklists/ai/blog） |
 | ✅ 已完成 | **死代码清理（用户决策）** | 6 个核心插件全部自带前端后，宿主回退视图成为死代码：删除 NotesView/ChecklistView/ProjectsView/AIChatView/BlogView + Editor/FileTree/Backlinks + 宿主数据层 checklists.tsx/projects.tsx（App 路由简化为"插件启用→PluginUiView / 禁用→占位"，未知视图不再静默落笔记视图）；删除 api.ts 28 个死封装（博客/项目/待办/对话/openUrl）与 nav 声明失效 view 字段；删除 public 调试页、core-records 构建残留、notes.listDir 死命令、BlogGenerateResult.indexUrl 幽灵字段。全程净删 3196 行。验证：cargo 58 测试、pnpm build、E2E 8/8 全过 |
+
+### 5.2 长期规划（未排期，架构演进候选）
+
+#### 插件沙箱（整体优先级 P1，未排期）
+
+**背景/威胁面**（2026 全代码审查确认）：
+- `native`（cdylib FFI，进程内）：插件崩溃（panic/段错误）即宿主崩溃；DLL 内可做任何事
+- `webview`（JS 全权）：`api.call` 命令面全开（可调 notes.write/delete 等任意宿主命令，Rust 侧只校验 vault 匹配）；CSP `img-src` 放开 `http: https:` → 存在把 vault 内容编码进图片 URL 侧信道外传的风险
+- `process`（Python 子进程）：OS 进程隔离 + `permissions` 门控，基础最好，缺网络/文件白名单细化
+
+**路线（按性价比排序）**：
+
+| 阶段 | 内容 | 说明 |
+|---|---|---|
+| P0 | CSP 收紧 | `img-src` 移除 `http:/https:`（Vditor 粘贴图片是 `data:` URI 不受影响；外链图按需加白名单）——堵侧信道 |
+| P0 | webview 插件命令面最小化 | `buildBridgeApi` 按 manifest 权限只注入白名单命令（替代当前命令面全开） |
+| P0 | 无 UI 插件迁 ShadowRealm | TC39 stage 3，Chromium 121+ 支持（WebView2 跟随更新）；干净 JS 全局（无 DOM/IO），宿主注入白名单 api 桥；text-stats 等作示范 |
+| P1 | UI 型 webview 插件迁 iframe sandbox | `sandbox="allow-scripts"` + postMessage 桥，天然无同源能力 |
+| P1 | 新增 `runtime: "wasm"` | tb-sdk 定义 wit 接口（WASI 0.2 / Component Model 已事实标准）+ 宿主 wasmtime 加载器；**第三方 native 插件**从"FFI 全权"改"WASM 能力受限"（内存安全 + capability 授权，宿主内嵌接近 FFI 延迟）；现有 6 个核心插件是自己写的（信任），可保持 native 不动 |
+| P2 | process 插件权限细化 | 复用 manifest `permissions` 字段，加网络/文件白名单 |
+| P2 | 宿主进程 AppContainer 降权 | Windows AppContainer / Job Object / 受限 token，纵深防御 |
+
+**选型结论**：WASM 是 **native 插件**沙箱化的正确工具（内存安全 + 宿主内嵌 + capability 模型），但不是整个插件系统的通用沙箱——JS 插件用 ShadowRealm/iframe，Python 插件保持子进程。WASI 0.3 concurrency 落地前，SSE 流式 / AI 长阻塞类插件不宜迁 WASM（无线程/异步系统访问）。
 
 ---
 
