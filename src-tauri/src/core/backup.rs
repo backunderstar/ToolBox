@@ -172,9 +172,10 @@ fn copy_dir_all_depth(
     std::fs::create_dir_all(dst).map_err(|e| format!("创建备份目录失败 {dst:?}: {e}"))?;
     let mut total = 0u64;
     let mut count = 0usize;
-    let Ok(read) = std::fs::read_dir(src) else {
-        return Ok((total, count));
-    };
+    // read_dir 失败必须中止并报错：静默返回会把"备份不完整"当成功，
+    // 用户无感知地丢失备份内容
+    let read = std::fs::read_dir(src)
+        .map_err(|e| format!("读取备份源目录失败 {}: {e}", src.display()))?;
     for entry in read.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         if is_skipped(src, &name, at_root) {

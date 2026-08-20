@@ -1,5 +1,5 @@
 import { useReducer, useState } from "react";
-import type { PingInfo } from "../core/ipc";
+import { isCoreConnected, type PingInfo } from "../core/ipc";
 import type { NavConfig, NavItemDef } from "../core/navPrefs";
 import { useVault } from "../core/vault";
 import { openInExplorer, configExport, configImport } from "../core/api";
@@ -158,7 +158,7 @@ export function SettingsView({
     }
   };
 
-  const ok = ping?.message === "pong";
+  const ok = isCoreConnected(ping);
 
   const newTheme = () => {
     const base = current?.base ?? "light";

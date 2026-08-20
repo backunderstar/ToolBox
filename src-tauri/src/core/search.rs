@@ -445,29 +445,10 @@ fn make_snippet(content: &str, q: &str) -> String {
         .to_string()
 }
 
-/// 全文搜索入口（带自愈）：索引损坏时删库重建一次。
+/// 全文搜索入口（带自愈）：**仅当索引文件打不开/初始化失败**（= 索引损坏）
+/// 时删库重建一次；同步/查询阶段的 IO 错误直接返回——删库会丢弃增量索引
+/// 且触发全量重索引（重 IO），对瞬时 IO 问题无益，不应作为通用兜底。
 pub fn search(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
-    match search_once(vault, query) {
-        Ok(hits) => Ok(hits),
-        Err(first) => {
-            reset_index(&PathBuf::from(vault));
-            match search_once(vault, query) {
-                Ok(hits) => Ok(hits),
-                Err(_) => Err(format!("搜索索引异常，已尝试重建仍失败: {first}")),
-            }
-        }
-    }
-}
-
-/// 删除索引库及其 WAL/SHM 派生文件。
-fn reset_index(root: &Path) {
-    for name in ["search-fts.sqlite", "search-fts.sqlite-wal", "search-fts.sqlite-shm"] {
-        let _ = std::fs::remove_file(root.join(".toolbox").join(name));
-    }
-}
-
-/// 单次搜索：同步索引（带缓存）→ 收集命中（文件名/拼音/内容，阶段内按 mtime 排序）。
-fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     let root = PathBuf::from(vault);
     // 全局搜索：只要工作区存在即可（不一定有 notes/ 目录）
     if !root.is_dir() {
@@ -477,16 +458,39 @@ fn search_once(vault: &str, query: &str) -> Result<Vec<SearchHit>, String> {
     if q.is_empty() {
         return Ok(Vec::new());
     }
+    let mut conn = match open_index(&root) {
+        Ok(c) => c,
+        Err(_) => {
+            // 打开失败（库损坏/格式不兼容）：删库重建一次
+            reset_index(&root);
+            open_index(&root)
+                .map_err(|e| format!("搜索索引异常，已尝试重建仍失败: {e}"))?
+        }
+    };
+    search_with_conn(&mut conn, &root, q)
+}
 
-    let mut conn = open_index(&root)?;
-    let skipped = maybe_sync_index(&mut conn, &root)?;
-    let mut hits = collect_hits(&conn, &root, q)?;
+/// 删除索引库及其 WAL/SHM 派生文件（仅索引损坏自愈时调用）。
+fn reset_index(root: &Path) {
+    for name in ["search-fts.sqlite", "search-fts.sqlite-wal", "search-fts.sqlite-shm"] {
+        let _ = std::fs::remove_file(root.join(".toolbox").join(name));
+    }
+}
+
+/// 用已打开的连接执行搜索（与 open_index 分离：让 search 只在打开阶段自愈）。
+fn search_with_conn(
+    conn: &mut Connection,
+    root: &Path,
+    q: &str,
+) -> Result<Vec<SearchHit>, String> {
+    let skipped = maybe_sync_index(conn, root)?;
+    let mut hits = collect_hits(conn, root, q)?;
     // D1 兜底：窗口内跳过同步且结果为空 → 强制重同步再查一次。
     // 新增/修改文件后立即搜索时索引可能陈旧，空结果可能是漏报（
     // "搜不到刚建的文件"正是历史缺陷，不能因缓存回归）。
     if skipped && hits.is_empty() {
-        sync_index(&mut conn, &root)?;
-        hits = collect_hits(&conn, &root, q)?;
+        sync_index(conn, root)?;
+        hits = collect_hits(conn, root, q)?;
     }
     Ok(hits)
 }

@@ -11,8 +11,9 @@ crate-type = ["cdylib"]
 tb-sdk = { path = "../../tb-sdk" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# 网络（blocking 对话 + async 流式 SSE）
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "stream"] }
+# 网络（blocking 对话 + async 流式 SSE）：0.13 起 rustls-tls 拆分为
+# rustls + webpki-roots（内置证书包，对应 0.12 的 rustls-tls 语义）
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls", "webpki-roots", "stream"] }
 futures-util = "0.3"
 bytes = "1"
 # API Key 安全存储：Windows 凭据管理器等

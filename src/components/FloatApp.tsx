@@ -60,7 +60,10 @@ export function FloatApp() {
     let cancelled = false;
     (async () => {
       try {
-        un = await listen("vault-changed", () => {
+        // 竞态防护（与 vault.tsx 同型）：listen 是异步 promise，若组件在 resolve
+        // 前卸载，直接赋值会留下永久监听器（cleanup 已跑过 un?.() 是 no-op）。
+        // resolve 后检测 cancelled：已卸载则立即注销，未卸载才登记给 cleanup。
+        const fn = await listen("vault-changed", () => {
           vaultGet()
             .then((s) => {
               if (!cancelled) setVaultPath(s.path);
@@ -69,6 +72,8 @@ export function FloatApp() {
               if (!cancelled) setVaultPath(null);
             });
         });
+        if (cancelled) fn();
+        else un = fn;
       } catch {
         /* 非 Tauri 环境（浏览器 mock）无事件总线，忽略 */
       }

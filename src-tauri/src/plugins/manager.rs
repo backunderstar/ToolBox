@@ -316,7 +316,10 @@ fn save_state(app: &tauri::AppHandle, enabled: &HashSet<String>, disabled: &Hash
     arr.sort();
     let mut dis: Vec<String> = disabled.iter().cloned().collect();
     dis.sort();
-    let mut map = serde_json::Map::new();
+    // 必须基于现有 map 增量更新，不能重新构造全新 map：plugins.json 还承载
+    // 其他键（plugins_dir 自定义插件目录 / removed_core 已卸载核心插件标记），
+    // 整体覆盖写回会把这些键抹掉 → 自定义目录静默回退默认、已卸载核心插件复活。
+    let mut map = load_state_map(app);
     map.insert(
         "enabled".to_string(),
         Value::Array(arr.into_iter().map(Value::String).collect()),

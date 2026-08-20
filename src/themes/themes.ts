@@ -78,9 +78,15 @@ export function isSystemTheme(id: string): boolean {
   return id === SYSTEM_THEME_ID;
 }
 
-/** 读取持久化主题 id（空串 = 未存储；ThemeEditor 恢复进入前主题用，含 system） */
+/** 读取持久化主题 id（空串 = 未存储；ThemeEditor 恢复进入前主题用，含 system）。
+ *  localStorage 访问加防护：受限存储环境（WebView 禁用存储/隐私模式）会抛
+ *  SecurityError，主题模块不应因存储问题崩溃（与 layout/navPrefs 同款兜底）。 */
 export function getStoredThemeId(): string {
-  return localStorage.getItem(STORAGE_KEY) ?? "";
+  try {
+    return localStorage.getItem(STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /* ---------------- 插件主题注册表（皮肤插件） ---------------- */
@@ -292,8 +298,12 @@ export async function applyTheme(id: string): Promise<void> {
   // 恢复执行会把 localStorage 又写回旧主题 id（界面已切换，值却倒退）。
   if (document.documentElement.dataset.themeId !== resolved) return;
   // 持久化**原始** id：system 保留 "system"（跟随系统状态），不落 resolved 值，
-  // 否则重启后丢失"跟随系统"模式
-  localStorage.setItem(STORAGE_KEY, id);
+  // 否则重启后丢失"跟随系统"模式。存储失败（受限环境）不阻断主题应用
+  try {
+    localStorage.setItem(STORAGE_KEY, id);
+  } catch {
+    /* 存储不可用：主题本会话内生效，重启后回落默认 */
+  }
   void syncWindowTheme(theme.base);
   // 标题栏近似色跟随主题画布背景（Windows 11 原生标题栏；失败静默）
   syncCaptionColor();
@@ -315,7 +325,12 @@ export function applyThemeStyle(base: ThemeMode, id: string, tokens: Record<stri
 /** 初始主题：读持久化值（含 system），兼容旧版 "light"/"dark"；
  *  无存储时默认**跟随系统**（随系统亮暗实时切换，比一次性选亮/暗更合理）。 */
 export function getInitialTheme(): string {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    saved = null; // 受限存储环境：按无存储处理，默认跟随系统
+  }
   if (saved === "light" || saved === "dark") {
     // 旧值迁移
     return saved === "light" ? "default-light" : "default-dark";

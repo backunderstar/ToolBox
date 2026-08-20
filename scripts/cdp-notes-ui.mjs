@@ -1,7 +1,11 @@
 // cdp-notes-ui.mjs — core-notes 插件自带前端 E2E：挂载/文件树/打开笔记(Vditor)/自动保存/新建/搜索
 import { findMainPage, connect, sleep, helpers } from "./cdp-lib.mjs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 const PORT = process.argv[2] ?? "9226";
-const VAULT = "D:\\WORKSPACE\\ToolBox\\src-tauri\\target\\e2e-vault";
+// 仓库根由脚本位置推导（不硬编码绝对路径，换目录/换机器可移植）
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const VAULT = path.join(ROOT, "src-tauri", "target", "e2e-vault");
 const page = await findMainPage(PORT);
 if (!page) {
   console.error("no main page");

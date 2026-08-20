@@ -32,6 +32,10 @@ interface TopBarProps {
   focusSignal?: number;
 }
 
+/** 搜索结果下拉最多渲染条数：全文搜索可轻易上百条，全量渲染 DOM 开销大。
+ *  截断超出部分并在下拉底部提示（键盘导航边界按可见条数计算，与渲染一致）。 */
+const MAX_RESULTS = 50;
+
 /** 相对时间：mtime（UNIX 毫秒）→ "刚刚 / x 分钟前 / x 小时前 / x 天前"。
  *  搜索结果按最近修改排序（D2），展示相对时间让排序依据可见。 */
 function formatRelTime(mtime?: number): string {
@@ -124,7 +128,9 @@ export function TopBar({
             if (e.key === "ArrowDown") {
               e.preventDefault();
               setActiveIdx((i) =>
-                results && results.length ? Math.min(i + 1, results.length - 1) : -1,
+                results && results.length
+                  ? Math.min(i + 1, Math.min(results.length, MAX_RESULTS) - 1)
+                  : -1,
               );
             } else if (e.key === "ArrowUp") {
               e.preventDefault();
@@ -151,7 +157,9 @@ export function TopBar({
               <div className="search-hint">无结果</div>
             ) : (
               <>
-                {results.map((r, i) => (
+                {/* 结果截断：全文搜索可轻易上百条，全量渲染会让下拉 DOM 爆炸；
+                    截断后保留提示，引导继续输入缩小范围 */}
+                {results.slice(0, MAX_RESULTS).map((r, i) => (
                   <button
                     // 同一路径可能多来源（全文命中 + 搜索提供者），key 需含 source 去重
                     key={`${r.source ?? "file"}:${r.path}`}
@@ -168,7 +176,11 @@ export function TopBar({
                     {r.source && <span className="badge badge-provider">{r.source}</span>}
                   </button>
                 ))}
-                <div className="search-meta">共 {results.length} 条结果</div>
+                <div className="search-meta">
+                  {results.length > MAX_RESULTS
+                    ? `共 ${results.length} 条，仅显示前 ${MAX_RESULTS} 条（继续输入以缩小范围）`
+                    : `共 ${results.length} 条结果`}
+                </div>
               </>
             )}
           </div>

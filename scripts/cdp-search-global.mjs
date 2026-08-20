@@ -24,7 +24,10 @@ const NAME = `e2e-gsearch-${Date.now()}.md`;
 import { globSync } from "node:fs";
 import { rmSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
-const VAULT = "D:\\WORKSPACE\\ToolBox\\src-tauri\\target\\e2e-vault";
+import { fileURLToPath } from "node:url";
+// 仓库根由脚本位置推导（不硬编码绝对路径，换目录/换机器可移植）
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const VAULT = path.join(ROOT, "src-tauri", "target", "e2e-vault");
 for (const f of globSync(`${VAULT}/projects/e2e-gsearch-*.md`)) rmSync(f, { force: true });
 for (const f of globSync(`${VAULT}/projects/e2e-项目计划-*.md`)) rmSync(f, { force: true });
 for (const f of globSync(`${VAULT}/data/checklists/e2e-clist-*.json`)) rmSync(f, { force: true });

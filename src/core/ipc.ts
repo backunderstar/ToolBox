@@ -11,3 +11,9 @@ export interface PingInfo {
 export function ping(): Promise<PingInfo> {
   return invoke<PingInfo>("ping");
 }
+
+/** 核心是否已连接（ping 返回 "pong"）：StatusBar/WelcomeView/SettingsView 共用，
+ *  避免各处重复判定（浏览器预览环境 ping 失败时由 App 层注入 "preview" 假数据）。 */
+export function isCoreConnected(p: PingInfo | null): boolean {
+  return p?.message === "pong";
+}

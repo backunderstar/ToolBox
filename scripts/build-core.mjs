@@ -118,8 +118,10 @@ const profile = isRelease ? "release" : "debug";
 // 打包资源目录始终存在（tauri build.rs 检查 resources/_core；release 填充 DLL）
 mkdirSync(path.join(root, "src-tauri", "resources", "_core"), { recursive: true });
 console.log(`[build-core] 构建核心插件（${profile}）...`);
+// 只编 6 个插件 cdylib（-p 限定）：宿主 app / tb-sdk 是它们的依赖会被自动带上，
+// 但不构建宿主二进制——避免 beforeBuildCommand 阶段白编译整个宿主应用
 execSync(
-  `cargo build --manifest-path "${path.join(root, "Cargo.toml")}"${isRelease ? " --release" : ""}`,
+  `cargo build --manifest-path "${path.join(root, "Cargo.toml")}" -p tb-notes -p tb-todos -p tb-checklists -p tb-projects -p tb-blog -p tb-ai${isRelease ? " --release" : ""}`,
   { stdio: "inherit" },
 );
 
@@ -158,42 +160,45 @@ mkdirSync(coreRoot, { recursive: true });
   }
 }
 
-for (const p of PLUGINS) {
-  const target = path.join(coreRoot, p.id);
-  mkdirSync(target, { recursive: true });
-  cpSync(path.join(root, "target", profile, p.dll), path.join(target, p.dll));
+// UI 构建互相独立（各自 viteBuild 到 target/plugin-ui/<id>）：并行跑，省总时长
+await Promise.all(
+  PLUGINS.map(async (p) => {
+    const target = path.join(coreRoot, p.id);
+    mkdirSync(target, { recursive: true });
+    cpSync(path.join(root, "target", profile, p.dll), path.join(target, p.dll));
 
-  // 自带前端：构建产物复制到插件目录 ui/
-  if (p.ui) {
-    const built = await buildPluginUi(p);
-    if (built) {
-      const uiTarget = path.join(target, "ui");
-      mkdirSync(uiTarget, { recursive: true });
-      for (const f of ["index.js", "style.css"]) {
-        const s = path.join(built, f);
-        if (await exists(s)) cpSync(s, path.join(uiTarget, f));
+    // 自带前端：构建产物复制到插件目录 ui/
+    if (p.ui) {
+      const built = await buildPluginUi(p);
+      if (built) {
+        const uiTarget = path.join(target, "ui");
+        mkdirSync(uiTarget, { recursive: true });
+        for (const f of ["index.js", "style.css"]) {
+          const s = path.join(built, f);
+          if (await exists(s)) cpSync(s, path.join(uiTarget, f));
+        }
       }
     }
-  }
 
-  const manifest = {
-    id: p.id,
-    name: p.name,
-    version: VERSION,
-    runtime: "native",
-    command: [p.dll],
-    description: p.description,
-    searchProvider: p.searchProvider ?? false,
-    system: p.system ?? false,
-    ui: p.ui ?? null,
-    nav: p.nav ?? [],
-    // 随包插件标记：dev 构建清理时据此识别"可清理的旧随包插件"，
-    // 不误删用户手动安装的插件目录（宿主解析清单时忽略未知字段）
-    bundled: true,
-  };
-  writeFileSync(path.join(target, "plugin.json"), JSON.stringify(manifest, null, 2), "utf8");
-  console.log(`[build-core] 已部署: ${p.id} → ${target}`);
-}
+    const manifest = {
+      id: p.id,
+      name: p.name,
+      version: VERSION,
+      runtime: "native",
+      command: [p.dll],
+      description: p.description,
+      searchProvider: p.searchProvider ?? false,
+      system: p.system ?? false,
+      ui: p.ui ?? null,
+      nav: p.nav ?? [],
+      // 随包插件标记：dev 构建清理时据此识别"可清理的旧随包插件"，
+      // 不误删用户手动安装的插件目录（宿主解析清单时忽略未知字段）
+      bundled: true,
+    };
+    writeFileSync(path.join(target, "plugin.json"), JSON.stringify(manifest, null, 2), "utf8");
+    console.log(`[build-core] 已部署: ${p.id} → ${target}`);
+  }),
+);
 
 // 部署后自检：每个插件目录必须有 plugin.json 与 DLL（漏部署/坏清单应在构建期暴露，
 // 而不是等到安装包跑起来才发现"核心插件缺失"）。

@@ -32,9 +32,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # Cargo workspace 在仓库根（Cargo.lock 在根、target 在 ./target），
+      # 用默认缓存布局（"." -> "target"），显式 workspaces 指向 src-tauri 会 miss
       - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
 
       - run: pnpm install --frozen-lockfile
 
@@ -47,8 +47,8 @@ jobs:
       - name: Frontend unit tests (vitest)
         run: pnpm test
 
-      - name: Clippy (workspace, warnings denied)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy (workspace, warnings denied, deps excluded)
+        run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
 
       - name: Rust tests (workspace)
         run: cargo test --workspace

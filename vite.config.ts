@@ -24,21 +24,12 @@ export default defineConfig({
     },
   },
   build: {
-    rollupOptions: {
-      output: {
-        // 分包：vditor（体积大、更新频率低）与 react 单独成 chunk，
-        // 与应用代码分离，便于缓存与并行加载。
-        // 注意：rolldown（Vite 8 默认打包器）只接受函数形式的 manualChunks，
-        // 不接受 rollup 的 { 包名: ["模块id"] } 对象形式
-        manualChunks(id) {
-          const m = id.replace(/\\/g, "/").match(/node_modules\/(@[^/]+\/[^/]+|[^/]+)/);
-          const pkg = m?.[1] ?? "";
-          if (pkg === "vditor") return "vditor";
-          if (pkg === "react" || pkg === "react-dom" || pkg === "scheduler") return "react";
-          return undefined;
-        },
-      },
-    },
+    // 目标：WebView2 固定基于 Chromium 120+，可按现代浏览器语法输出更小的包
+    // （无需兼容旧浏览器，避免 Vite 默认的保守转译）。
+    // 不做 manualChunks 分包：旧规则因 pnpm 的 node_modules/.pnpm/ 路径结构
+    // 从未匹配成功（死代码），且 Tauri 桌面应用整包更新、无 HTTP 缓存场景，
+    // JS 分包没有收益（首屏 parse 本地 250KB 级 bundle 开销可忽略）。
+    target: "chrome120",
   },
   lint: {
     // vp lint / vp check 的 lint 范围：排除产物与 Rust 侧

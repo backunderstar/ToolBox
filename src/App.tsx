@@ -47,8 +47,10 @@ const PluginsView = lazy(() =>
 
 /** 宿主固定路由的视图 id（ViewId 联合）。外部插件声明同名 nav id 会与内置路由
  *  冲突（侧边栏显示被覆盖，点击仍走内置分支，显示与跳转不一致）——渲染前过滤。
- *  核心插件的同名声明（notes/checklist/…）是合法的，负责提供侧边栏标签/图标/分组。 */
-const RESERVED_VIEW_IDS = new Set<ViewId>([
+ *  核心插件的同名声明（notes/checklist/…）是合法的，负责提供侧边栏标签/图标/分组。
+ *  用 Set<string>（而非 Set<ViewId>）：检查对象是任意插件声明的 nav id，语义即
+ *  "保留 id 集合"，无需类型转换。 */
+const RESERVED_VIEW_IDS = new Set<string>([
   "overview",
   "notes",
   "plugins",
@@ -111,7 +113,7 @@ function AppInner() {
       { id: "settings", label: "设置", icon: "gear", groupId: "system", fixed: true },
       ...pluginCtx.navItems
         // 过滤与宿主固定路由冲突的外部插件 nav 声明（核心插件的同名声明合法）
-        .filter((n) => !RESERVED_VIEW_IDS.has(n.id as ViewId) || n.pluginId.startsWith("core-"))
+        .filter((n) => !RESERVED_VIEW_IDS.has(n.id) || n.pluginId.startsWith("core-"))
         .map((n) => ({
           id: n.id,
           label: n.label,

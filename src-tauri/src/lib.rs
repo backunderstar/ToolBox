@@ -213,18 +213,22 @@ fn config_import(app: tauri::AppHandle, path: String) -> Result<serde_json::Valu
 /// M1 已注册：`ping` + vault 工作区 + 笔记文件操作 + 文件夹选择对话框。
 /// 后续里程碑把 `plugins`（插件管理器）、`rpc`（协议类型）接进来。
 pub fn run() {
-    // 浮窗全局快捷键（任何窗口下 Alt+Q 显示/隐藏浮窗，与托盘菜单同一入口 float_toggle）
+    // 浮窗全局快捷键（任何窗口下 Alt+Q 显示/隐藏浮窗，与托盘菜单同一入口 float_toggle）。
+    // with_shortcuts 只解析快捷键字符串（失败仅当格式非法，"Alt+Q" 字面量不会触发），
+    // 解析失败不 panic：降级为无快捷键插件，浮窗仍可从托盘菜单/顶栏按钮开关。
     let float_hotkey_plugin = {
         use tauri_plugin_global_shortcut::ShortcutState;
-        tauri_plugin_global_shortcut::Builder::new()
+        let builder = tauri_plugin_global_shortcut::Builder::new()
             .with_shortcuts([FLOAT_HOTKEY])
-            .expect("注册浮窗快捷键失败（Alt+Q 被占用?）")
-            .with_handler(|app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    let _ = float_toggle(app.clone());
-                }
-            })
-            .build()
+            .unwrap_or_else(|e| {
+                core::log::warn(&format!("浮窗快捷键 {FLOAT_HOTKEY} 解析失败（已禁用）: {e}"));
+                tauri_plugin_global_shortcut::Builder::new()
+            });
+        builder.with_handler(|app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                let _ = float_toggle(app.clone());
+            }
+        }).build()
     };
     tauri::Builder::default()
         // 单实例：第二实例启动时首实例收到回调，把主窗口从托盘恢复到前台

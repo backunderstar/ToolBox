@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { PingInfo } from "../core/ipc";
+import { isCoreConnected, type PingInfo } from "../core/ipc";
 import { RUNTIME_LABEL, type PluginInfo } from "../core/api";
 
 interface WelcomeViewProps {
@@ -17,7 +17,7 @@ export function WelcomeView({
   onOpenNotes,
   onOpenPlugins,
 }: WelcomeViewProps) {
-  const ok = ping?.message === "pong";
+  const ok = isCoreConnected(ping);
 
   return (
     <div className="welcome">
@@ -66,7 +66,9 @@ export function WelcomeView({
               <article
                 key={p.id}
                 className="module-card module-card-clickable fade-in"
-                style={{ "--i": i, animationDelay: `${120 + i * 50}ms` } as CSSProperties}
+                // 入场动画延迟封顶（Math.min(i, 8)）：插件很多时最后一张卡
+                // 不会等 1.6s+ 才出现，动画节奏保持紧凑
+                style={{ "--i": i, animationDelay: `${120 + Math.min(i, 8) * 50}ms` } as CSSProperties}
                 onClick={onOpenPlugins}
                 title="点击进入插件页"
               >

@@ -1,4 +1,4 @@
-import type { PingInfo } from "../core/ipc";
+import { isCoreConnected, type PingInfo } from "../core/ipc";
 import type { ThemeMode } from "../themes/themes";
 
 /**
@@ -14,7 +14,7 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ ping, theme, vaultName, status }: StatusBarProps) {
-  const ok = ping?.message === "pong";
+  const ok = isCoreConnected(ping);
   const label = ping ? ping.message : "连接中…";
 
   return (

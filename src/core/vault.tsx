@@ -302,6 +302,9 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const searchSeq = useRef(0);
   useEffect(() => {
     if (!path || !query.trim()) {
+      // 先递增序号使在途请求失效，再清空结果：否则已发出的 searchAll 响应仍会
+      // 通过 seq 校验，把旧结果回填到已清空的搜索框下方。
+      searchSeq.current++;
       setResults(null);
       setSearching(false);
       return;

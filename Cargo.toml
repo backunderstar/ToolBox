@@ -7,3 +7,9 @@
 [workspace]
 resolver = "2"
 members = ["src-tauri", "tb-sdk", "core-plugins/notes", "core-plugins/todos", "core-plugins/checklists", "core-plugins/projects", "core-plugins/blog", "core-plugins/ai"]
+
+# 发布优化（所有 member 生效）：thin LTO 平衡编译时间与体积/性能，
+# strip 去除符号表显著减小安装包（插件 DLL 与宿主均受益）。
+[profile.release]
+lto = "thin"
+strip = true

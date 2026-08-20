@@ -22,9 +22,8 @@ tauri-plugin-opener = "2"
 # 单实例：第二实例退出并在首实例触发回调（Windows 内部即命名 Mutex，
 # 与之前手写实现同机制，由官方维护；跨平台可用）
 tauri-plugin-single-instance = "2"
-# M6 AI：OpenAI 兼容 API 调用（阻塞版 + rustls，避免系统 OpenSSL）
-# stream：流式响应（SSE 逐块读取）需要
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "stream"] }
+# M6 AI：OpenAI 兼容 API 调用在 core-plugins/ai 插件内（reqwest 0.13），
+# 宿主不再直接使用 reqwest（历史声明已删除，消除 0.12/0.13 双版本）。
 # M7 博客生成：Markdown → HTML
 pulldown-cmark = "0.12"
 # M8 项目文件管理：删除项目进系统回收站
@@ -32,11 +31,11 @@ trash = "5"
 # 浮窗清单：记忆窗口位置/大小
 tauri-plugin-window-state = "2"
 # 核心插件：动态加载 cdylib（Windows DLL）
-libloading = "0.8"
+libloading = "0.9"
 # 核心插件 C ABI 契约（宿主侧解析 tb_sdk 返回的 JSON）
 tb-sdk = { path = "../tb-sdk" }
 # 界面安装 DLL 插件：解压用户选择的 .zip 插件包（zip-slip 防护见 enclosed_name）
-zip = "2"
+zip = "4"
 # 全文搜索（宿主内嵌）：SQLite FTS5 trigram 索引（bundled-full 免系统依赖）
 rusqlite = { version = "0.40", features = ["bundled-full"] }
 pinyin = "0.11.0"
@@ -47,6 +46,6 @@ tauri-plugin-updater = "2.10.1"
 [target.'cfg(windows)'.dependencies]
 # 标题栏近似色（主题联动）：DwmSetWindowAttribute(DWMWA_CAPTION_COLOR)，
 # 让窗口标题栏颜色跟随主题画布背景（Windows 11 起支持；失败静默忽略）
-windows-sys = { version = "0.59", features = ["Win32_Graphics_Dwm", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_Graphics_Dwm", "Win32_Foundation"] }
 # 取窗口句柄（HWND）的标准方式（tauri 传递依赖同版本，显式声明以便使用）
 raw-window-handle = "0.6"
