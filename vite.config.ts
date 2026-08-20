@@ -33,6 +33,7 @@ export default defineConfig({
   },
   lint: {
     // vp lint / vp check 的 lint 范围：排除产物与 Rust 侧
+    // （core-plugins/plugins 的 ui/index.js 是插件自带前端构建产物，勿 lint）
     ignorePatterns: [
       "dist/**",
       "src-tauri/**",
@@ -40,10 +41,11 @@ export default defineConfig({
       "public/**",
       "docs/**",
       "plugins/*/ui/index.js",
+      "core-plugins/*/ui/index.js",
     ],
   },
   fmt: {
-    // oxfmt 默认扫全仓库（含压缩的 vditor 产物、中文文档、Cargo.toml），
+    // oxfmt 默认扫全仓库（含压缩的编辑器产物、中文文档、Cargo.toml），
     // 这里收窄到真正的源码，避免对第三方产物/文档产生无意义 diff
     ignorePatterns: [
       "dist/**",

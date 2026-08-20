@@ -71,12 +71,15 @@ const PLUGINS = [
 // 注：core-search / core-backup 已迁回宿主本体框架（core/search.rs + core/backup.rs，
 // 系统级横切能力不作为可装卸插件），不再在此构建部署。
 
-/** 构建核心插件自带前端（ui/index.tsx → 自包含 IIFE，React 打进产物）。
+/** 构建核心插件自带前端（ui/index.ts → 自包含 IIFE，Vue 3 打进产物；
+ *  兼容遗留 index.tsx 入口）。
  *  vite 构建部分走公共构建器（scripts/plugin-ui-build.mjs，与 build-external-ui
  *  共用）；本函数只负责定位入口/校验与路径换算。 */
 async function buildCorePluginUi(p) {
   const uiDir = path.join(root, "core-plugins", p.id.slice(5), "ui");
-  const entry = path.join(uiDir, "index.tsx");
+  const entryTs = path.join(uiDir, "index.ts");
+  const entryTsx = path.join(uiDir, "index.tsx");
+  const entry = (await exists(entryTs)) ? entryTs : entryTsx;
   if (!(await exists(entry))) {
     // 声明了 ui 却缺源文件：静默跳过会部署"声明 ui 但无产物"的坏清单，
     // 运行时挂载失败且难排查——直接抛错暴露问题

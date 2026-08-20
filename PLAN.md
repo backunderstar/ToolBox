@@ -274,11 +274,27 @@ React 版完整快照保存在本地 **`react` 分支**（冻结只读，不再�
 **验证基线**：`pnpm typecheck` / `lint`（0 警告）/ `test`（33）/ `build` /
 `build:core`（6 插件 UI + DLL 自检通过）；cargo 侧零改动。
 
-**二期计划（未排期）**：
+**二期：插件 UI 全量 Vue 化 + Vditor → md-editor-v3（✅ 已完成）**
 
-- 6 个核心插件 UI 逐个迁 Vue 3（notes 1115 行最大，建议最后；完成后可移除 React devDependencies）
-- 笔记编辑器 **Vditor → md-editor-v3**（Vue 3 生态 md 编辑器，随 notes 插件 UI 迁移一起做）
-- 外部插件 UI（text-stats 等）按需迁移
+- **构建器**：`scripts/plugin-ui-build.mjs` 从 `@vitejs/plugin-react` 换成
+  `@vitejs/plugin-vue`；build-core / build-external-ui 入口支持 `index.ts`（Vue）优先、
+  兼容遗留 `index.tsx`；NODE_ENV define 不再需要（Vue 无 React 式 process 引用）。
+- **6 个核心插件 UI + 外部 text-stats 全部迁 Vue 3**（`ui/index.ts` 入口 +
+  `createApp(App, { api }).mount(el)` 挂载，契约不变）：
+  todos / blog / ai / projects / checklists / notes（+ text-stats）。
+  每个插件 `ui/bridge.ts` 单一定义 `PluginBridgeApi` 类型。
+- **笔记编辑器 Vditor → md-editor-v3**（`core-plugins/notes/ui/NoteEditor.vue`，
+  `md-editor-v3` v6）：工具栏映射（撤销/标题/加粗/列表/任务/引用/代码/表格）、
+  AI 摘要自定义按钮（`defToolbars` + `getSelectedText`/`insert`）、主题跟随、
+  `Ctrl+S` 保存。产物全部打进 IIFE（gzip ~702kB，离线可用，不再依赖宿主 /vditor 静态资源）。
+- **清理**：`public/vditor/`（git 删除）、`scripts/sync-vditor.mjs`、package.json
+  `sync:vditor` + `vditor` 依赖；**React 全家 devDependencies 全部移除**（react/
+  react-dom/@types/react/@types/react-dom/@vitejs/plugin-react——仓库已无任何 React）；
+  cdp-notes-ui.mjs E2E 选择器更新为 md-editor-v3；docs 三份文档同步（技术栈/操作手册/插件开发指南）。
+- **验证**：`pnpm build:core` 自检 6 插件 + DLL 通过；宿主 `typecheck` / `lint`（0 警告）/
+  `test`（33）/ `build` 全绿；`pnpm tauri dev` 冒烟无前端错误。
+- **产物体积**：普通插件 UI ~40KB gzip（原 React ~120KB）；notes 含 md-editor-v3 ~702KB gzip
+  （原 Vditor ~194KB，换取编辑器能力本地化 + 统一 Vue 技术栈）。
 
 ---
 

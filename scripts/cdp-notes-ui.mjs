@@ -1,4 +1,4 @@
-// cdp-notes-ui.mjs — core-notes 插件自带前端 E2E：挂载/文件树/打开笔记(Vditor)/自动保存/新建/搜索
+// cdp-notes-ui.mjs — core-notes 插件自带前端 E2E：挂载/文件树/打开笔记(md-editor-v3)/自动保存/新建/搜索
 import { findMainPage, connect, sleep, helpers } from "./cdp-lib.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +39,7 @@ log(
     .join("/")}…）`,
 );
 
-// ---- 3. 打开笔记 → Vditor 初始化（先清空可能的遗留搜索词，避免搜索结果盖住编辑器）----
+// ---- 3. 打开笔记 → md-editor-v3 初始化（先清空可能的遗留搜索词，避免搜索结果盖住编辑器）----
 await ev(`(() => {
   const el = document.querySelector('.plugin-ui-view .files-search-input');
   if (el && el.value) {
@@ -55,19 +55,23 @@ const row =
 await ev(
   `(() => { const el = [...document.querySelectorAll('.plugin-ui-view .tree-row')].find(r => r.dataset.path === ${JSON.stringify(row.path)}); el?.click(); return !!el; })()`,
 );
-// 等待目标笔记真正打开（标题匹配 + Vditor 就绪；旧笔记的 Vditor 可能仍在，需先等标题切换）
+// 等待目标笔记真正打开（标题匹配 + 编辑器就绪；旧笔记的编辑器可能仍在，需先等标题切换）
 await waitFor(
-  `document.querySelector('.plugin-ui-view .editor-title')?.textContent === ${JSON.stringify(row.path)} && !!document.querySelector('.plugin-ui-view .editor-host.vditor')`,
-  "目标笔记打开且 Vditor 初始化",
+  `document.querySelector('.plugin-ui-view .editor-title')?.textContent === ${JSON.stringify(row.path)} && !!document.querySelector('.plugin-ui-view .md-editor')`,
+  "目标笔记打开且 md-editor-v3 初始化",
 );
 
 // ---- 4. 输入触发自动保存（写入经桥 + DLL，磁盘校验）----
 const marker = `E2E标记${Date.now().toString(36)}`;
+// md-editor-v3 的输入区是 textarea（源码编辑）；输入经 value setter + input 事件
+// （execCommand 对 textarea 无效），v-model 链路上行到宿主 updateContent → dirty
 await ev(`(() => {
-  const ed = document.querySelector('.plugin-ui-view .vditor-ir') || document.querySelector('.plugin-ui-view .vditor-content');
+  const ed = document.querySelector('.plugin-ui-view .md-editor-content textarea');
   if (!ed) return false;
   ed.focus();
-  document.execCommand('insertText', false, ${JSON.stringify(marker)});
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+  setter.call(ed, ed.value + ${JSON.stringify(marker)});
+  ed.dispatchEvent(new Event('input', { bubbles: true }));
   return true;
 })()`);
 await sleep(400);
@@ -75,12 +79,12 @@ const dirtyOn = await ev(
   `document.querySelector('.plugin-ui-view .dirty-dot')?.classList.contains('on')`,
 );
 if (!dirtyOn) {
-  // Vditor IR 可能有自己的输入管线，改用直接向 Vditor 实例派发输入：先尝试内容比对
+  // md-editor-v3 可能有自己的输入管线，改用内容比对兜底
   const edText = await ev(
-    `(document.querySelector('.plugin-ui-view .vditor-ir')?.textContent ?? '')`,
+    `(document.querySelector('.plugin-ui-view .md-editor-content textarea')?.value ?? '')`,
   );
   if (!edText.includes(marker)) throw new Error("输入未进入编辑器（dirty-dot 未亮且内容无标记）");
-  log("PASS 输入已进入编辑器（Vditor 内容含标记；跳过 dirty 校验）");
+  log("PASS 输入已进入编辑器（md-editor 内容含标记；跳过 dirty 校验）");
 } else {
   log("PASS 输入 → dirty-dot 亮起");
 }
