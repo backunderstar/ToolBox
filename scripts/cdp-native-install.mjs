@@ -1,13 +1,13 @@
 // cdp-native-install.mjs — 安装插件 E2E（手动 + 界面安装，通用 runtime）：
-// 1) 手动放目录到 %APPDATA%/plugins/_core/ → 刷新自动识别为原生插件（就绪 + 命令可用）
-// 2) 界面安装 .zip 包（plugins_install，PowerShell 构造 zip）
+// 1) 手动放目录到应用配置目录 plugins/_core/ → 刷新自动识别为原生插件（就绪 + 命令可用）
+// 2) 界面安装 .zip 包（plugins_install，跨平台 zip 构造，见 platform.mjs）
 // 3) 界面安装插件目录（plugins_install kind=dir）
 // 全部验证 DLL 真实加载，最后清理（不留残留）。
-import { execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { findMainPage, connect, sleep, helpers } from "./cdp-lib.mjs";
+import { zipDirectory } from "./platform.mjs";
 
 const PORT = process.argv[2] ?? "9226";
 const page = await findMainPage(PORT);
@@ -108,10 +108,7 @@ cpSync(srcDir, path.join(zsrc, zid), { recursive: true });
   writeFileSync(mp, JSON.stringify(m, null, 2), "utf8");
 }
 const zfile = path.join(os.tmpdir(), `tb-e2e-${Date.now().toString(36)}.zip`);
-execSync(
-  `powershell -NoProfile -Command "Compress-Archive -Path '${zsrc}\\${zid}' -DestinationPath '${zfile}'"`,
-  { stdio: "ignore" },
-);
+await zipDirectory(path.join(zsrc, zid), zfile);
 const zipInstalled = await ev(
   `window.__TAURI_INTERNALS__.invoke('plugins_install', { vault: ${JSON.stringify(vault)}, source: ${JSON.stringify(zfile)}, kind: 'zip' })`,
 );

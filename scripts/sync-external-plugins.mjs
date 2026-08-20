@@ -1,6 +1,6 @@
-// 同步外部插件到应用插件目录（%APPDATA%/com.toolbox.desktop/plugins/）。
+// 同步外部插件到应用插件目录（Windows %APPDATA% / macOS Application Support / Linux ~/.config）。
 //
-// 为什么需要：应用只从 %APPDATA% 加载外部插件（src-tauri/src/plugins/mod.rs
+// 为什么需要：应用只从全局插件目录加载外部插件（src-tauri/src/plugins/mod.rs
 // 的 global_plugins_dir），仓库 plugins/ 下的改动不会自动生效。开发时改了
 // 外部插件源码（main.js/main.py/vendor 等）后跑本脚本同步过去。
 //
@@ -9,17 +9,16 @@
 // - process 插件（py-tools / csv-tool）的 Python/JS 进程常驻：同步后需在
 //   插件页点「重新加载」或重启应用才生效。
 // - webview 插件（text-stats）的 ui 产物由 scripts/build-external-ui.mjs 生成
-//   （ui/index.js），本脚本会一并同步；改了 ui/index.tsx 需先跑
+//   （ui/index.js），本脚本会一并同步；改了 ui/index.ts 需先跑
 //   pnpm build-external-ui plugins/<插件>。
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { fileURLToPath } from "node:url";
+import { pluginsDir } from "./platform.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const srcRoot = path.join(root, "plugins");
-const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
-const dstRoot = path.join(appData, "com.toolbox.desktop", "plugins");
+const dstRoot = pluginsDir();
 
 /** 同步时跳过的内容（node_modules 大、__pycache__ 是运行时产物） */
 const SKIP = new Set(["node_modules", "__pycache__", ".git"]);

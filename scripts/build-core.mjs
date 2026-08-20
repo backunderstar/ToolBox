@@ -1,14 +1,14 @@
 // 构建全部核心插件（cdylib + 自带前端 ui）：
-// - 默认（pnpm build:core）：debug DLL + ui → %APPDATA%/com.toolbox.desktop/plugins/_core/<id>/
-//   供 dev 运行与 E2E 使用
+// - 默认（pnpm build:core）：debug DLL + ui → 应用配置目录 plugins/_core/<id>/
+//   供 dev 运行与 E2E 使用（Windows %APPDATA% / macOS ~/Library/Application Support / Linux ~/.config）
 // - --release（pnpm build:core:release）：release DLL + ui → src-tauri/resources/_core/<id>/
-//   打进安装包（bundle.resources），安装后宿主 ensure_core_plugins 部署到 %APPDATA%
+//   打进安装包（bundle.resources），安装后宿主 ensure_core_plugins 部署到应用配置目录
 import { execSync } from "node:child_process";
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { buildPluginUi } from "./plugin-ui-build.mjs";
+import { corePluginsDir } from "./platform.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isRelease = process.argv.includes("--release");
@@ -117,14 +117,13 @@ execSync(
   { stdio: "inherit" },
 );
 
-// 输出目录：release → 打包资源（src-tauri/resources/_core）；debug → %APPDATA%
+// 输出目录：release → 打包资源（src-tauri/resources/_core）；debug → 应用配置目录
 let coreRoot;
 if (isRelease) {
   coreRoot = path.join(root, "src-tauri", "resources", "_core");
   rmSync(coreRoot, { recursive: true, force: true });
 } else {
-  const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
-  coreRoot = path.join(appData, "com.toolbox.desktop", "plugins", "_core");
+  coreRoot = corePluginsDir();
 }
 mkdirSync(coreRoot, { recursive: true });
 // 清理已不在 PLUGINS 中的旧随包插件目录（如迁回宿主的 core-search / core-backup）。
