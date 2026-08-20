@@ -123,7 +123,10 @@ fn collect_md(dir: &Path, base: &str, out: &mut Vec<(String, PathBuf)>) {
     }
 }
 
-fn scan_posts(vault: &str) -> Vec<PostMeta> {
+/// 扫描全部笔记并解析 frontmatter，返回 `(meta, fm)`——fm 供 generate 复用
+/// （published 判断/正文渲染不再重读文件；历史实现 generate 里全量重读一遍
+/// 判断 published，三重读盘减为两重）。
+fn scan_posts(vault: &str) -> Vec<(PostMeta, BTreeMap<String, String>)> {
     let root = PathBuf::from(vault).join("notes");
     if !root.is_dir() {
         return Vec::new();
@@ -142,9 +145,9 @@ fn scan_posts(vault: &str) -> Vec<PostMeta> {
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0)
         });
-        posts.push(meta);
+        posts.push((meta, fm));
     }
-    posts.sort_by(|a, b| b.date.cmp(&a.date));
+    posts.sort_by(|a, b| b.0.date.cmp(&a.0.date));
     posts
 }
 
@@ -161,7 +164,8 @@ fn site_generated_at(vault: &str) -> Option<i64> {
 /* ---------------- 命令 ---------------- */
 
 pub fn list(vault: &str) -> BlogListResult {
-    let posts = scan_posts(vault);
+    let scanned = scan_posts(vault);
+    let posts: Vec<PostMeta> = scanned.into_iter().map(|(m, _)| m).collect();
     let site_generated_at = site_generated_at(vault);
     let stale_count = site_generated_at
         .map(|gen| {
@@ -196,21 +200,12 @@ pub fn generate(vault: &str, site_title: &str) -> Result<BlogGenerateResult, Str
         .and_then(|_| std::fs::create_dir_all(&public_posts))
         .map_err(|e| format!("创建站点目录失败: {e}"))?;
 
-    let posts = scan_posts(vault);
-    let published: Vec<PostMeta> = {
-        let mut out = Vec::new();
-        for p in &posts {
-            let abs = resolve_safe(vault, &p.path)?;
-            let Ok(content) = std::fs::read_to_string(&abs) else {
-                continue;
-            };
-            let (fm, _) = parse_frontmatter(&content);
-            if is_published(&fm) {
-                out.push(p.clone());
-            }
-        }
-        out
-    };
+    let scanned = scan_posts(vault);
+    // published 判断复用 scan_posts 已解析的 frontmatter（不再重读文件）
+    let published: Vec<(PostMeta, BTreeMap<String, String>)> = scanned
+        .into_iter()
+        .filter(|(_, fm)| is_published(fm))
+        .collect();
 
     let title = if site_title.trim().is_empty() {
         "ToolBox 博客".to_string()
@@ -235,7 +230,7 @@ pub fn generate(vault: &str, site_title: &str) -> Result<BlogGenerateResult, Str
     // 文章页 + content 源
     let mut cards = String::new();
     let mut slug_used: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for p in &published {
+    for (p, _fm) in &published {
         let abs = resolve_safe(vault, &p.path)?;
         let raw =
             std::fs::read_to_string(&abs).map_err(|e| format!("读 {} 失败: {e}", p.path))?;

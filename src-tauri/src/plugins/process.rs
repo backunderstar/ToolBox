@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Receiver, Sender, SyncSender};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, UNIX_EPOCH};
@@ -60,8 +60,9 @@ pub struct ProcessPlugin {
     /// 插件声明的权限（execute_core_api 据此放行核心 API）
     permissions: Vec<String>,
     pub plugin_id: String,
-    /// 事件桥：插件 Notification → 前端（纯 mpsc，不接触 tauri 类型）
-    event_tx: Sender<PluginEvent>,
+    /// 事件桥：插件 Notification → 前端（纯 mpsc，不接触 tauri 类型）。
+    /// 用 SyncSender（有界）：失控进程无限推事件时背压到读线程，不占无限内存
+    event_tx: SyncSender<PluginEvent>,
 }
 
 impl ProcessPlugin {
@@ -73,7 +74,7 @@ impl ProcessPlugin {
         plugin_dir: &Path,
         vault: &Path,
         permissions: Vec<String>,
-        event_tx: Sender<PluginEvent>,
+        event_tx: SyncSender<PluginEvent>,
     ) -> Result<Self, String> {
         let mut child = Command::new(program)
             .args(args)

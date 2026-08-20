@@ -1,4 +1,4 @@
-import { useReducer, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { isCoreConnected, type PingInfo } from "../core/ipc";
 import type { NavConfig, NavItemDef } from "../core/navPrefs";
 import { useVault } from "../core/vault";
@@ -44,6 +44,9 @@ interface SettingsViewProps {
   onNavChange: (cfg: NavConfig) => void;
 }
 
+/** 前端 localStorage 配置段（键集合；导入/导出共用）。模块级常量：避免每次渲染重建 */
+const FRONTEND_KEYS = ["toolbox.theme", "toolbox.custom-themes", "toolbox.nav", "toolbox.layout"];
+
 export function SettingsView({
   themeId,
   onSetThemeId,
@@ -70,8 +73,16 @@ export function SettingsView({
   const [configBusy, setConfigBusy] = useState<"" | "exporting" | "importing">("");
   const [configMsg, setConfigMsg] = useState("");
 
+  /* 配置导入后的延迟刷新定时器：组件卸载时清理（防止卸载后 reload） */
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (reloadTimer.current) clearTimeout(reloadTimer.current);
+    },
+    [],
+  );
+
   /* 前端 localStorage 配置段（键集合；导入/导出共用） */
-  const FRONTEND_KEYS = ["toolbox.theme", "toolbox.custom-themes", "toolbox.nav", "toolbox.layout"];
 
   const collectFrontend = (): Record<string, string> => {
     const o: Record<string, string> = {};
@@ -115,7 +126,7 @@ export function SettingsView({
       setConfigMsg("配置已导入，正在刷新界面…");
       // 主题/导航是 React 初始 state，刷新后从 localStorage 重读；
       // 插件启停也随 PluginProvider 重新拉取生效
-      setTimeout(() => window.location.reload(), 900);
+      reloadTimer.current = setTimeout(() => window.location.reload(), 900);
     } catch (e) {
       setConfigMsg(`导入失败: ${String(e)}`);
     } finally {

@@ -25,6 +25,7 @@ import {
   injectPluginScript,
   registerLocalCommand,
   clearLocalCommands,
+  pruneLocalCommands,
   type PluginBridgeApi,
 } from "./pluginRuntime";
 import { useVault } from "./vault";
@@ -119,6 +120,9 @@ export function PluginProvider({ children }: { children: ReactNode }) {
   const [runtimeErrors, setRuntimeErrors] = useState<Record<string, string>>({});
 
   const runtimes = useRef(new Map<string, PluginRuntime>());
+  // 刷新请求序号：丢弃过期响应（快速连续 setEnabled/reload/uninstall 触发并发
+  // refresh 时，较慢的旧列表不得覆盖较新的结果）
+  const refreshSeq = useRef(0);
 
   const getRuntime = useCallback((pluginId: string): PluginRuntime => {
     let rt = runtimes.current.get(pluginId);
@@ -472,11 +476,22 @@ export function PluginProvider({ children }: { children: ReactNode }) {
       return;
     }
     setLoading(true);
+    const seq = ++refreshSeq.current;
     try {
       const list = await pluginsList(p);
+      if (seq !== refreshSeq.current) return; // 过期响应丢弃
       setPlugins(list);
       // 重置所有注册表（保留运行时对象，只清命令）
       for (const rt of runtimes.current.values()) rt.commands.clear();
+      // 清理已禁用/卸载插件的本地命令注册（它们不再走 loadWebviewPlugin，
+      // 不清则 api.call 会命中过期注册执行旧插件代码）
+      pruneLocalCommands(
+        new Set(
+          list
+            .filter((pl) => pl.enabled && pl.runtime === "webview")
+            .map((pl) => pl.id),
+        ),
+      );
       setRuntimeErrors({});
       await Promise.all(
         list
@@ -484,9 +499,11 @@ export function PluginProvider({ children }: { children: ReactNode }) {
           .map((pl) => loadWebviewPlugin(pl)),
       );
     } catch (e) {
-      console.error("[plugins] 刷新失败", e);
+      if (seq === refreshSeq.current) {
+        console.error("[plugins] 刷新失败", e);
+      }
     } finally {
-      setLoading(false);
+      if (seq === refreshSeq.current) setLoading(false);
     }
   }, [isMock, getRuntime, loadWebviewPlugin]);
 

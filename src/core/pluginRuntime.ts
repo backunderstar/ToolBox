@@ -79,6 +79,15 @@ export function clearLocalCommands(pluginId: string): void {
   localCommands.delete(pluginId);
 }
 
+/** 清理不再启用的 webview 插件的本地命令（refresh 后调用）。
+ *  被禁用/卸载的插件不会走 loadWebviewPlugin，若不清这里，api.call 仍会命中
+ *  过期注册执行旧插件代码（内存泄漏 + 行为错乱）。 */
+export function pruneLocalCommands(keepIds: ReadonlySet<string>): void {
+  for (const id of localCommands.keys()) {
+    if (!keepIds.has(id)) localCommands.delete(id);
+  }
+}
+
 /** 构造统一 api 桥（vault 由调用方提供 getter） */
 export function buildBridgeApi(
   pluginId: string,

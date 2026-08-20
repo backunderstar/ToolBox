@@ -46,7 +46,12 @@ mod tests {
     use super::*;
     use crate::rpc::Message;
     use serde_json::json;
-    use std::sync::mpsc::channel;
+    use std::sync::mpsc::sync_channel;
+
+    /// 测试辅助：丢弃接收端的（有界）事件发送端，与生产 ProcessPlugin 类型一致。
+    fn dummy_event_tx() -> std::sync::mpsc::SyncSender<crate::plugins::events::PluginEvent> {
+        sync_channel(crate::plugins::events::EVENT_CAP).0
+    }
 
     /// 插件 id 白名单（S1a 第一道闸）：合法 id 通过，穿越/绝对路径/非法字符拒绝。
     #[test]
@@ -418,7 +423,7 @@ mod tests {
             &plugin_dir,
             &vault,
             perms,
-            channel().0,
+            dummy_event_tx(),
         )
         .expect("应能启动 python 进程");
         let commands = p.init(Duration::from_secs(15)).unwrap();
@@ -449,11 +454,10 @@ mod tests {
     }
 
     /// 事件桥：csv-tool 的 csv.eventTest 发 Notification → 事件总线收到
-    /// （ProcessPlugin 只持 mpsc Sender，不接触 tauri 类型——规避历史加载崩溃）。
+    /// （ProcessPlugin 只持 mpsc SyncSender，不接触 tauri 类型——规避历史加载崩溃）。
     #[test]
     fn bridge_event_forward() {
         use crate::plugins::events::PluginEvent;
-        use std::sync::mpsc::channel;
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let plugin_dir = base.join("plugins").join("csv-tool");
         let manifest_raw =
@@ -461,7 +465,7 @@ mod tests {
         let m: PluginManifest = serde_json::from_str(&manifest_raw).unwrap();
         let cmd = m.command.clone().unwrap();
         let vault = std::env::temp_dir();
-        let (event_tx, event_rx) = channel::<PluginEvent>();
+        let (event_tx, event_rx) = sync_channel::<PluginEvent>(crate::plugins::events::EVENT_CAP);
         let mut p = ProcessPlugin::spawn(
             &m.id,
             &cmd[0],
@@ -515,7 +519,7 @@ mod tests {
             &plugin_dir,
             &vault,
             perms,
-            channel().0,
+            dummy_event_tx(),
         )
         .unwrap();
         p.init(Duration::from_secs(15)).unwrap();
@@ -541,7 +545,7 @@ mod tests {
             &vault,
             &vault,
             vec![],
-            channel().0,
+            dummy_event_tx(),
         )
         .expect("应能启动 python");
         let err = p.init(Duration::from_millis(800)).unwrap_err();
@@ -565,7 +569,7 @@ mod tests {
             &vault,
             &vault,
             vec![],
-            channel().0,
+            dummy_event_tx(),
         )
         .expect("应能启动 python");
         // 大载荷（远超管道缓冲）写入无人消费的 stdin → 写线程阻塞

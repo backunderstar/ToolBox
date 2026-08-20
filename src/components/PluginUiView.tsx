@@ -21,6 +21,12 @@ export function PluginUiView({ pluginId }: { pluginId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 实时 vault 引用：注入给插件的 context.activePath/activeContent 必须**惰性读取**。
+  // 用户切换笔记后插件（如 AI 预设动作）读到的应是"当前"笔记，而非挂载时快照；
+  // 不能把 activePath/content 加进 effect 依赖——那会让插件 UI 每次切笔记都重挂载。
+  const liveVault = useRef(vault);
+  liveVault.current = vault;
+
   useEffect(() => {
     let disposed = false;
     let scriptUn: (() => void) | null = null;
@@ -53,8 +59,14 @@ export function PluginUiView({ pluginId }: { pluginId: string }) {
         },
       },
       context: {
-        activePath: vault.activePath,
-        activeContent: vault.content,
+        // 惰性 getter：插件每次读取都取当前值（实时跟随切换笔记），
+        // 不再是一次性快照
+        get activePath() {
+          return liveVault.current.activePath;
+        },
+        get activeContent() {
+          return liveVault.current.content;
+        },
       },
       // 宿主能力：搜索迁回本体后插件界面经统一桥调用（含搜索提供者聚合）
       host: {

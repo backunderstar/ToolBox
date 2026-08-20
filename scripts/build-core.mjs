@@ -8,8 +8,7 @@ import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } f
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { build as viteBuild } from "vite";
-import react from "@vitejs/plugin-react";
+import { buildPluginUi } from "./plugin-ui-build.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isRelease = process.argv.includes("--release");
@@ -72,8 +71,10 @@ const PLUGINS = [
 // 注：core-search / core-backup 已迁回宿主本体框架（core/search.rs + core/backup.rs，
 // 系统级横切能力不作为可装卸插件），不再在此构建部署。
 
-/** 构建插件自带前端（ui/index.tsx → 自包含 IIFE，React 打进产物） */
-async function buildPluginUi(p) {
+/** 构建核心插件自带前端（ui/index.tsx → 自包含 IIFE，React 打进产物）。
+ *  vite 构建部分走公共构建器（scripts/plugin-ui-build.mjs，与 build-external-ui
+ *  共用）；本函数只负责定位入口/校验与路径换算。 */
+async function buildCorePluginUi(p) {
   const uiDir = path.join(root, "core-plugins", p.id.slice(5), "ui");
   const entry = path.join(uiDir, "index.tsx");
   if (!(await exists(entry))) {
@@ -85,23 +86,11 @@ async function buildPluginUi(p) {
     return null; // 未声明 ui 的正常插件
   }
   const outDir = path.join(root, "target", "plugin-ui", p.id);
-  rmSync(outDir, { recursive: true, force: true });
-  await viteBuild({
-    configFile: false,
+  await buildPluginUi({
     root,
-    plugins: [react()],
-    // React 开发版引用 process.env.NODE_ENV：lib 构建需显式替换（否则运行时 ReferenceError）
-    define: {
-      "process.env.NODE_ENV": JSON.stringify(isRelease ? "production" : "development"),
-    },
-    build: {
-      outDir,
-      emptyOutDir: true,
-      lib: { entry, formats: ["iife"], name: "TBPluginUi" },
-      rollupOptions: {
-        output: { entryFileNames: "index.js", assetFileNames: "style.css" },
-      },
-    },
+    entry,
+    outDir,
+    env: isRelease ? "production" : "development",
   });
   return outDir;
 }
@@ -169,7 +158,7 @@ await Promise.all(
 
     // 自带前端：构建产物复制到插件目录 ui/
     if (p.ui) {
-      const built = await buildPluginUi(p);
+      const built = await buildCorePluginUi(p);
       if (built) {
         const uiTarget = path.join(target, "ui");
         mkdirSync(uiTarget, { recursive: true });

@@ -31,12 +31,16 @@ fn ensure_notes_dir(root: &Path) -> Result<PathBuf, String> {
         return Ok(notes);
     }
     std::fs::create_dir_all(&notes).map_err(|e| format!("创建笔记目录失败: {e}"))?;
-    // 迁移旧布局：仅移动 vault 根层的 .md（data/plugins/.toolbox/site 等子目录不动）
+    // 迁移旧布局：仅移动 vault 根层的 .md（data/plugins/.toolbox/site 等子目录不动）。
+    // 单个文件迁移失败（权限/占用）不阻断其余，但要显式记录——静默吞错会让
+    // 用户误以为旧笔记已迁入 notes/（实际还留在根层，列表里看不到）
     if let Ok(read) = std::fs::read_dir(root) {
         for entry in read.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
             if name.ends_with(".md") && entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                let _ = std::fs::rename(entry.path(), notes.join(&name));
+                if let Err(e) = std::fs::rename(entry.path(), notes.join(&name)) {
+                    eprintln!("[notes] 迁移根层 {name} 失败: {e}");
+                }
             }
         }
     }

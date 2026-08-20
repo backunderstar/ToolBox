@@ -82,7 +82,9 @@ pub fn list(vault: &str) -> Result<Vec<Checklist>, String> {
     };
     for e in read.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".json") || name.contains(".tmp") {
+        // 只收 *.json；原子写的临时文件是 {id}.tmp（不以 .json 结尾）天然被过滤，
+        // 不要用 contains(".tmp")——会误伤名字含 ".tmp" 子串的合法清单（如 my.tmp.json）
+        if !name.ends_with(".json") {
             continue;
         }
         let Ok(raw) = std::fs::read_to_string(e.path()) else {

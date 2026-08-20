@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { pluginsReadFile, vaultGet, floatSetLocked } from "../core/api";
 import { buildBridgeApi, injectPluginScript, type PluginBridgeApi } from "../core/pluginRuntime";
+import { useTauriListen } from "../core/useTauriListen";
 import "./float.css";
 
 /**
@@ -54,35 +54,14 @@ export function FloatApp() {
   }, []);
 
   /* 主窗口切换工作区后 Rust 广播 vault-changed：浮窗据此重读，避免继续写旧工作区。
-     初始读取在上方 effect（只跑一次），这里订阅变更事件增量更新。 */
-  useEffect(() => {
-    let un: (() => void) | null = null;
-    let cancelled = false;
-    (async () => {
-      try {
-        // 竞态防护（与 vault.tsx 同型）：listen 是异步 promise，若组件在 resolve
-        // 前卸载，直接赋值会留下永久监听器（cleanup 已跑过 un?.() 是 no-op）。
-        // resolve 后检测 cancelled：已卸载则立即注销，未卸载才登记给 cleanup。
-        const fn = await listen("vault-changed", () => {
-          vaultGet()
-            .then((s) => {
-              if (!cancelled) setVaultPath(s.path);
-            })
-            .catch(() => {
-              if (!cancelled) setVaultPath(null);
-            });
-        });
-        if (cancelled) fn();
-        else un = fn;
-      } catch {
-        /* 非 Tauri 环境（浏览器 mock）无事件总线，忽略 */
-      }
-    })();
-    return () => {
-      cancelled = true;
-      un?.();
-    };
-  }, []);
+     初始读取在上方 effect（只跑一次），这里订阅变更事件增量更新。
+     异步 listen 与卸载竞态由 useTauriListen 统一处理（已卸载则注册即注销，
+     不会再收到事件；卸载后 setState 是 React 无害 no-op）。 */
+  useTauriListen("vault-changed", () => {
+    vaultGet()
+      .then((s) => setVaultPath(s.path))
+      .catch(() => setVaultPath(null));
+  });
 
   /* 加载当前页签插件自带前端并挂载（统一桥） */
   useEffect(() => {

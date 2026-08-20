@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { usePlugins } from "../core/plugins";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
+import { useTauriListen } from "../core/useTauriListen";
 import { RUNTIME_LABEL, type PluginInfo } from "../core/api";
 import {
   pluginsRemovedCore,
@@ -159,30 +159,11 @@ export function PluginsView() {
     }
   };
 
-  /* 事件桥：进程插件推送的事件（plugin-event）实时追加到日志 */
-  useEffect(() => {
-    let un: (() => void) | null = null;
-    let cancelled = false;
-    listen<PluginEventPayload>("plugin-event", (e) => {
-      setEvents((prev) => [...prev, { ...e.payload, time: Date.now() }].slice(-50));
-    })
-      .then((fn) => {
-        // cancelled 竞态防护：组件在 listen resolve 前卸载时，un 尚未赋值，
-        // 清理函数拿不到取消函数 → 监听器泄漏。这里补一道兜底。
-        if (cancelled) {
-          fn();
-        } else {
-          un = fn;
-        }
-      })
-      .catch(() => {
-        /* 浏览器预览环境无事件桥 */
-      });
-    return () => {
-      cancelled = true;
-      un?.();
-    };
-  }, []);
+  /* 事件桥：进程插件推送的事件（plugin-event）实时追加到日志（useTauriListen
+     统一处理异步 listen 与卸载竞态） */
+  useTauriListen<PluginEventPayload>("plugin-event", (payload) => {
+    setEvents((prev) => [...prev, { ...payload, time: Date.now() }].slice(-50));
+  });
 
   const doUninstall = async (id: string) => {
     setBusy((b) => ({ ...b, [id]: true }));

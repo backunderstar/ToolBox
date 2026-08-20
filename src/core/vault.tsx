@@ -21,6 +21,7 @@ import {
   vaultSet,
 } from "./api";
 import type { FileEntry, SearchHit } from "./api";
+import { useTauriListen } from "./useTauriListen";
 
 /**
  * 工作区（Vault）状态中心（M1，宿主侧唯一数据源）：
@@ -333,35 +334,13 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, [query, path]);
 
   /* 插件自带前端（core-notes ui）写文件后推送 notes-changed：
-     本层监听刷新文件列表，保证顶栏/状态栏/其他视图读到一致的文件树 */
-  useEffect(() => {
-    let un: (() => void) | null = null;
-    // 竞态防护（与 pluginRuntime api.on 同型）：动态 import + listen 都是异步
-    // promise，Provider 卸载可能发生在 resolve 之前；cancelled 标志保证 resolve
-    // 后立即注销，避免监听器泄漏。
-    let cancelled = false;
-    import("@tauri-apps/api/event")
-      .then((m) =>
-        m.listen<{ pluginId: string; event: string }>("plugin-event", (e) => {
-          if (cancelled) return;
-          const payload = e.payload;
-          if (payload.pluginId === "core-notes" && payload.event === "notes-changed") {
-            void refresh();
-          }
-        }),
-      )
-      .then((fn) => {
-        if (cancelled) fn();
-        else un = fn;
-      })
-      .catch(() => {
-        /* 浏览器预览环境无事件桥 */
-      });
-    return () => {
-      cancelled = true;
-      un?.();
-    };
-  }, [refresh]);
+     本层监听刷新文件列表，保证顶栏/状态栏/其他视图读到一致的文件树。
+     监听生命周期（异步 listen + 卸载竞态）由 useTauriListen 统一处理。 */
+  useTauriListen<{ pluginId: string; event: string }>("plugin-event", (payload) => {
+    if (payload.pluginId === "core-notes" && payload.event === "notes-changed") {
+      void refresh();
+    }
+  });
 
   /* 笔记视图为插件自带前端时，插件通过同 document 的 tb:vault-active 事件
      同步当前打开的笔记（宿主 vault 不持有插件 UI 内部状态），
@@ -372,6 +351,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       if (typeof detail?.rel === "string" && detail.rel) {
         setActivePath(detail.rel);
         if (typeof detail.content === "string") {
+          // 清掉在途自动保存定时器：插件已把内容写盘并广播（dirty 置 false），
+          // 若还留着排定的旧保存，到期会用旧 content 覆盖插件刚写入的内容
+          if (saveTimer.current) {
+            clearTimeout(saveTimer.current);
+            saveTimer.current = null;
+          }
           setContent(detail.content);
         }
         dirtyRef.current = false;

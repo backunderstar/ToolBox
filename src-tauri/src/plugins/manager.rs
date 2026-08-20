@@ -21,6 +21,16 @@ pub const API_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RESTARTS: u32 = 3;
 const RESTART_WINDOW: Duration = Duration::from_secs(60);
 
+/// 递归复制最大深度：恶意/意外的万层嵌套会让纯递归栈溢出直接 abort（Rust
+/// 栈溢出不可捕获）；超过上限中止复制（与 backup/search 的 MAX_DEPTH 语义一致）。
+const COPY_MAX_DEPTH: usize = 64;
+
+/// zip 插件包解压防护（zip 炸弹）：条目数与累计解压大小上限。
+/// 正常插件包（DLL + UI + 清单）远小于这些值；恶意包可用超高压缩比把
+/// 几 MB 的 zip 膨胀成数百 GB 占满磁盘——解压前按**未压缩大小**预检并中止。
+const ZIP_MAX_ENTRIES: usize = 1024;
+const ZIP_MAX_BYTES: u64 = 512 * 1024 * 1024;
+
 pub struct PluginRecord {
     pub manifest: PluginManifest,
     pub dir: PathBuf,
@@ -351,15 +361,25 @@ fn migrate_legacy_enabled(app: &tauri::AppHandle, vault: &Path) {
     let _ = std::fs::remove_file(&legacy);
 }
 
-/// 递归复制目录。
+/// 递归复制目录（深度护栏见 copy_dir_recursive_depth）。
 pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    copy_dir_recursive_depth(src, dst, 0)
+}
+
+fn copy_dir_recursive_depth(src: &Path, dst: &Path, depth: usize) -> Result<(), String> {
+    if depth > COPY_MAX_DEPTH {
+        return Err(format!(
+            "目录嵌套过深（>{COPY_MAX_DEPTH} 层），已中止复制: {}",
+            src.display()
+        ));
+    }
     std::fs::create_dir_all(dst).map_err(|e| format!("创建目录失败 {dst:?}: {e}"))?;
     let read = std::fs::read_dir(src).map_err(|e| format!("读取目录失败 {src:?}: {e}"))?;
     for entry in read.flatten() {
         let s = entry.path();
         let d = dst.join(entry.file_name());
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            copy_dir_recursive(&s, &d)?;
+            copy_dir_recursive_depth(&s, &d, depth + 1)?;
         } else {
             std::fs::copy(&s, &d).map_err(|e| format!("复制失败 {s:?}: {e}"))?;
         }
@@ -776,6 +796,15 @@ impl PluginManager {
                     std::fs::File::open(source).map_err(|e| format!("打开插件包失败: {e}"))?;
                 let mut zip =
                     zip::ZipArchive::new(file).map_err(|e| format!("解析插件包失败: {e}"))?;
+                // zip 炸弹防护：先按条目数与未压缩总大小预检（恶意包可把几 MB
+                // 压缩包膨胀成数百 GB 占满磁盘；正常插件包远小于上限）
+                if zip.len() > ZIP_MAX_ENTRIES {
+                    return Err(format!(
+                        "插件包条目过多（{} > {ZIP_MAX_ENTRIES}），已拒绝",
+                        zip.len()
+                    ));
+                }
+                let mut total_bytes = 0u64;
                 for i in 0..zip.len() {
                     let mut entry = zip
                         .by_index(i)
@@ -786,14 +815,23 @@ impl PluginManager {
                     };
                     let out = tmp.join(&rel);
                     if entry.is_dir() {
-                        std::fs::create_dir_all(&out).map_err(|e| format!("创建目录失败: {e}"))?;
+                        std::fs::create_dir_all(&out)
+                            .map_err(|e| format!("创建目录失败: {e}"))?;
                     } else {
                         if let Some(p) = out.parent() {
                             std::fs::create_dir_all(p).map_err(|e| format!("创建目录失败: {e}"))?;
                         }
+                        let size = entry.size();
+                        if total_bytes.saturating_add(size) > ZIP_MAX_BYTES {
+                            return Err(format!(
+                                "插件包解压总量超限（>{ZIP_MAX_BYTES} 字节），已拒绝"
+                            ));
+                        }
+                        total_bytes += size;
                         let mut f =
                             std::fs::File::create(&out).map_err(|e| format!("写入失败: {e}"))?;
-                        std::io::copy(&mut entry, &mut f).map_err(|e| format!("解压失败: {e}"))?;
+                        std::io::copy(&mut entry, &mut f)
+                            .map_err(|e| format!("解压失败: {e}"))?;
                     }
                 }
                 Ok(())
@@ -1033,7 +1071,7 @@ impl PluginManager {
         let vault = self.vault.clone().ok_or("vault 未设置")?;
         // 事件桥：从进程级总线取发送端（setup 已初始化；兜底丢弃通道）
         let event_tx = events::sender().unwrap_or_else(|| {
-            let (tx, _rx) = std::sync::mpsc::channel();
+            let (tx, _rx) = std::sync::mpsc::sync_channel(crate::plugins::events::EVENT_CAP);
             tx
         });
         let mut plugin =

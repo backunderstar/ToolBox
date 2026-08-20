@@ -111,3 +111,34 @@ export function helpers(ev) {
     log: (s) => console.log(s),
   };
 }
+
+/**
+ * 标准主窗口 E2E 环境：连接主窗口 page target + 绑定公共辅助。
+ * 替换各脚本手写的「PORT 解析 + findMainPage + connect + helpers」样板
+ * （历史 13 个脚本各重复 6 行；新增脚本直接用本函数）。
+ * 返回 { ev, ws, waitFor, clickText, log, sleep, page, port }。
+ */
+export async function setupMain(portArg) {
+  const port = portArg ?? "9226";
+  const page = await findMainPage(port);
+  if (!page) {
+    console.error("no main page");
+    process.exit(1);
+  }
+  const { ev, ws } = await connect(page);
+  const { waitFor, clickText, log } = helpers(ev);
+  return { ev, ws, waitFor, clickText, log, sleep, page, port };
+}
+
+/** 标准浮窗 E2E 环境（cdp-todos-ui 等浮窗场景）；语义同 setupMain。 */
+export async function setupFloat(portArg) {
+  const port = portArg ?? "9226";
+  const page = await findFloatPage(port);
+  if (!page) {
+    console.error("no float page");
+    process.exit(1);
+  }
+  const { ev, ws } = await connect(page);
+  const { waitFor, clickText, log } = helpers(ev);
+  return { ev, ws, waitFor, clickText, log, sleep, page, port };
+}

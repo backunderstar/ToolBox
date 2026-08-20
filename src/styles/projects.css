@@ -257,6 +257,11 @@
   border-color: var(--border);
   background: var(--bg-elevated);
 }
+/* 拖拽导航项期间禁用文本选中（NavSettings.startRowDrag 添加/移除） */
+body.nav-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
 .nav-settings-group-meta {
   display: inline-flex;
   align-items: center;

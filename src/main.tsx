@@ -71,12 +71,19 @@ document.addEventListener(
     if (!a) return;
     const href = a.getAttribute("href");
     if (!href || !/^https?:/i.test(href)) return;
+    // 下载链接（download 属性）意图是保存文件，不应改走浏览器打开
+    if (a.hasAttribute("download")) return;
     // 忽略 target=_blank 的链接（新窗口意图，交给浏览器默认行为）
     if (a.target === "_blank") return;
     e.preventDefault();
     void import("@tauri-apps/plugin-opener").then((m) =>
       m.openUrl(href).catch(() => {
-        window.open(href, "_blank");
+        // opener 失败（如非 Tauri 预览环境）时兜底新窗口打开；被弹窗拦截则静默
+        try {
+          window.open(href, "_blank");
+        } catch {
+          /* 弹窗被拦截：静默（链接已 preventDefault，不会误导航） */
+        }
       }),
     );
   },

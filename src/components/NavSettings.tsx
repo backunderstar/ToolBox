@@ -78,13 +78,18 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
     if (e.button !== 0) return;
     const t = e.target as HTMLElement;
     if (t.closest("button, input, select, textarea, label")) return;
+    // 阻止默认：防拖动时选中文本/触发浏览器原生拖拽
+    e.preventDefault();
     dragRef.current = { itemId, from };
     setDrag({ itemId, from });
+    // 拖动期间禁用文本选中（防止 pointermove 拖动行时误选文字）
+    document.body.classList.add("nav-dragging");
     const move = (ev: PointerEvent) => {
       const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
       setDragOver(el?.closest<HTMLElement>(".nav-settings-group")?.dataset.groupId ?? null);
     };
     const cleanup = () => {
+      document.body.classList.remove("nav-dragging");
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", cancel);
@@ -148,13 +153,22 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
     setNewGroupOpen(false);
   };
 
-  const renameGroup = (groupId: string, label: string) => {
-    const t = label.trim();
-    if (!t) return;
+  /** 分组名即时更新（不 trim，输入过程保留空格）；blur 时 trim 最终化 */
+  const setGroupLabel = (groupId: string, label: string) => {
     onChange({
       ...config,
-      groups: config.groups.map((g) => (g.id === groupId ? { ...g, label: t } : g)),
+      groups: config.groups.map((g) => (g.id === groupId ? { ...g, label } : g)),
     });
+  };
+
+  /** blur/Enter 最终化：去首尾空格；全空则还原（不允许空名分组） */
+  const commitGroupLabel = (groupId: string, label: string) => {
+    const t = label.trim();
+    if (!t) {
+      setGroupLabel(groupId, config.groups.find((g) => g.id === groupId)?.label ?? "");
+      return;
+    }
+    if (t !== label) setGroupLabel(groupId, t);
   };
 
   /** 删除分组：组内项移回各自默认组，再移除组 */
@@ -209,15 +223,14 @@ export function NavSettings({ config, defs, onChange }: NavSettingsProps) {
             <div className="nav-settings-group-head">
               <input
                 className="nav-settings-group-name"
-                defaultValue={group.label}
+                // 受控：config 外部变化（插件增删导致 normalize 重建、拖拽移动）时
+                // 输入框同步回显；旧实现 defaultValue 非受控会失同步
+                value={group.label}
                 title={isBuiltin ? "内置分组，名称可改（插件归组不受影响）" : "分组名称"}
-                onBlur={(e) => renameGroup(group.id, e.target.value)}
+                onChange={(e) => setGroupLabel(group.id, e.target.value)}
+                onBlur={(e) => commitGroupLabel(group.id, e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                  if (e.key === "Escape") {
-                    (e.target as HTMLInputElement).value = group.label;
-                    (e.target as HTMLInputElement).blur();
-                  }
                 }}
                 spellCheck={false}
               />
