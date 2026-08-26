@@ -12,6 +12,7 @@ pub mod manager;
 pub mod manifest;
 pub mod native;
 pub mod process;
+pub mod pyruntime;
 
 // re-export：lib.rs 的 State<PluginManager> 沿用 plugins::* 路径
 pub use manager::PluginManager;
@@ -19,6 +20,9 @@ pub use manager::PluginManager;
 // 此处不 re-export 避免 dev 下引用不存在的项）
 #[cfg(not(dev))]
 pub use manager::ensure_core_plugins;
+// 打包版捆绑 Python 运行时部署（仅 release 存在；dev 由 pnpm fetch:python 直接落资源目录）
+#[cfg(not(dev))]
+pub use pyruntime::ensure_bundled_python;
 // 以下 re-export 仅集成测试需要（tests 模块的 `use super::*` 拉取；
 // 非测试编译不产生，避免 unused 警告）
 #[cfg(test)]

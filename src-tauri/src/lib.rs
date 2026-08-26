@@ -302,6 +302,12 @@ pub fn run() {
             // 只表现为缺插件，reload 即恢复，不破坏正确性。
             #[cfg(not(dev))]
             {
+                // 捆绑 Python 运行时部署（先于核心插件部署，让下方预热线程的 2s 等待
+                // 覆盖复制 IO；即使未完成也只表现为插件回落系统 python/报缺解释器）
+                let h = app.handle().clone();
+                std::thread::spawn(move || {
+                    plugins::ensure_bundled_python(&h);
+                });
                 let h = app.handle().clone();
                 std::thread::spawn(move || {
                     plugins::ensure_core_plugins(&h);

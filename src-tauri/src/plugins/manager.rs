@@ -84,6 +84,9 @@ pub struct PluginManager {
     /// 最近一次扫描的 plugins 目录快照（目录名 + 有清单），
     /// 用于检测"目录增删但 vault 路径未变"的情况
     pub last_snapshot: Option<Vec<String>>,
+    /// AppHandle（refresh/启停流程记录）：process 插件解释器解析（捆绑 Python 运行时）
+    /// 需要定位 %APPDATA% 与资源目录；测试等未设置时回落系统 PATH。
+    pub(crate) app: Option<tauri::AppHandle>,
 }
 
 
@@ -471,6 +474,7 @@ impl PluginManager {
         }
         self.records.clear();
         self.vault = Some(vault.to_path_buf());
+        self.app = Some(app.clone());
         self.config_dir = app
             .path()
             .app_config_dir()
@@ -685,6 +689,7 @@ impl PluginManager {
     }
 
     pub fn set_enabled(&mut self, app: &tauri::AppHandle, id: &str, enabled: bool) -> Result<(), String> {
+        self.app = Some(app.clone());
         let idx = self
             .records
             .iter()
@@ -781,6 +786,7 @@ impl PluginManager {
         source: &str,
         kind: &str,
     ) -> Result<String, String> {
+        self.app = Some(app.clone());
         if kind != "zip" && kind != "dir" {
             return Err(format!("未知安装来源: {kind}"));
         }
@@ -922,6 +928,7 @@ impl PluginManager {
 
     /// 重新安装已卸载的核心插件：从随应用分发的资源恢复目录 + 清"已卸载"标记 + 启用并启动。
     pub fn reinstall_core(&mut self, app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+        self.app = Some(app.clone());
         if !is_safe_plugin_id(id) {
             return Err(format!("非法插件 id: {id}"));
         }
@@ -1074,9 +1081,53 @@ impl PluginManager {
             let (tx, _rx) = std::sync::mpsc::sync_channel(crate::plugins::events::EVENT_CAP);
             tx
         });
-        let mut plugin =
-            ProcessPlugin::spawn(&id, &cmd[0], &cmd[1..], &dir, &vault, perms, event_tx)?;
-        let commands = plugin.init(API_TIMEOUT)?;
+        // 解释器解析（三级）：插件目录自带 python.exe → 全局捆绑 → 系统 PATH。
+        // 解析失败不阻断：保留原命令（系统 python），spawn 失败时给可读提示。
+        let (program, resolved) = match super::pyruntime::resolve_interpreter(
+            self.app.as_ref(),
+            &dir,
+            &cmd[0],
+        ) {
+            Ok(p) => (p.to_string_lossy().to_string(), true),
+            Err(_) => (cmd[0].clone(), false),
+        };
+        let mut plugin = match ProcessPlugin::spawn(
+            &id,
+            &program,
+            &cmd[1..],
+            &dir,
+            &vault,
+            perms,
+            event_tx,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                // 解释器缺失是最常见的失败：给可读提示而不是裸的 spawn 错误
+                let hint = if !resolved && super::pyruntime::is_python_command(&cmd[0]) {
+                    format!(
+                        "{e}\n提示：未找到 Python 解释器。目标机需安装 Python 并加入 PATH，\
+                         或使用随应用分发的捆绑运行时（构建期 pnpm fetch:python）。"
+                    )
+                } else {
+                    e
+                };
+                return Err(hint);
+            }
+        };
+        // init 握手失败：附上插件 stderr 尾部（Python traceback 等），
+        // 缺依赖（import 失败）时前端直接看到原因，而不是模糊的"进程已退出"。
+        let commands = match plugin.init(API_TIMEOUT) {
+            Ok(c) => c,
+            Err(e) => {
+                let tail = plugin.stderr_tail();
+                let msg = if tail.is_empty() {
+                    e
+                } else {
+                    format!("{e}\n插件 stderr（末尾）：\n{tail}")
+                };
+                return Err(msg);
+            }
+        };
         self.records[idx].commands = commands;
         self.records[idx].process = Some(plugin);
         self.records[idx].error = None;

@@ -167,6 +167,17 @@ check(
   null,
 );
 
+/* ---- 5. 捆绑 Python 运行时（process 插件在目标机无 Python 时靠它） ---- */
+const hasBundledPython = existsSync(
+  path.join(root, "src-tauri", "resources", "python", "python.exe"),
+);
+check(
+  "捆绑 Python 运行时（resources/python）",
+  hasBundledPython,
+  hasBundledPython ? "已就绪（随安装包分发，目标机无需 Python）" : "未下载",
+  wantInstall ? null : "运行 pnpm fetch:python（下载 python-build-standalone full 变体）",
+);
+
 /* ---- 汇总 ---- */
 console.log("----------------------------------------");
 for (const r of report) {
@@ -194,6 +205,16 @@ if (wantInstall) {
   execSync("cargo fetch", { cwd: root, stdio: "inherit" });
   console.log("[setup] 构建并部署核心插件（pnpm build:core）...");
   execSync("pnpm build:core", { cwd: root, stdio: "inherit" });
+  if (!hasBundledPython) {
+    console.log("[setup] 下载捆绑 Python 运行时（pnpm fetch:python，需联网）...");
+    try {
+      execSync("pnpm fetch:python", { cwd: root, stdio: "inherit" });
+    } catch {
+      console.log("[setup] ⚠️ 捆绑 Python 下载失败（可稍后手动 pnpm fetch:python；dev 回落系统 python）");
+    }
+  } else {
+    console.log("[setup] 捆绑 Python 运行时已存在，跳过下载");
+  }
   console.log("\n[setup] 完成。开发命令：pnpm tauri dev");
   console.log("        完整验证：pnpm lint && pnpm build && pnpm test && cargo test --workspace");
 }

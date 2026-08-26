@@ -8,11 +8,12 @@ use crate::core::path::resolve_safe;
 use crate::plugins::events::PluginEvent;
 use crate::rpc::{self, Message, RpcError};
 use serde_json::{json, Value};
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver, Sender, SyncSender};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
@@ -63,6 +64,9 @@ pub struct ProcessPlugin {
     /// 事件桥：插件 Notification → 前端（纯 mpsc，不接触 tauri 类型）。
     /// 用 SyncSender（有界）：失控进程无限推事件时背压到读线程，不占无限内存
     event_tx: SyncSender<PluginEvent>,
+    /// stderr 捕获：最近若干行（Python traceback / 缺依赖原因），init 失败时回显。
+    /// 独立读线程持续消费，否则 Windows 管道缓冲写满会阻塞插件进程。
+    stderr_tail: Arc<Mutex<VecDeque<String>>>,
 }
 
 impl ProcessPlugin {
@@ -81,14 +85,21 @@ impl ProcessPlugin {
             .current_dir(plugin_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit()) // 插件 stderr 直接透传到终端（作为日志）
+            .stderr(Stdio::piped()) // 捕获：读线程转发日志 + 保留末尾，init 失败时回显
             .spawn()
             .map_err(|e| format!("启动插件进程失败（{program}）: {e}"))?;
         let stdin = child.stdin.take().ok_or("无法获取插件 stdin")?;
         let stdout = child.stdout.take().ok_or("无法获取插件 stdout")?;
+        let stderr = child.stderr.take().ok_or("无法获取插件 stderr")?;
         let (tx, rx) = channel();
         thread::spawn(move || read_loop(stdout, tx));
         let write_tx = spawn_write_thread(stdin);
+        // stderr 读线程：必须持续读（不读会写满管道缓冲阻塞插件进程）
+        let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));
+        {
+            let tail = Arc::clone(&stderr_tail);
+            thread::spawn(move || read_stderr_loop(stderr, tail));
+        }
         Ok(Self {
             child,
             write_tx,
@@ -98,6 +109,7 @@ impl ProcessPlugin {
             permissions,
             plugin_id: plugin_id.to_string(),
             event_tx,
+            stderr_tail,
         })
     }
 
@@ -309,6 +321,14 @@ impl ProcessPlugin {
         matches!(self.child.try_wait(), Ok(Some(_)))
     }
 
+    /// 最近捕获的插件 stderr 文本（init 握手失败时用于定位缺依赖/Python traceback）。
+    pub fn stderr_tail(&self) -> String {
+        let Ok(t) = self.stderr_tail.lock() else {
+            return String::new();
+        };
+        t.iter().cloned().collect::<Vec<_>>().join("\n")
+    }
+
     /// 写一条消息到插件 stdin，带超时兜底：
     /// 插件不消费 stdin（挂死）时，管道缓冲写满会让 `write_all` 无限阻塞，
     /// 这里通过写线程 + ack 通道在超时后**终止进程**解除阻塞并报错。
@@ -411,6 +431,38 @@ impl Drop for ProcessPlugin {
 
 /// 单行最大字节数：异常/恶意插件打印无换行大块数据时防止内存被撑爆。
 const MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
+
+/// stderr 保留的最大行数（缺依赖报错足够，防止无限增长）。
+const STDERR_TAIL_MAX: usize = 40;
+
+/// stderr 读线程：把插件 stderr 当作日志转发（core::log），同时保留最近
+/// `STDERR_TAIL_MAX` 行，供 init 失败时回显（Python traceback / 缺依赖原因）。
+/// 必须持续读：Windows 管道缓冲写满会阻塞插件进程（stderr 不消费 = 挂死）。
+/// 按字节读 + lossy 解码：插件输出非法 UTF-8（如 GBK）不中断读取。
+fn read_stderr_loop(stderr: ChildStderr, tail: Arc<Mutex<VecDeque<String>>>) {
+    let mut reader = BufReader::new(stderr);
+    let mut buf: Vec<u8> = Vec::with_capacity(1024);
+    loop {
+        buf.clear();
+        match reader.read_until(b'\n', &mut buf) {
+            Ok(0) | Err(_) => break, // EOF / 管道关闭
+            Ok(_) => {
+                let line = String::from_utf8_lossy(&buf);
+                let trimmed = line.trim_end().to_string();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                crate::core::log::info(&format!("[plugin:stderr] {trimmed}"));
+                if let Ok(mut t) = tail.lock() {
+                    t.push_back(trimmed);
+                    while t.len() > STDERR_TAIL_MAX {
+                        t.pop_front();
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// 丢弃超长行的剩余字节直到换行（固定小缓冲循环读，避免再引入无上限读）。
 fn drain_overlong_line(reader: &mut impl Read) {

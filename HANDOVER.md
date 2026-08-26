@@ -1,46 +1,100 @@
 # ToolBox 交接文档（Handover）
 
-> **新会话从这里开始**：先读本文件，再读 [PLAN.md](PLAN.md)（规划/里程碑）与
-> [docs/操作手册.md](docs/操作手册.md)（功能说明）。本文件只记录"必须知道的事与踩过的坑"。
+> **新会话从这里开始**：先读本文件（按重要度排序，第一节是最紧急的事）。
+> 规划/里程碑见 [PLAN.md](PLAN.md)，功能说明见 [docs/操作手册.md](docs/操作手册.md)。
+> 本文件只记录"必须知道的事与踩过的坑"。
 
-## 0. 项目一句话
+---
+
+## 1. 🔴 当前最重要：捆绑 Python 运行时（进行中，未验证，构建是红的）
+
+**目标**（用户已确认方案 A + full 变体）：目标机没装 Python 也能跑 process 插件
+（csv-tool / py-tools）。代码已写完但**尚未编译验证**，且 `cargo build`/`test` 当前**必然失败**。
+
+### 1.1 为什么构建是红的（接手第一步先解决）
+
+`tauri.conf.json` 的 `bundle.resources` 加了 `"resources/python"`，而 **tauri 编译期校验
+bundle.resources 路径必须存在** → 47MB 的 Python 还没下载下来 → 报错
+`resource path resources\python doesn't exist`，整个 cargo 构建挂掉。
+
+### 1.2 下一步（按顺序做）
+
+1. 让 `src-tauri/resources/python/python.exe` 就位：`pnpm fetch:python`
+   （本机 GitHub 直连极慢，见 §6.3 坑 3；可先给脚本加 `--mirror` 或手动下载解压到该目录）
+2. `cargo test --workspace` 全绿（预期 78 个既有 + 3 个 pyruntime 新测试）——**当前未跑过**
+3. `pnpm lint && pnpm test && pnpm build`
+4. dev 冒烟：`pnpm tauri dev` 启用 csv-tool/py-tools，日志确认捆绑解释器被使用
+   （部署日志 `[python] 已部署捆绑 Python 运行时`）
+5. 打包验证：`build:core:release` + `tauri build --debug` → 在无 Python 环境跑 exe
+6. 后续项：插件页"安装依赖"按钮（full 变体 pip 已就绪，UI 未做）
+7. 收尾：PLAN.md §5.1 补完成行、README/操作手册 §6.1 补 fetch:python 步骤、
+   HANDOVER §9 基线回绿、本地 git 提交（勿推送）
+
+### 1.3 设计（已完成部分，改动前先看懂）
+
+- **两层模型**：全局捆绑解释器（随包分发，部署到 `%APPDATA%/com.toolbox.desktop/python/`）
+  + 插件级自包含（`vendor/` → `env/` → 插件目录自带 `python.exe`，逐级升级）
+- **宿主解释器三级解析**（`pyruntime::resolve_interpreter`）：
+  插件目录 `python.exe` → 全局捆绑 → 系统 PATH
+- **缺依赖可读报错**：插件 stderr 从 `inherit` 改为 piped 捕获（读线程转发日志 + 保留最近
+  40 行），init 失败时把 Python traceback 附到插件错误信息里
+
+### 1.4 已改文件（11 个，均未提交）
+
+| 文件 | 改动 |
+|---|---|
+| `scripts/fetch-python.mjs`（新） | GitHub API 取最新 release → 匹配 `cpython-3.14.*-x86_64-pc-windows-msvc-pgo-full.tar.zst` → 下载 + SHA256SUMS 校验 → bsdtar 解压到 `src-tauri/resources/python/`；`--version`/`--force` |
+| `package.json` | `fetch:python` 脚本 |
+| `.gitignore` | `src-tauri/resources/python/` |
+| `src-tauri/tauri.conf.json` | `bundle.resources` += `resources/python`（**当前红的原因**） |
+| `src-tauri/src/plugins/pyruntime.rs`（新） | `ensure_bundled_python`（仅 release 部署）、`deploy_bundled_python`、`bundled_python_dir`、`resolve_interpreter`、`is_python_command` + 3 单测 |
+| `src-tauri/src/plugins/mod.rs` | `pub mod pyruntime` + `#[cfg(not(dev))]` re-export |
+| `src-tauri/src/plugins/manager.rs` | `PluginManager` 增 `app: Option<AppHandle>`（refresh/set_enabled/install/reinstall_core 记录）；`start_process` 接入解析 + spawn 失败提示 + init 失败附 stderr 末尾 |
+| `src-tauri/src/plugins/process.rs` | stderr piped 捕获（`read_stderr_loop` + `stderr_tail()`） |
+| `src-tauri/src/lib.rs` | setup 的 `cfg(not(dev))` 块先 spawn `ensure_bundled_python` 再 `ensure_core_plugins` |
+| `scripts/dev-env.mjs` | doctor 新增"捆绑 Python 运行时"检查；env:setup 缺失时自动 fetch（失败仅警告） |
+| `docs/插件开发指南.md`、`docs/操作手册.md` | §3.5 两层模型重写；§2/§3.3 解释器解析说明 |
+
+---
+
+## 2. 项目一句话
 
 个人工具箱桌面应用：**Rust 核心（Tauri 2）+ Vue 3 宿主 + 插件系统**（6 个核心插件自带前端 +
 外部 JS/Python 插件），数据全部是 vault 工作区里的普通文件（Markdown/JSON）。
 
 - 仓库：`D:\WORKSPACE\ToolBox`（远程 `github.com/backunderstar/ToolBox`）
 - 语言/工具：Rust 1.97 + Node ≥20 + pnpm 10 + Vue 3.5 + md-editor-v3 + Vite 8（vite-plus/rolldown）
+- **分支**：`main` = Vue 3 主线；`react` = React 版冻结存档（只读，勿动）
 
-## 1. 技术栈现状（2026 大迁移后）
+## 3. 技术栈现状（2026 大迁移后）
 
 | 层 | 现状 |
 |---|---|
 | 宿主前端 `src/` | **Vue 3**（`.vue` SFC + 模块级单例 store），`vue-tsc` 类型检查，`defineAsyncComponent` 懒加载设置页/插件页 |
 | 插件 UI `core-plugins/*/ui/` | **全部 Vue 3**（`index.ts` + `App.vue` + `bridge.ts`），Vite lib 构建自包含 IIFE |
 | 笔记编辑器 | **md-editor-v3 v6**（不再用 Vditor，`public/vditor/` 已删除） |
-| Rust 核心 `src-tauri/` | 零改动迁移；Cargo workspace 根 = 仓库根，`target/` 在仓库根（**不是** src-tauri/target） |
+| Rust 核心 `src-tauri/` | Cargo workspace 根 = 仓库根，`target/` 在仓库根（**不是** src-tauri/target） |
 | React | **仓库已无任何 React**（含 devDependencies） |
 
-**分支**：`main` = Vue 3 主线；`react` = React 版冻结存档（只读，勿动）。
-
-## 2. 常用命令
+## 4. 常用命令
 
 ```bash
-pnpm env:setup        # 一键初始化：环境检测 + pnpm install + cargo fetch + build:core
+pnpm env:setup        # 一键初始化：环境检测 + pnpm install + cargo fetch + build:core + fetch:python
 pnpm doctor           # 环境检测报告（缺什么、怎么装）
-pnpm tauri dev        # 开发模式（**前提**：已 build:core 部署核心插件，否则无核心插件）
+pnpm tauri dev        # 开发模式（前提：已 build:core 部署核心插件）
 pnpm build:core       # 构建核心插件（debug DLL + Vue UI → 应用配置目录 plugins/_core/）
 pnpm build:core:release  # release → src-tauri/resources/_core/（打包用）
+pnpm fetch:python     # 下载捆绑 Python 运行时（python-build-standalone full → resources/python/）
 pnpm build-external-ui plugins/<id>  # 构建外部插件 UI
 pnpm sync:plugins     # 仓库 plugins/ → 应用插件目录（开发时同步外部插件改动）
 pnpm lint && pnpm build && pnpm test   # 前端验证（lint 必须 0 警告）
-cargo test --workspace                 # Rust 测试（78 个）
+cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 ```
 
 跨平台：`scripts/platform.mjs` 提供 `appDataDir()`（Windows `%APPDATA%` / macOS
 `~/Library/Application Support` / Linux `~/.config`），构建/同步脚本均已使用，**不要**再写死 `%APPDATA%`。
 
-## 3. 架构关键点（改代码前必读）
+## 5. 架构关键点（改代码前必读）
 
 1. **状态层是模块级单例 store**（`src/core/vault.ts` / `plugins.ts` / `navigation.ts`）：
    用 `reactive` + `watch`，组件 `useVault()` 直接拿。Vue 响应式代理读到的永远是当前值——
@@ -56,29 +110,38 @@ cargo test --workspace                 # Rust 测试（78 个）
 5. **懒加载**：SettingsView/PluginsView 是 `defineAsyncComponent`（独立 chunk）；
    插件 UI 本身按需注入（Blob script）。
 
-## 4. 重要决策记录
+## 6. 坑与注意事项（按主题，前三条是本次新增）
 
-- 宿主与插件 UI **全 Vue 3**，React 版存档在 `react` 分支（用户决策：以后主要用 Vue 3 开发）
-- 笔记编辑器 **Vditor → md-editor-v3**（Vue 3 生态；产物全打进 IIFE，gzip ~702kB，离线可用）
-- **插件沙箱**：仅规划在 PLAN.md §5.2（P0：CSP 收紧 + 命令面最小化 + ShadowRealm；P1：iframe + wasm；P2：process 权限 + AppContainer），**未排期未实现**
-- 数据/配置目录：业务数据在 vault 工作区；应用配置与插件在应用配置目录（跨平台解析）
-- 提交策略：**本地 git 提交，推送需用户确认**；push 后 CI 自动验证
+### 6.1 捆绑 Python 运行时相关的坑（本次新增）
 
-## 5. 坑与注意事项（踩过，别再踩）
+1. **tauri 编译期校验 `bundle.resources`**：加了资源路径但目录不存在 → 整个 cargo 构建失败
+   （`resource path resources\python doesn't exist`）。所以要么先下载，要么先放占位目录。
+2. **python-build-standalone 命名 2026-08 起变了**：full 变体 = `-pgo-full.tar.zst`
+   （zstd 压缩、pgo 优化），`.tar.gz` 只剩 `install_only`（无 pip）。旧资料里的
+   `-full.tar.gz` 已不存在。解压依赖系统 bsdtar 带 libzstd（Win11 tar 3.8.4 有；
+   旧 Windows 的 tar 不行）——解压只发生在**构建期**，目标机拿到的是解压后的目录，无此问题。
+3. **本机 GitHub 直连下载极慢**（~500KB/3min，47MB 要数小时）。测过
+   `ghfast.top` / `gh-proxy.com` / `mirror.ghproxy.com` / `github.moeyy.xyz` 等镜像但
+   **fetch-python.mjs 还没加 --mirror 选项**（目前只支持直连）。资源在
+   `github.com/astral-sh/python-build-standalone/releases`，每次 release 都带 SHA256SUMS。
+4. **沙箱限制的迷惑表现**（若下次仍遇到"cargo test 空输出 + $LASTEXITCODE 为空"）：
+   是沙箱禁止运行编译出的 exe（test 二进制）导致，不是命令问题——`cargo --version`
+   前台能跑不代表 test 能跑。后台下载 0 字节卡死同理。
+5. **背景任务验证模式可靠**：`cargo test --workspace *> target/cargo-test.log; Write-Host "EXIT=$LASTEXITCODE"`
+   ——全量测试/构建照此写，输出落 target/（gitignored）不刷屏。
 
-### 5.1 终端 / Git（Windows）
+### 6.2 终端 / Git（Windows）
 
 - **终端显示中文文件是乱码**（GBK vs UTF-8）：文件内容用 read/grep 工具看，**不要**用 `Get-Content`/`cat` 判断内容。
 - **绝不使用 `Set-Content` 写含中文的源文件**（会 GBK 损坏文件）——用 write/edit 工具。
 - **中文 commit message**：`git commit -m "中文"` 在 PowerShell 会解析成 pathspec 错误 →
   用 `git commit -F <文件>`（文件放 `target/` 下，gitignored，不会误提交；提交后删掉）。
 - **PowerShell 的 exit code 误报**：cargo/git 往 stderr 写内容（linker 警告、进度）时，
-  PowerShell 会报 `[exit code: 1]` + NativeCommandError——这是**误报**，用 `$LASTEXITCODE` 判断真实退出码
-  （例如 `cargo test 2>$null; Write-Host $LASTEXITCODE`）。
+  PowerShell 会报 `[exit code: 1]` + NativeCommandError——这是**误报**，用 `$LASTEXITCODE` 判断真实退出码。
 - 提交前 `git add -A` 会带上工作区所有未跟踪文件——注意别把临时文件/产物加进去
-  （`plugins/*/ui/index.js`、`core-plugins/*/ui/index.js` 是构建产物，gitignored/已 ignore，勿提交）。
+  （`plugins/*/ui/index.js`、`core-plugins/*/ui/index.js` 是构建产物，gitignored，勿提交）。
 
-### 5.2 插件 UI 构建
+### 6.3 插件 UI 构建
 
 - **`plugin-ui-build.mjs` 必须保留 `define: { "process.env.NODE_ENV": ... }`**：
   md-editor-v3（codemirror 依赖）运行时引用 `process.env`，去掉会报
@@ -89,12 +152,11 @@ cargo test --workspace                 # Rust 测试（78 个）
 - `core-plugins/blog/ui/style.css`、`notes/ui/style.css` 是 **git 跟踪的源文件**（不是产物），勿删。
 - 外部插件 text-stats 的 `plugins/text-stats/ui/index.js` 是 gitignored 产物，构建生成。
 
-### 5.3 依赖 / 工具链
+### 6.4 依赖 / 工具链
 
 - **archiver 8 是 ESM 重构**：无 default export，用法 `new ZipArchive({ zlib: { level: 9 } })`
   （不是 `archiver("zip")`）。见 `scripts/platform.mjs`。
-- **`pnpm setup` 是 pnpm 内置命令**，会遮蔽同名 package.json script——所以初始化脚本叫
-  `pnpm env:setup`。
+- **`pnpm setup` 是 pnpm 内置命令**，会遮蔽同名 package.json script——所以初始化脚本叫 `pnpm env:setup`。
 - Windows 上 `execFileSync("pnpm"/"rustc"...)` 不解析 `.cmd` 包装 → 探测用 `execSync` 走 shell
   （见 `dev-env.mjs` 的 tryCmd）。
 - `vswhere.exe` 不在 PATH（固定路径 `C:\Program Files (x86)\Microsoft Visual Studio\Installer\`），
@@ -103,7 +165,7 @@ cargo test --workspace                 # Rust 测试（78 个）
 - **reqwest 锁 0.13.1**：tauri-updater 约束，勿随意升（0.13.4 已发布但没升）。
 - Rust crates 走 rsproxy 镜像（`rsproxy-sparse`），vendored 在 `D:\SDK\Rust\.cargo\registry\...`。
 
-### 5.4 运行时 / 验证
+### 6.5 运行时 / 验证
 
 - `pnpm tauri dev` 冒烟验证方式：看终端日志——`[global-error]`/`[unhandled-rejection]`/
   `[resource-error]` 是前端错误转发；`[failed-resources] 无失败资源` 是正常（dev 模式的调试输出）。
@@ -113,7 +175,17 @@ cargo test --workspace                 # Rust 测试（78 个）
 - 插件 UI 不经 `vue-tsc` 检查（tsconfig include 只有 `src`）——改插件 UI 后靠
   `pnpm build:core` 构建成功 + tauri dev 冒烟验证。
 
-## 6. 未完成 / 待办
+## 7. 重要决策记录
+
+- 宿主与插件 UI **全 Vue 3**，React 版存档在 `react` 分支（用户决策：以后主要用 Vue 3 开发）
+- 笔记编辑器 **Vditor → md-editor-v3**（Vue 3 生态；产物全打进 IIFE，gzip ~702kB，离线可用）
+- **插件沙箱**：仅规划在 PLAN.md §5.2（P0：CSP 收紧 + 命令面最小化 + ShadowRealm；P1：iframe + wasm；P2：process 权限 + AppContainer），**未排期未实现**
+- 数据/配置目录：业务数据在 vault 工作区；应用配置与插件在应用配置目录（跨平台解析）
+- 提交策略：**本地 git 提交，推送需用户确认**；push 后 CI 自动验证
+- **捆绑 Python 运行时**（2026-08-21 决策）：python-build-standalone full 变体随包分发，
+  两层模型 + 三级解释器解析（进行中，见 §1）
+
+## 8. 待办（除 §1 进行中的工作外）
 
 - **插件沙箱**（PLAN.md §5.2）：P0 CSP 收紧 + 命令面最小化 + ShadowRealm，未排期
 - **md-editor-v3 打磨**：当前为分屏模式（原 Vditor 是即时渲染 IR），如有需要可调
@@ -122,8 +194,12 @@ cargo test --workspace                 # Rust 测试（78 个）
 - 插件 UI 产物体积：notes 含 md-editor-v3 gzip ~702kB（预期内）；如优化可考虑按需拆包
 - `scripts/gen-icons.ps1` 是 Windows-only 一次性工具（产物已入库，无需重跑）
 
-## 7. 验证基线（最近一次全绿）
+## 9. 验证基线（最近一次全绿）
 
 `pnpm doctor` 全就绪 · `pnpm lint` 0 警告 · `pnpm test` 33 · `pnpm build` ·
 `pnpm build:core`（6 插件 + DLL 自检）· `cargo test --workspace` 78 ·
 `pnpm tauri dev` 冒烟无前端错误。改动后请跑对应子集。
+
+> ⚠️ **当前（2026-08-21）基线失效**：tauri.conf.json 引用的 `resources/python` 尚不存在，
+> `cargo test`/`cargo build` 编译期即失败；新增 Rust 代码未编译验证、前端脚本未跑 lint。
+> 恢复步骤见 §1.2 第 1–3 条。

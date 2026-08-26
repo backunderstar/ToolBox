@@ -9,6 +9,8 @@ src-tauri/target/
 src-tauri/gen/
 # 核心插件打包资源（release DLL，由 pnpm build:core:release 生成）
 src-tauri/resources/_core/
+# 捆绑 Python 运行时（python-build-standalone，由 pnpm fetch:python 生成）
+src-tauri/resources/python/
 
 # 系统与编辑器
 .DS_Store
