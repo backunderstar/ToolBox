@@ -200,6 +200,14 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 
 ## 8. 待办（除 §1 进行中的工作外）
 
+- **🔴 未推送的本地提交（2026-08-28，3 个）**：`0f4fbee`（捆绑 Python 收尾）、
+  `2668065`（清理无用文件/整理文档）、`885ea83`（CI 修复 resources/python 校验）。
+  网络情况：本机 **github.com:443 HTTPS 直连被墙**（重试多次 `Connection reset`；
+  解析到 20.205.243.166 不通），但 **`ssh.github.com:443` 实测可连**（GitHub 官方
+  SSH-over-443 通道）。推送选项：① 生成 SSH key 加 GitHub → 远程改
+  `ssh://git@ssh.github.com:443/backunderstar/ToolBox.git`；② 开代理后
+  `git config --global http.proxy http://127.0.0.1:<port>` 再 `git push origin main`。
+  推送会触发 ci.yml（已修好 resources/python 占位校验）。
 - **插件页"安装依赖"按钮**：捆绑运行时 full 变体（pip 26.2.1）已就绪，宿主侧只差一个
   命令（用捆绑 python 执行 `pip install --target <插件>/vendor -r requirements.txt`）+
   插件页 UI。目标机有网时第三方插件可自助补依赖
