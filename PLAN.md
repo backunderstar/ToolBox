@@ -52,7 +52,8 @@
 ### 风险提示
 
 - WebView2：Win10 较老版本需单独装运行时；办公内网机器需提前确认。
-- Python 插件依赖机器有 Python；后期可用 `uv` 管理的嵌入式 Python 打包进去。
+- Python 插件依赖机器有 Python —— **已解决**：捆绑 Python 运行时（python-build-standalone full 变体）
+  随安装包分发，目标机无需 Python 即可跑 process 插件（见 §5.1 完成行）。
 - 插件沙箱（重点：webview 插件命令面全开 + CSP 侧信道、native 插件 FFI 崩溃拖垮宿主）：v1 采用"信任自己写的插件"模型；长期方案见 §5.2 插件沙箱（ShadowRealm / iframe sandbox / WASM 三路并行；嵌入式 JS 运行时方案已排除——成本高且与 ShadowRealm 收益重叠）。
 
 ---
@@ -306,7 +307,7 @@ ToolBox/
 ├── Cargo.toml              # Rust workspace（宿主 + tb-sdk + core-plugins/*）
 ├── tb-sdk/                 # 核心插件 SDK：C ABI 契约 + tb_plugin! 样板宏 + 路径安全
 ├── core-plugins/           # 核心插件（cdylib，随应用分发；共 6 个，全部自带前端）
-│   ├── notes/              # 笔记（notes/ 文件操作 + Vditor 编辑器 + 反链）
+│   ├── notes/              # 笔记（notes/ 文件操作 + md-editor-v3 编辑器 + 反链）
 │   ├── todos/              # 待办（浮窗数据层 + todos-changed）
 │   ├── checklists/         # 清单（data/checklists CRUD）
 │   ├── projects/           # 项目（projects/ 目录 + 归档 + 打开）
@@ -316,17 +317,19 @@ ToolBox/
 │   ├── src/
 │   │   ├── main.rs / lib.rs
 │   │   ├── core/           # vault、path、search（SQLite FTS5）、backup（自动备份）
-│   │   ├── plugins/        # 插件管理器、native 加载器、进程桥、事件桥、manifest
+│   │   ├── plugins/        # 插件管理器、native 加载器、进程桥、事件桥、manifest、捆绑 Python 运行时
 │   │   └── rpc/            # JSON-RPC 协议类型（serde）
 │   ├── capabilities/       # Tauri 权限声明
+│   ├── resources/          # 打包资源：_core/（核心插件 release DLL）、python/（捆绑 Python 运行时）
 │   └── tauri.conf.json
-├── src/                    # 前端（TypeScript + React）
-│   ├── main.tsx / App.tsx
+├── src/                    # 前端（TypeScript + Vue 3）
+│   ├── main.ts / App.vue
 │   ├── themes/             # 令牌 + 主题引擎 + 内置主题
 │   ├── core/               # IPC 封装、插件运行时、vault 状态、导航配置
 │   └── components/         # 侧边栏、插件 UI 容器、设置、导航配置编辑器
 ├── plugins/                # 外部插件示例（仓库内，部署到 %APPDATA%）
-├── docs/                   # 架构、插件开发指南、主题开发指南
+├── docs/                   # 操作手册、技术栈详解、插件开发指南、发布流程
+├── HANDOVER.md             # 交接文档（新会话先读）
 ├── PLAN.md
 └── package.json
 ```

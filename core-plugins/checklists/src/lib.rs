@@ -1,6 +1,6 @@
 //! 清单存储：vault/data/checklists/<id>.json。
 //!
-//! 由前端 src/core/checklists.tsx 数据层下沉：文件格式兼容
+//! 原宿主前端数据层（checklists.tsx）下沉为核心插件：文件格式兼容
 //! （Checklist/ChecklistItem 结构、camelCase 字段不变）；id 生成与
 //! 同名冲突加序号逻辑移入插件（宿主进程内，独立于前端 UI 状态）。
 

@@ -208,7 +208,6 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
   `md-editor-v3` 配置（工具栏/预览主题/代码高亮主题）
 - 13 个 cdp-*.mjs 脚本的样板重复未收敛（`cdp-lib.mjs` 已抽公共，但各套件仍独立）
 - 插件 UI 产物体积：notes 含 md-editor-v3 gzip ~702kB（预期内）；如优化可考虑按需拆包
-- `scripts/gen-icons.ps1` 是 Windows-only 一次性工具（产物已入库，无需重跑）
 
 ## 9. 验证基线（2026-08-28 重新全绿）
 

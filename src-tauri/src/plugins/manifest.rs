@@ -58,7 +58,8 @@ pub struct NavDecl {
     /// 侧边栏分组（如 "工作区"）
     #[serde(default)]
     pub group: String,
-    /// 视图组件名（前端内置组件表的 key，如 "RecordsView"）
+    /// 视图组件名（历史字段：宿主内置视图已随死代码清理删除，插件自带前端经
+    /// manifest `ui.entry` 声明；此字段保留仅为旧清单兼容，不再产生视图分发）
     #[serde(default)]
     pub view: String,
 }
