@@ -53,6 +53,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # 下载捆绑 Python 运行时：cargo test / tauri build 的编译期都要校验
+      # bundle.resources 路径（resources/python），且安装包必须真实带上运行时
+      # （目标机无 Python 也能跑 process 插件）
+      - name: Fetch bundled Python runtime
+        run: pnpm fetch:python
+
       - name: Rust tests (workspace)
         run: cargo test --workspace
 
