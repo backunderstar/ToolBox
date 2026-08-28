@@ -6,31 +6,32 @@
 
 ---
 
-## 1. 🔴 当前最重要：捆绑 Python 运行时（进行中，未验证，构建是红的）
+## 1. 🔴 当前状态：捆绑 Python 运行时（✅ 核心链路已完成，剩冒烟/打包/收尾）
 
 **目标**（用户已确认方案 A + full 变体）：目标机没装 Python 也能跑 process 插件
-（csv-tool / py-tools）。代码已写完但**尚未编译验证**，且 `cargo build`/`test` 当前**必然失败**。
+（csv-tool / py-tools）。**核心链路已实现并验证全绿**（cargo 81 测试 / lint 0 / test 33 / build ✓），
+剩余：dev 冒烟、打包验证、插件页"安装依赖"按钮、文档收尾与提交。
 
-### 1.1 为什么构建是红的（接手第一步先解决）
+### 1.1 完成状态（2026-08-28）
 
-`tauri.conf.json` 的 `bundle.resources` 加了 `"resources/python"`，而 **tauri 编译期校验
-bundle.resources 路径必须存在** → 47MB 的 Python 还没下载下来 → 报错
-`resource path resources\python doesn't exist`，整个 cargo 构建挂掉。
+- `src-tauri/resources/python/` 已就位：Python 3.14.7 + pip 26.2.1，**瘦身后 48.7MB**
+  （原 180MB：删 pdb 调试符号 ~90MB + Lib/test ~32MB + 字节码缓存）
+- **8/21 写的 11 个文件已在 8/26 被提交为 `5a895b7`（"update something idont know"）**，
+  非本人提交，内容 = 8/21 会话的代码
+- **今天（8/28）新增未提交**：`fetch-python.mjs` 的 `--mirror` 选项 + 瘦身步骤、
+  AppHandle 崩溃修复（manager.rs/pyruntime.rs，见 §6.1 坑 6）、本文档
 
 ### 1.2 下一步（按顺序做）
 
-1. 让 `src-tauri/resources/python/python.exe` 就位：`pnpm fetch:python`
-   （本机 GitHub 直连极慢，见 §6.3 坑 3；可先给脚本加 `--mirror` 或手动下载解压到该目录）
-2. `cargo test --workspace` 全绿（预期 78 个既有 + 3 个 pyruntime 新测试）——**当前未跑过**
-3. `pnpm lint && pnpm test && pnpm build`
-4. dev 冒烟：`pnpm tauri dev` 启用 csv-tool/py-tools，日志确认捆绑解释器被使用
+1. **dev 冒烟**：`pnpm tauri dev` 启用 csv-tool/py-tools，日志确认捆绑解释器被使用
    （部署日志 `[python] 已部署捆绑 Python 运行时`）
-5. 打包验证：`build:core:release` + `tauri build --debug` → 在无 Python 环境跑 exe
-6. 后续项：插件页"安装依赖"按钮（full 变体 pip 已就绪，UI 未做）
-7. 收尾：PLAN.md §5.1 补完成行、README/操作手册 §6.1 补 fetch:python 步骤、
-   HANDOVER §9 基线回绿、本地 git 提交（勿推送）
+2. **打包验证**：`build:core:release` + `tauri build --debug` → 在无 Python 环境跑 exe
+   （注意：`beforeBuildCommand` 前确保 `pnpm fetch:python` 已跑，否则 bundle 缺运行时）
+3. 插件页"安装依赖"按钮（full 变体 pip 已就绪，UI 未做）
+4. 收尾：PLAN.md §5.1 补完成行、README/操作手册 §6.1 补 fetch:python 步骤、
+   提交未提交改动（勿推送）
 
-### 1.3 设计（已完成部分，改动前先看懂）
+### 1.3 设计（改动前先看懂）
 
 - **两层模型**：全局捆绑解释器（随包分发，部署到 `%APPDATA%/com.toolbox.desktop/python/`）
   + 插件级自包含（`vendor/` → `env/` → 插件目录自带 `python.exe`，逐级升级）
@@ -39,17 +40,17 @@ bundle.resources 路径必须存在** → 47MB 的 Python 还没下载下来 →
 - **缺依赖可读报错**：插件 stderr 从 `inherit` 改为 piped 捕获（读线程转发日志 + 保留最近
   40 行），init 失败时把 Python traceback 附到插件错误信息里
 
-### 1.4 已改文件（11 个，均未提交）
+### 1.4 已改文件（8/21 部分已提交 5a895b7；表格中 ⭐ 为本轮新改）
 
 | 文件 | 改动 |
 |---|---|
-| `scripts/fetch-python.mjs`（新） | GitHub API 取最新 release → 匹配 `cpython-3.14.*-x86_64-pc-windows-msvc-pgo-full.tar.zst` → 下载 + SHA256SUMS 校验 → bsdtar 解压到 `src-tauri/resources/python/`；`--version`/`--force` |
+| `scripts/fetch-python.mjs`（新，⭐） | GitHub API 取最新 release → 匹配 `cpython-3.14.*-x86_64-pc-windows-msvc-pgo-full.tar.zst` → 下载 + SHA256SUMS 校验 → bsdtar 解压 → **瘦身**；`--version`/`--force`/`--mirror https://ghfast.top/`（⭐ 镜像选项） |
 | `package.json` | `fetch:python` 脚本 |
 | `.gitignore` | `src-tauri/resources/python/` |
-| `src-tauri/tauri.conf.json` | `bundle.resources` += `resources/python`（**当前红的原因**） |
-| `src-tauri/src/plugins/pyruntime.rs`（新） | `ensure_bundled_python`（仅 release 部署）、`deploy_bundled_python`、`bundled_python_dir`、`resolve_interpreter`、`is_python_command` + 3 单测 |
+| `src-tauri/tauri.conf.json` | `bundle.resources` += `resources/python` |
+| `src-tauri/src/plugins/pyruntime.rs`（新） | `ensure_bundled_python`（仅 release 部署）、`deploy_bundled_python`、`bundled_python_dir`、`resolve_interpreter`（⭐ 改收纯路径，不再收 AppHandle）、`is_python_command` + 3 单测 |
 | `src-tauri/src/plugins/mod.rs` | `pub mod pyruntime` + `#[cfg(not(dev))]` re-export |
-| `src-tauri/src/plugins/manager.rs` | `PluginManager` 增 `app: Option<AppHandle>`（refresh/set_enabled/install/reinstall_core 记录）；`start_process` 接入解析 + spawn 失败提示 + init 失败附 stderr 末尾 |
+| `src-tauri/src/plugins/manager.rs` | ⭐ `PluginManager` 存**缓存的捆绑目录路径**（`bundled_python: Option<PathBuf>`，**不存 AppHandle**——崩溃修复，见 §6.1 坑 6）；`start_process` 接入解析 + spawn 失败提示 + init 失败附 stderr 末尾 |
 | `src-tauri/src/plugins/process.rs` | stderr piped 捕获（`read_stderr_loop` + `stderr_tail()`） |
 | `src-tauri/src/lib.rs` | setup 的 `cfg(not(dev))` 块先 spawn `ensure_bundled_python` 再 `ensure_core_plugins` |
 | `scripts/dev-env.mjs` | doctor 新增"捆绑 Python 运行时"检查；env:setup 缺失时自动 fetch（失败仅警告） |
@@ -110,7 +111,7 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 5. **懒加载**：SettingsView/PluginsView 是 `defineAsyncComponent`（独立 chunk）；
    插件 UI 本身按需注入（Blob script）。
 
-## 6. 坑与注意事项（按主题，前三条是本次新增）
+## 6. 坑与注意事项（按主题）
 
 ### 6.1 捆绑 Python 运行时相关的坑（本次新增）
 
@@ -118,16 +119,28 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
    （`resource path resources\python doesn't exist`）。所以要么先下载，要么先放占位目录。
 2. **python-build-standalone 命名 2026-08 起变了**：full 变体 = `-pgo-full.tar.zst`
    （zstd 压缩、pgo 优化），`.tar.gz` 只剩 `install_only`（无 pip）。旧资料里的
-   `-full.tar.gz` 已不存在。解压依赖系统 bsdtar 带 libzstd（Win11 tar 3.8.4 有；
-   旧 Windows 的 tar 不行）——解压只发生在**构建期**，目标机拿到的是解压后的目录，无此问题。
-3. **本机 GitHub 直连下载极慢**（~500KB/3min，47MB 要数小时）。测过
-   `ghfast.top` / `gh-proxy.com` / `mirror.ghproxy.com` / `github.moeyy.xyz` 等镜像但
-   **fetch-python.mjs 还没加 --mirror 选项**（目前只支持直连）。资源在
-   `github.com/astral-sh/python-build-standalone/releases`，每次 release 都带 SHA256SUMS。
-4. **沙箱限制的迷惑表现**（若下次仍遇到"cargo test 空输出 + $LASTEXITCODE 为空"）：
+   `-full.tar.gz` 已不存在。且归档结构也变了：顶层 `python/` 里是 `install/`（真正运行时）+
+   `PYTHON.json` 元数据——fetch 脚本已做动态定位。解压依赖系统 bsdtar 带 libzstd
+   （Win11 tar 3.8.4 有；旧 Windows 的 tar 不行）——解压只发生在**构建期**，目标机无此问题。
+3. **本机 GitHub 直连下载极慢**（~500KB/3min，47MB 要数小时）。**已解决**：`pnpm fetch:python
+   --mirror https://ghfast.top/`（实测 ~1.4MB/s；SHA256SUMS 仍校验，镜像只加速不改内容）。
+   其余镜像（gh-proxy.com / mirror.ghproxy.com / github.moeyy.xyz）当前不通。
+4. **full 变体解压 180MB，需瘦身**：pdb 调试符号 ~90MB + Lib/test ~32MB + 字节码缓存。
+   fetch 脚本已内置 `slimPython`（180MB → 48.7MB），删 pdb/测试/`__pycache__` 不影响运行
+   （stdlib C 扩展、pip、tkinter 已验证正常）。
+5. **🔴 数据对象里绝不存 tauri 类型（历史教训再现，本次真踩了）**：
+   `PluginManager` 加 `app: Option<tauri::AppHandle>` 字段 → **测试二进制加载即崩
+   `0xC0000139 STATUS_ENTRYPOINT_NOT_FOUND`**（进程起不来，不是测试失败；连报错都没有）。
+   这是历史 commit 8a594f1 记录过的同款坑（ProcessPlugin 存 AppHandle 触发过同崩溃）。
+   **修复**：改存纯 std 缓存 `bundled_python: Option<PathBuf>`（refresh/set_enabled/install/
+   reinstall_core 里拿到 AppHandle 时经 `pyruntime::bundled_python_dir` 解析路径即弃）；
+   `resolve_interpreter` 改收路径参数。AppHandle 只允许活在函数参数/线程局部/tauri State 外部。
+   排查经验：bin 测试二进制（toolbox-*.exe）能加载、只有 lib 测试目标崩；stash 二分法 +
+   git worktree + 共享 CARGO_TARGET_DIR 可快速定位（内容不同 → 崩/不崩）。
+6. **沙箱限制的迷惑表现**（若下次仍遇到"cargo test 空输出 + $LASTEXITCODE 为空"）：
    是沙箱禁止运行编译出的 exe（test 二进制）导致，不是命令问题——`cargo --version`
    前台能跑不代表 test 能跑。后台下载 0 字节卡死同理。
-5. **背景任务验证模式可靠**：`cargo test --workspace *> target/cargo-test.log; Write-Host "EXIT=$LASTEXITCODE"`
+7. **背景任务验证模式可靠**：`cargo test --workspace *> target/cargo-test.log; Write-Host "EXIT=$LASTEXITCODE"`
    ——全量测试/构建照此写，输出落 target/（gitignored）不刷屏。
 
 ### 6.2 终端 / Git（Windows）
@@ -187,6 +200,9 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 
 ## 8. 待办（除 §1 进行中的工作外）
 
+- **插件页"安装依赖"按钮**：捆绑运行时 full 变体（pip 26.2.1）已就绪，宿主侧只差一个
+  命令（用捆绑 python 执行 `pip install --target <插件>/vendor -r requirements.txt`）+
+  插件页 UI。目标机有网时第三方插件可自助补依赖
 - **插件沙箱**（PLAN.md §5.2）：P0 CSP 收紧 + 命令面最小化 + ShadowRealm，未排期
 - **md-editor-v3 打磨**：当前为分屏模式（原 Vditor 是即时渲染 IR），如有需要可调
   `md-editor-v3` 配置（工具栏/预览主题/代码高亮主题）
@@ -194,12 +210,11 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 - 插件 UI 产物体积：notes 含 md-editor-v3 gzip ~702kB（预期内）；如优化可考虑按需拆包
 - `scripts/gen-icons.ps1` 是 Windows-only 一次性工具（产物已入库，无需重跑）
 
-## 9. 验证基线（最近一次全绿）
+## 9. 验证基线（2026-08-28 重新全绿）
 
-`pnpm doctor` 全就绪 · `pnpm lint` 0 警告 · `pnpm test` 33 · `pnpm build` ·
-`pnpm build:core`（6 插件 + DLL 自检）· `cargo test --workspace` 78 ·
-`pnpm tauri dev` 冒烟无前端错误。改动后请跑对应子集。
+`pnpm doctor` 全就绪（含捆绑 Python 运行时）· `pnpm lint` 0 警告（92 文件）·
+`pnpm test` 33 · `pnpm build` ✓ · **`cargo test --workspace` 81**（78 既有 + 3 pyruntime 新测试）·
+`pnpm build:core`（6 插件 + DLL 自检）· `pnpm tauri dev` 冒烟无前端错误。改动后请跑对应子集。
 
-> ⚠️ **当前（2026-08-21）基线失效**：tauri.conf.json 引用的 `resources/python` 尚不存在，
-> `cargo test`/`cargo build` 编译期即失败；新增 Rust 代码未编译验证、前端脚本未跑 lint。
-> 恢复步骤见 §1.2 第 1–3 条。
+> 注：本次 0xC0000139 加载崩溃已修复（见 §6.1 坑 5），cargo 81 全绿为本会话实测结果；
+> `pnpm tauri dev` 冒烟与打包版 E2E 尚待验证（见 §1.2）。

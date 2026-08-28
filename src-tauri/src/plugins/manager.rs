@@ -84,9 +84,11 @@ pub struct PluginManager {
     /// 最近一次扫描的 plugins 目录快照（目录名 + 有清单），
     /// 用于检测"目录增删但 vault 路径未变"的情况
     pub last_snapshot: Option<Vec<String>>,
-    /// AppHandle（refresh/启停流程记录）：process 插件解释器解析（捆绑 Python 运行时）
-    /// 需要定位 %APPDATA% 与资源目录；测试等未设置时回落系统 PATH。
-    pub(crate) app: Option<tauri::AppHandle>,
+    /// 捆绑 Python 解释器目录缓存（refresh 时用 AppHandle 解析后存**纯 std 路径**）。
+    /// 设计约束（历史教训，勿改回）：**数据对象里绝不存 tauri 类型**——ProcessPlugin
+    /// 曾因持有 AppHandle 触发测试二进制加载崩溃（0xC0000139，见 events.rs 注释）；
+    /// 解释器解析只需要 %APPDATA% 与资源目录的路径，拿到即缓存，不再持有 AppHandle。
+    pub(crate) bundled_python: Option<PathBuf>,
 }
 
 
@@ -474,7 +476,8 @@ impl PluginManager {
         }
         self.records.clear();
         self.vault = Some(vault.to_path_buf());
-        self.app = Some(app.clone());
+        // 捆绑 Python 解释器目录：此时有 AppHandle，解析后缓存纯路径（勿存 AppHandle 本体）
+        self.bundled_python = super::pyruntime::bundled_python_dir(app);
         self.config_dir = app
             .path()
             .app_config_dir()
@@ -689,7 +692,8 @@ impl PluginManager {
     }
 
     pub fn set_enabled(&mut self, app: &tauri::AppHandle, id: &str, enabled: bool) -> Result<(), String> {
-        self.app = Some(app.clone());
+        // 绑定捆绑 Python 解释器缓存（此后 start_process 只读纯路径，不持有 AppHandle）
+        self.bundled_python = super::pyruntime::bundled_python_dir(app);
         let idx = self
             .records
             .iter()
@@ -786,7 +790,7 @@ impl PluginManager {
         source: &str,
         kind: &str,
     ) -> Result<String, String> {
-        self.app = Some(app.clone());
+        self.bundled_python = super::pyruntime::bundled_python_dir(app);
         if kind != "zip" && kind != "dir" {
             return Err(format!("未知安装来源: {kind}"));
         }
@@ -928,7 +932,7 @@ impl PluginManager {
 
     /// 重新安装已卸载的核心插件：从随应用分发的资源恢复目录 + 清"已卸载"标记 + 启用并启动。
     pub fn reinstall_core(&mut self, app: &tauri::AppHandle, id: &str) -> Result<(), String> {
-        self.app = Some(app.clone());
+        self.bundled_python = super::pyruntime::bundled_python_dir(app);
         if !is_safe_plugin_id(id) {
             return Err(format!("非法插件 id: {id}"));
         }
@@ -1082,9 +1086,10 @@ impl PluginManager {
             tx
         });
         // 解释器解析（三级）：插件目录自带 python.exe → 全局捆绑 → 系统 PATH。
+        // 捆绑目录是 refresh 时缓存的纯路径（不持有 AppHandle，见 struct 注释）。
         // 解析失败不阻断：保留原命令（系统 python），spawn 失败时给可读提示。
         let (program, resolved) = match super::pyruntime::resolve_interpreter(
-            self.app.as_ref(),
+            self.bundled_python.as_deref(),
             &dir,
             &cmd[0],
         ) {

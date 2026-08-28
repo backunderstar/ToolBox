@@ -49,6 +49,8 @@ pub(crate) fn bundled_python_deploy_dir(app: &tauri::AppHandle) -> Option<PathBu
 }
 
 /// 部署实现（可测）：先删旧目录再整体复制（与应用版本一致，避免残留旧文件）。
+/// 仅 `ensure_bundled_python`（release）调用；dev 下无调用方，压制 dead_code 告警。
+#[cfg_attr(dev, allow(dead_code))]
 pub(crate) fn deploy_bundled_python(src: &Path, dst: &Path) -> Result<(), String> {
     if let Some(parent) = dst.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
@@ -92,11 +94,13 @@ pub(crate) fn is_python_command(cmd: &str) -> bool {
 
 /// 解析 process 插件的解释器（仅对 `python`/`python3` 生效）：
 /// 1. 插件目录内自带解释器 `<plugin>/python.exe`（第三层：插件完全自包含）
-/// 2. 全局捆绑解释器（第二层：默认路径）
+/// 2. `bundled_dir` 指定的全局捆绑解释器目录（第二层：默认路径；由调用方在能拿到
+///    AppHandle 时经 `bundled_python_dir` 解析后缓存——**数据对象不持有 tauri 类型**，
+///    见 manager.rs struct 注释的历史教训）
 /// 3. 都没有 → Err（调用方保留原命令走系统 PATH，spawn 失败时给安装提示）
 /// 非 Python 命令不解析（Err，走原命令）。
 pub(crate) fn resolve_interpreter(
-    app: Option<&tauri::AppHandle>,
+    bundled_dir: Option<&Path>,
     plugin_dir: &Path,
     requested: &str,
 ) -> Result<PathBuf, String> {
@@ -109,12 +113,10 @@ pub(crate) fn resolve_interpreter(
         return Ok(self_contained);
     }
     // 2. 全局捆绑（默认路径：目标机无 Python 也能跑）
-    if let Some(app) = app {
-        if let Some(dir) = bundled_python_dir(app) {
-            let exe = dir.join("python.exe");
-            if exe.is_file() {
-                return Ok(exe);
-            }
+    if let Some(dir) = bundled_dir {
+        let exe = dir.join("python.exe");
+        if exe.is_file() {
+            return Ok(exe);
         }
     }
     Err("未找到捆绑解释器，回落系统 python".to_string())
