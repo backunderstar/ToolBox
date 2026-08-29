@@ -381,6 +381,36 @@ fn tail_lines(s: &str, n: usize) -> String {
     lines[start..].join("\n")
 }
 
+/// 递归把目录写入 zip（顶层目录名为 `base`；与 install 的 zip-slip 防护兼容）。
+fn write_dir_to_zip<W: std::io::Write + std::io::Seek>(
+    zip: &mut zip::ZipWriter<W>,
+    dir: &std::path::Path,
+    base: &str,
+    options: &zip::write::SimpleFileOptions,
+) -> Result<(), String> {
+    let read = std::fs::read_dir(dir).map_err(|e| format!("读取目录失败: {e}"))?;
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let rel = if base.is_empty() {
+            name.clone()
+        } else {
+            format!("{base}/{name}")
+        };
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            zip.add_directory(&format!("{rel}/"), *options)
+                .map_err(|e| format!("写入目录失败: {e}"))?;
+            write_dir_to_zip(zip, &entry.path(), &rel, options)?;
+        } else {
+            zip.start_file(&rel, *options)
+                .map_err(|e| format!("写入文件失败: {e}"))?;
+            let mut f = std::fs::File::open(&entry.path())
+                .map_err(|e| format!("打开文件失败: {e}"))?;
+            std::io::copy(&mut f, zip).map_err(|e| format!("写入文件失败: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
 /// 递归复制目录（深度护栏见 copy_dir_recursive_depth）。
 pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     copy_dir_recursive_depth(src, dst, 0)
@@ -1003,8 +1033,7 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 插件依赖安装：用捆绑 Python 的 pip 把 `requirements.txt` 装进 `<插件>/vendor/`
-    /// （vendored 放置，main.py 启动时 sys.path 插入，见插件开发指南 §3.5 方案 A）。
+    /// 插件依赖安装：用捆绑 Python 的 pip 把 `requirements.txt` 装进 `<插件>/vendor/`    /// （vendored 放置，main.py 启动时 sys.path 插入，见插件开发指南 §3.5 方案 A）。
     /// 目标机没有 Python 也能自助补依赖（捆绑运行时 full 变体带 pip；需有网）。
     /// 返回 pip 输出尾部（stdout + stderr 合并，各最近若干行）；成功后前端应重载插件生效。
     pub fn install_deps(&mut self, app: &tauri::AppHandle, id: &str) -> Result<String, String> {
@@ -1105,6 +1134,35 @@ impl PluginManager {
             )),
             Err(e) => Err(format!("{e}\npip 输出末尾：\n{err_tail}")),
         }
+    }
+
+    /// 导出插件为 .zip 插件包（插件页「导出」按钮；分享/备份/离线迁移）。
+    /// 打包插件目录**全部内容**（plugin.json + DLL + ui/ + 依赖目录 vendor/env 等），
+    /// 顶层目录 = `<插件id>/`（对方插件页「安装 .zip」直接安装，zip-slip 防护同 install）。
+    /// 返回导出的文件路径。
+    pub fn export_zip(&mut self, id: &str, dest: &str) -> Result<String, String> {
+        let dir = self
+            .records
+            .iter()
+            .find(|r| r.manifest.id == id)
+            .map(|r| r.dir.clone())
+            .ok_or("插件不存在")?;
+        if !dir.is_dir() {
+            return Err(format!("插件目录不存在: {}", dir.display()));
+        }
+        let file =
+            std::fs::File::create(dest).map_err(|e| format!("创建文件失败: {e}"))?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        let top = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| id.to_string());
+        write_dir_to_zip(&mut zip, &dir, &top, &options)?;
+        zip.finish().map_err(|e| format!("写入 zip 失败: {e}"))?;
+        crate::core::log::info(&format!("[plugins] 已导出 {id} → {dest}"));
+        Ok(dest.to_string())
     }
 
     /// 调用插件命令（统一路由）：
@@ -1380,5 +1438,69 @@ fn find_plugin_manifest(root: &Path) -> Result<(PathBuf, PluginManifest), String
 /// 安装路径（zip/目录）与清单加载共用，避免规则漂移。
 pub fn is_safe_plugin_id(id: &str) -> bool {
     is_valid_plugin_id(id)
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+
+    /// 导出 zip 往返：构造插件目录 → export_zip → 解压验证内容完整（含子目录）。
+    #[test]
+    fn export_zip_roundtrip() {
+        let base = std::env::temp_dir().join(format!("tb-export-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        // 构造一个插件目录（含子目录 ui/ 与文件）
+        let plugin_dir = base.join("plugins/demo-export");
+        std::fs::create_dir_all(plugin_dir.join("ui")).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.json"),
+            r#"{"id":"demo-export","name":"导出测试","version":"0.1.0","runtime":"process","command":["python","main.py"]}"#,
+        )
+        .unwrap();
+        std::fs::write(plugin_dir.join("main.py"), "print('hi')").unwrap();
+        std::fs::write(plugin_dir.join("ui/index.js"), "// ui").unwrap();
+
+        let dest = base.join("demo-export.zip");
+        let mut m = PluginManager::default();
+        m.records.push(PluginRecord {
+            manifest: PluginManifest {
+                id: "demo-export".into(),
+                name: "导出测试".into(),
+                version: "0.1.0".into(),
+                runtime: PluginRuntime::Process,
+                entry: None,
+                command: Some(vec!["python".into(), "main.py".into()]),
+                permissions: vec![],
+                description: String::new(),
+                config: Value::Null,
+                search_provider: false,
+                system: false,
+                ui: None,
+                nav: vec![],
+                theme: None,
+                actions: vec![],
+                settings: None,
+            },
+            dir: plugin_dir.clone(),
+            commands: vec![],
+            error: None,
+            process: None,
+            native: None,
+            restarts: 0,
+            last_crash: None,
+        });
+        m.export_zip("demo-export", dest.to_str().unwrap()).unwrap();
+
+        // 解压验证：顶层 <id>/ 下文件齐全
+        let file = std::fs::File::open(&dest).unwrap();
+        let mut zip = zip::ZipArchive::new(file).unwrap();
+        let names: Vec<String> = (0..zip.len())
+            .map(|i| zip.by_index(i).unwrap().name().to_string())
+            .collect();
+        assert!(names.contains(&"demo-export/plugin.json".to_string()), "{names:?}");
+        assert!(names.contains(&"demo-export/main.py".to_string()), "{names:?}");
+        assert!(names.contains(&"demo-export/ui/index.js".to_string()), "{names:?}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
 

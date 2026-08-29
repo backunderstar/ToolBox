@@ -281,6 +281,7 @@ pub fn run() {
             plugins::commands::plugins_reinstall_core,
             plugins::commands::plugins_removed_core,
             plugins::commands::plugins_install,
+            plugins::commands::plugins_export,
             plugins::commands::plugins_read_file,
             plugins::commands::plugins_invoke,
             plugins::commands::plugin_call,

@@ -213,6 +213,12 @@ impl ProcessPlugin {
             "fs.writeText" => Some("fs:write:vault"),
             "fs.listDir" => Some("fs:read:vault"),
             "log" => Some("log"),
+            "notify" => Some("notify"),
+            "open" => Some("open"),
+            "clipboard.read" => Some("clipboard"),
+            "clipboard.write" => Some("clipboard"),
+            "http.request" => Some("http"),
+            "shell.exec" => Some("shell"),
             _ => None, // 未知方法统一在 execute_core_api 拒绝
         };
         if let Some(perm) = need {
@@ -311,6 +317,199 @@ impl ProcessPlugin {
                 let msg = params.get("message").map(|v| v.to_string()).unwrap_or_default();
                 crate::core::log::info(&format!("[plugin:{}] {msg}", self.plugin_id));
                 Ok(Value::Null)
+            }
+            // ---- 通知（宿主 UI 横幅；权限 notify）----
+            // 经 plugin-event `notification` 事件 → 宿主前端全局横幅显示。
+            // 说明：不依赖系统通知插件（tauri-winrt-notification 曾致测试二进制
+            // 加载崩溃 0xC0000139，见 HANDOVER §6.1）；应用最小化时横幅不可见。
+            "notify" => {
+                let title = params
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("ToolBox")
+                    .to_string();
+                let body = params
+                    .get("body")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                match crate::plugins::native::host_app() {
+                    Some(app) => {
+                        use tauri::Emitter;
+                        let _ = app.emit(
+                            "plugin-event",
+                            crate::plugins::events::PluginEvent {
+                                plugin_id: self.plugin_id.clone(),
+                                event: "notification".into(),
+                                data: json!({ "title": title, "body": body }),
+                            },
+                        );
+                        Ok(Value::Null)
+                    }
+                    None => Err("宿主未就绪（通知不可用）".to_string()),
+                }
+            }
+            // ---- 默认应用打开路径（tauri-plugin-opener；权限 open）----
+            "open" => {
+                let rel = params
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or("缺少 path 参数")?;
+                let p = resolve_safe(&self.vault.to_string_lossy(), rel)?;
+                match tauri_plugin_opener::open_path(p.to_string_lossy().as_ref(), None::<&str>) {
+                    Ok(()) => Ok(Value::Null),
+                    Err(e) => Err(format!("打开失败: {e}")),
+                }
+            }
+            // ---- 剪贴板（arboard；权限 clipboard）----
+            "clipboard.read" => {
+                let mut cb = arboard::Clipboard::new().map_err(|e| format!("剪贴板不可用: {e}"))?;
+                let text = cb.get_text().map_err(|e| format!("读取剪贴板失败: {e}"))?;
+                Ok(json!(text))
+            }
+            "clipboard.write" => {
+                let text = params
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .ok_or("缺少 text 参数")?;
+                let mut cb = arboard::Clipboard::new().map_err(|e| format!("剪贴板不可用: {e}"))?;
+                cb.set_text(text.to_string())
+                    .map_err(|e| format!("写入剪贴板失败: {e}"))?;
+                Ok(Value::Null)
+            }
+            // ---- 受控 HTTP 请求（reqwest blocking；权限 http）----
+            // 参数 {url, method?, headers?, body?, timeoutSec?}；响应 {status, headers, text}
+            // （文本按 UTF-8 lossy 解码；大小上限 4MB 防插件拉超大响应撑爆内存）
+            "http.request" => {
+                const HTTP_MAX_BYTES: u64 = 4 * 1024 * 1024;
+                let url = params
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .ok_or("缺少 url 参数")?;
+                let method = params
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("GET")
+                    .to_uppercase();
+                let timeout = params
+                    .get("timeoutSec")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(10);
+                let client = reqwest::blocking::Client::builder()
+                    .timeout(std::time::Duration::from_secs(timeout))
+                    .build()
+                    .map_err(|e| format!("构建 HTTP 客户端失败: {e}"))?;
+                let mut req = client.request(
+                    reqwest::Method::from_bytes(method.as_bytes())
+                        .map_err(|e| format!("非法 method: {e}"))?,
+                    url,
+                );
+                if let Some(h) = params.get("headers").and_then(|v| v.as_object()) {
+                    for (k, v) in h {
+                        if let Some(s) = v.as_str() {
+                            req = req.header(k, s);
+                        }
+                    }
+                }
+                if let Some(b) = params.get("body").and_then(|v| v.as_str()) {
+                    req = req.body(b.to_string());
+                }
+                let resp = req.send().map_err(|e| format!("请求失败: {e}"))?;
+                let status = resp.status().as_u16();
+                let headers: serde_json::Map<String, Value> = resp
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k.as_str().to_string(),
+                            Value::String(v.to_str().unwrap_or("").to_string()),
+                        )
+                    })
+                    .collect();
+                let bytes = resp
+                    .bytes()
+                    .map_err(|e| format!("读取响应失败: {e}"))?;
+                if bytes.len() as u64 > HTTP_MAX_BYTES {
+                    return Err(format!(
+                        "响应过大（{} bytes，上限 4MB）",
+                        bytes.len()
+                    ));
+                }
+                Ok(json!({
+                    "status": status,
+                    "headers": headers,
+                    "text": String::from_utf8_lossy(&bytes).into_owned(),
+                }))
+            }
+            // ---- 执行命令（std::process；权限 shell）----
+            // 参数 {cmd, args?, timeoutSec?}；返回 {code, stdoutTail, stderrTail}
+            // 强能力：仅声明 shell 权限的插件可用；cwd = 插件目录
+            "shell.exec" => {
+                let cmd = params
+                    .get("cmd")
+                    .and_then(|v| v.as_str())
+                    .ok_or("缺少 cmd 参数")?;
+                let args: Vec<String> = params
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let timeout = params
+                    .get("timeoutSec")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(10);
+                let tag = format!("{}-{}", self.plugin_id, std::process::id());
+                let out_log = std::env::temp_dir().join(format!("tb-shell-{tag}.out.log"));
+                let err_log = std::env::temp_dir().join(format!("tb-shell-{tag}.err.log"));
+                let result = (|| -> Result<i32, String> {
+                    let out = std::fs::File::create(&out_log)
+                        .map_err(|e| format!("创建日志文件失败: {e}"))?;
+                    let err = std::fs::File::create(&err_log)
+                        .map_err(|e| format!("创建日志文件失败: {e}"))?;
+                    let mut child = std::process::Command::new(cmd)
+                        .args(&args)
+                        .current_dir(&self.vault)
+                        .stdout(std::process::Stdio::from(out))
+                        .stderr(std::process::Stdio::from(err))
+                        .spawn()
+                        .map_err(|e| format!("启动命令失败（{cmd}）: {e}"))?;
+                    let deadline = std::time::Instant::now()
+                        + std::time::Duration::from_secs(timeout);
+                    loop {
+                        if let Some(status) =
+                            child.try_wait().map_err(|e| format!("等待命令失败: {e}"))?
+                        {
+                            return Ok(status.code().unwrap_or(-1));
+                        }
+                        if std::time::Instant::now() >= deadline {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return Err(format!("命令超过 {timeout} 秒未完成，已终止"));
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                    }
+                })();
+                let tail = |p: &std::path::Path| -> String {
+                    std::fs::read_to_string(p)
+                        .map(|s| {
+                            let lines: Vec<&str> = s.lines().collect();
+                            let start = lines.len().saturating_sub(40);
+                            lines[start..].join("\n")
+                        })
+                        .unwrap_or_default()
+                };
+                let out_tail = tail(&out_log);
+                let err_tail = tail(&err_log);
+                let _ = std::fs::remove_file(&out_log);
+                let _ = std::fs::remove_file(&err_log);
+                match result {
+                    Ok(code) => Ok(json!({ "code": code, "stdout": out_tail, "stderr": err_tail })),
+                    Err(e) => Err(format!("{e}\nstderr：\n{err_tail}")),
+                }
             }
             other => Err(format!("插件调用了未开放的核心 API: {other}")),
         }

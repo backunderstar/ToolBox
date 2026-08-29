@@ -23,7 +23,20 @@ def handle_request(msg):
     params = msg.get("params") or {}
     try:
         if method == "init":
-            result = {"commands": ["files.hello", "files.list", "files.read", "files.append", "files.log"]}
+            result = {
+                "commands": [
+                    "files.hello",
+                    "files.list",
+                    "files.read",
+                    "files.append",
+                    "files.log",
+                    "files.notify",
+                    "files.open",
+                    "files.clipboard",
+                    "files.http",
+                    "files.shell",
+                ]
+            }
         elif method == "call":
             command = params.get("command", "")
             args = params.get("args") or {}
@@ -49,6 +62,40 @@ def handle_request(msg):
             elif command == "files.log":
                 call_core("log", {"message": "py-files: " + str(args.get("text", ""))})
                 result = {"ok": True}
+            elif command == "files.notify":
+                # 系统通知（权限 notify；宿主经 tauri-plugin-notification 发 toast）
+                call_core("notify", {"title": "ToolBox 通知", "body": str(args.get("text", ""))})
+                result = {"ok": True}
+            elif command == "files.open":
+                # 默认应用打开 vault 内文件（权限 open）
+                call_core("open", {"path": args.get("path", "")})
+                result = {"ok": True}
+            elif command == "files.clipboard":
+                # 剪贴板读写（权限 clipboard）
+                if args.get("write") is not None:
+                    call_core("clipboard.write", {"text": str(args.get("write"))})
+                    result = {"ok": True, "written": True}
+                else:
+                    result = {"clipboard": call_core("clipboard.read", {})}
+            elif command == "files.http":
+                # 受控 HTTP 请求（权限 http；超时 + 4MB 上限由宿主保证）
+                resp = call_core("http.request", {
+                    "url": args.get("url", ""),
+                    "method": args.get("method", "GET"),
+                    "timeoutSec": args.get("timeoutSec", 10),
+                })
+                result = {
+                    "status": resp.get("status"),
+                    "text": (resp.get("text") or "")[:500],
+                }
+            elif command == "files.shell":
+                # 执行命令（权限 shell；强能力，cwd = 插件目录，超时 + 输出尾部）
+                run = call_core("shell.exec", {
+                    "cmd": args.get("cmd", ""),
+                    "args": args.get("args", []),
+                    "timeoutSec": args.get("timeoutSec", 10),
+                })
+                result = {"code": run.get("code"), "stdout": (run.get("stdout") or "")[-300:]}
             else:
                 raise ValueError("未知命令: %s" % command)
         else:

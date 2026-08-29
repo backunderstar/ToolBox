@@ -284,6 +284,29 @@ pub async fn plugins_install_deps(
     .map_err(|e| format!("插件依赖安装任务异常: {e}"))?
 }
 
+/// 导出插件为 .zip 插件包（插件页「导出」；分享/备份）：dest = 用户选择的保存路径。
+#[tauri::command]
+pub async fn plugins_export(
+    app: tauri::AppHandle,
+    vault: String,
+    id: String,
+    dest: String,
+) -> Result<String, String> {
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
+    if !is_safe_plugin_id(&id) {
+        return Err(format!("非法插件 id: {id}"));
+    }
+    let v = vault.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<Mutex<PluginManager>>();
+        let mut m = state.lock().map_err(|e| e.to_string())?;
+        m.ensure_refreshed(&app, &v)?;
+        m.export_zip(&id, &dest)
+    })
+    .await
+    .map_err(|e| format!("插件导出任务异常: {e}"))?
+}
+
 /// 插件 id 安全校验：小写字母/数字开头，仅含小写字母/数字/`-`/`_`。
 /// 用于所有"id 拼进文件路径"的入口——拒绝 `..`、`/`、`\`、绝对路径等，
 /// 防路径穿越（如 `id="../../.."` 把目录根引到任意位置后读取任意文件）。

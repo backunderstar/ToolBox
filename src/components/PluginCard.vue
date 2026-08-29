@@ -20,6 +20,8 @@ const props = defineProps<{
   onInstallDeps: (id: string) => void;
   /** 依赖安装进行中（按钮显示"安装中…"并禁用） */
   depsBusy: boolean;
+  /** 导出插件为 zip 包（分享/备份） */
+  onExport: (id: string) => void;
 }>();
 
 const STATUS_TEXT: Record<string, string> = {
@@ -93,6 +95,14 @@ const status = computed(() => (props.runtimeError ? "error" : props.plugin.statu
           :disabled="busy || depsBusy"
         >
           {{ depsBusy ? "安装中…" : "安装依赖" }}
+        </button>
+        <button
+          class="btn btn-sm"
+          :title="'导出插件包（.zip，可分享/备份/离线迁移）'"
+          @click="onExport(p.id)"
+          :disabled="busy"
+        >
+          导出
         </button>
         <button class="btn btn-sm" @click="onReload(p.id)" :disabled="busy || !p.enabled">
           重新加载

@@ -16,11 +16,17 @@ use tauri::AppHandle;
 use crate::plugins::events::PluginEvent;
 
 /// 事件回调需要 AppHandle：setup 时初始化（进程级，只设一次）。
-static HOST_APP: OnceLock<AppHandle> = OnceLock::new();
+/// crate 公共：process 插件核心 API（notify 系统通知等）也经宿主句柄。
+pub(crate) static HOST_APP: OnceLock<AppHandle> = OnceLock::new();
 
 /// 注册宿主 AppHandle（事件转发用）。
 pub fn init_host_app(app: AppHandle) {
     let _ = HOST_APP.set(app);
+}
+
+/// 取宿主 AppHandle（setup 后可用；未初始化返回 None）。
+pub(crate) fn host_app() -> Option<&'static AppHandle> {
+    HOST_APP.get()
 }
 
 /// 事件回调的 ctx：指向插件 id（每个 NativePlugin 一份）。

@@ -147,6 +147,9 @@ export const pluginsRemovedCore = () => invoke<string[]>("plugins_removed_core")
  *  按清单 runtime 部署（native → _core/；webview/process/主题皮肤 → plugins/）。 */
 export const pluginsInstall = (vault: string, source: string, kind: string) =>
   invoke<string>("plugins_install", { vault, source, kind });
+/** 导出插件为 .zip 插件包（分享/备份）：dest = 保存路径；返回导出文件路径 */
+export const pluginsExport = (vault: string, id: string, dest: string) =>
+  invoke<string>("plugins_export", { vault, id, dest });
 /** 当前生效的全局插件目录（自定义或默认 %APPDATA%） */
 export const pluginsDirGet = () => invoke<string>("plugins_dir_get");
 /** 设置全局插件目录（自动迁移现有插件，旧目录进回收站）；传空恢复默认 */

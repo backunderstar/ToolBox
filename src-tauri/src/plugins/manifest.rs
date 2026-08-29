@@ -147,7 +147,18 @@ pub struct PluginManifest {
 }
 
 /// v1 认识的权限（未知权限记录 warning，不阻止加载）。
-pub const KNOWN_PERMISSIONS: &[&str] = &["fs:read:vault", "fs:write:vault", "log", "network"];
+/// fs.* 门控 vault 文件操作；log 门控日志；notify/open/clipboard/http/shell
+/// 门控 process 核心 API（见 plugins/process.rs 的 execute_core_api）。
+pub const KNOWN_PERMISSIONS: &[&str] = &[
+    "fs:read:vault",
+    "fs:write:vault",
+    "log",
+    "notify",
+    "open",
+    "clipboard",
+    "http",
+    "shell",
+];
 
 /// 插件 id 的规范校验（安装与清单加载**共用同一规则**，避免规则漂移导致
 /// 「安装通过但扫描时校验失败」）：首字符为小写字母或数字，其余仅小写字母/数字/连字符。

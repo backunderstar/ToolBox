@@ -1,0 +1,10 @@
+{
+  "id": "hello-tb",
+  "name": "打招呼",
+  "version": "0.1.0",
+  "description": "最小 webview 插件示例：命令注册式（无自带前端，几行代码跑通）",
+  "runtime": "webview",
+  "entry": "main.js",
+  "permissions": [],
+  "config": {}
+}

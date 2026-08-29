@@ -6,6 +6,43 @@
   background: var(--bg);
 }
 
+/* 插件通知横幅（process 核心 API notify → plugin-event notification）：
+   右上角固定，滑入动画，5s 自动消失 */
+.app-notification {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 320px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  font-size: var(--text-sm);
+}
+.app-notification strong {
+  flex-shrink: 0;
+}
+.app-notification span {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notify-pop-enter-active,
+.notify-pop-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.notify-pop-enter-from,
+.notify-pop-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
 .body {
   display: flex;
   flex: 1;

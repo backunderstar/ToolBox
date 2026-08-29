@@ -179,6 +179,15 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
    复制到 `target/debug/resources/`，且**先清空 target/debug/resources**（tauri 增量复制
    不删已消失的源目录 → 旧插件/旧资源会残留并被 ensure_core_plugins 部署回 %APPDATA%）。
    8/29 实测：旧 6 个核心插件经此残留被部署回 app `_core`（连同 core-records 复活）。
+10. **🔴 `tauri-plugin-notification` 致测试二进制加载崩溃（8/29 实测）**：加该插件
+    （依赖链含 `tauri-winrt-notification` WinRT 绑定）后，`cargo test` 的 toolbox_lib
+    测试 exe **加载即崩 0xC0000139 STATUS_ENTRYPOINT_NOT_FOUND**（连 --list 都崩，
+    与 §6.1 坑 5 同症状但不同根因——这次是依赖链，非 tauri 类型入数据对象）。
+    **处理**：不用系统通知插件，`notify` 核心 API 改为**宿主 UI 横幅**（plugin-event
+    `notification` 事件 → 前端 App.vue 右上角横幅，5s 自动消失），零新依赖。
+    教训：新增会引入 WinRT/本地绑定的 crate 前，先 `cargo test -p toolbox --lib -- --list`
+    验证测试二进制能加载（依赖树用 `cargo tree -p <crate>` 看有没有
+    winrt/webview2/openssl 类原生绑定）。
 
 ### 6.2 终端 / Git（Windows）
 
@@ -265,8 +274,8 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 
 ## 9. 验证基线（2026-08-29 教学基线收敛后全绿）
 
-`pnpm lint` 0 警告（55 文件）· `pnpm test` 24（2 文件）· `pnpm build` ✓ ·
-**`cargo test --workspace` 59**（宿主 54 + pyruntime 3 + core-example 2，含 native DLL 集成测试）·
+`pnpm lint` 0 警告（53 文件）· `pnpm test` 24（2 文件）· `pnpm build` ✓ ·
+**`cargo test --workspace` 60**（宿主 55 + pyruntime 3 + core-example 2，含 native DLL 集成测试与插件导出 zip 往返测试）·
 `pnpm build:core`（core-example 1 插件 + DLL 自检，自动清理旧随包插件）·
 `pnpm tauri dev` 冒烟：5 个 process 插件全部使用捆绑解释器、core-example 部署无异常 ·
 打包版冒烟（无 Python PATH 跑 exe：部署捆绑运行时 + 核心插件 + 插件用捆绑解释器）。
@@ -311,6 +320,26 @@ py-jmes 是按钮的正确验收对象。
   不应挂在可装卸插件上（webview 桥 fs.readText/writeText 与 process 核心 API 同源）
 - **教学示例 core-example**：覆盖全部核心插件实现要点（见 docs/核心插件示例教程.md）
 - 验证基线见 §9；未推送提交清单见 §8
+
+## 13. 三项完善（2026-08-29，用户选定）
+
+1. **process 核心 API 扩展**（plugins/process.rs + 指南 §3.3）：
+   - 新增权限门控核心 API：`notify`（宿主 UI 横幅）、`open`（默认应用打开）、
+     `clipboard.read/write`（剪贴板）、`http.request`（reqwest blocking，超时 +
+     4MB 上限）、`shell.exec`（Command，超时 + 输出尾部；**强能力**）
+   - permissions 声明才可用（KNOWN_PERMISSIONS 更新）；py-files 演示全部
+   - `notify` 经 plugin-event `notification` 事件 → 前端横幅（App.vue）
+   - ⚠️ 教训：tauri-plugin-notification 致测试二进制 0xC0000139（见 §6.1 坑 10）
+2. **插件导出分享**（插件页「导出」按钮）：
+   - `plugins_export` 命令（manager.rs export_zip，zip crate ZipWriter，顶层
+     `<id>/` 目录与 install zip-slip 兼容）+ api.ts + PluginCard/PluginsView UI
+   - 单测 export_zip_roundtrip（打包→解压往返验证）
+3. **webview 最小示例 hello-tb**（plugins/hello-tb/）：命令注册式 sayHello，
+   插件开发指南 §1 五分钟跑通的仓库实体
+
+验证：cargo 60（+export 单测）/ lint 0 / build ✓ / test 24 / dev 冒烟（py-files
+10 命令 + hello-tb + 无崩溃）；核心 API 协议链路经模拟宿主脚本端到端验证
+（target/mock-host.py）。
 
 ## 12. 宿主可扩展性增强（2026-08-29）
 

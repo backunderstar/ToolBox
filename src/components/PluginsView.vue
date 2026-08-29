@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { usePlugins } from "../core/plugins";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
@@ -10,6 +10,7 @@ import {
   pluginsReinstallCore,
   pluginsInstall,
   pluginsInstallDeps,
+  pluginsExport,
   pluginsDirGet,
   pluginsDirSet,
 } from "../core/api";
@@ -53,6 +54,32 @@ const actionError = ref<string | null>(null);
 const depsBusy = reactive<Record<string, boolean>>({});
 /** 依赖安装结果输出（pip stdout/stderr 尾部；成功后展示，可关闭） */
 const depsResult = ref<{ id: string; output: string } | null>(null);
+
+/** 导出插件为 .zip 包（分享/备份）：选择保存位置 → 后端打包目录全部内容 */
+async function doExport(id: string): Promise<void> {
+  const v = vault.state.path;
+  if (!v) return;
+  try {
+    const sel = await save({
+      title: "导出插件包",
+      defaultPath: `${id}.zip`,
+      filters: [{ name: "插件包", extensions: ["zip"] }],
+    });
+    if (typeof sel !== "string" || !sel) return; // 用户取消
+    busy[id] = true;
+    try {
+      const path = await pluginsExport(v, id, sel);
+      actionError.value = null;
+      depsResult.value = { id, output: `已导出：${path}` };
+    } catch (e) {
+      actionError.value = `导出失败: ${e}`;
+    } finally {
+      busy[id] = false;
+    }
+  } catch {
+    /* 对话框异常/取消 */
+  }
+}
 
 /** 选择安装来源：.zip 包或插件目录（系统对话框） */
 async function pickInstall(kind: "zip" | "dir"): Promise<void> {
@@ -320,6 +347,7 @@ function confirmMessage(id: string): string {
             :on-open="nav.go"
             :on-install-deps="doInstallDeps"
             :deps-busy="!!depsBusy[p.id]"
+            :on-export="doExport"
           />
         </div>
         <div v-if="externalPlugins().length > 0" class="plugin-group">
@@ -338,6 +366,7 @@ function confirmMessage(id: string): string {
             :on-open="nav.go"
             :on-install-deps="doInstallDeps"
             :deps-busy="!!depsBusy[p.id]"
+            :on-export="doExport"
           />
         </div>
       </div>

@@ -16,6 +16,7 @@ import {
 } from "./core/navPrefs";
 import { floatToggle, openInExplorer } from "./core/api";
 import { triggerPluginAction } from "./core/plugins";
+import { useTauriListen } from "./core/useTauriListen";
 import {
   applyTheme,
   getInitialTheme,
@@ -32,6 +33,7 @@ import WelcomeView from "./components/WelcomeView.vue";
 import PluginUiView from "./components/PluginUiView.vue";
 import FloatApp from "./components/FloatApp.vue";
 import LoadingView from "./components/LoadingView.vue";
+import Icon from "./components/Icon.vue";
 import "./styles/tokens.css";
 import "./styles/base.css";
 /* 样式按域拆分（原 app.css 3600 行）：外壳/插件页/设置/各核心插件视图。
@@ -232,11 +234,36 @@ const pluginActions = computed(() =>
 function onPluginAction(pluginId: string, action: string): void {
   void triggerPluginAction(pluginId, action, "topbar");
 }
+
+/* 插件通知横幅（process 核心 API `notify` → plugin-event `notification` 事件）：
+   右上角滑入提示，5s 自动消失；零外部依赖（不接系统 toast） */
+const appNotification = ref<{ title: string; body: string } | null>(null);
+useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?: string } }>(
+  "plugin-event",
+  (e) => {
+    if (e.event !== "notification") return;
+    appNotification.value = {
+      title: e.data?.title ?? "ToolBox",
+      body: e.data?.body ?? "",
+    };
+    setTimeout(() => (appNotification.value = null), 5000);
+  },
+);
 </script>
 
 <template>
   <FloatApp v-if="isFloat" />
   <ErrorBoundary v-else>
+    <!-- 插件通知横幅（process 核心 API notify → plugin-event notification） -->
+    <transition name="notify-pop">
+      <div v-if="appNotification" class="app-notification" role="status">
+        <strong>{{ appNotification.title }}</strong>
+        <span>{{ appNotification.body }}</span>
+        <button class="icon-btn sm" aria-label="关闭通知" @click="appNotification = null">
+          <Icon name="trash" :size="11" />
+        </button>
+      </div>
+    </transition>
     <div class="app" data-part="app">
       <TopBar
         :theme="themeMode"
