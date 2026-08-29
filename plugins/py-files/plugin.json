@@ -1,0 +1,10 @@
+{
+  "id": "py-files",
+  "name": "文件工具",
+  "version": "0.1.0",
+  "description": "核心 API 调用示例：经权限门控读写 vault 文件 + 日志 + UTF-8 中文",
+  "runtime": "process",
+  "command": ["python", "main.py"],
+  "permissions": ["fs:read:vault", "fs:write:vault", "log"],
+  "config": {}
+}

@@ -250,3 +250,25 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 
 > 注：8/28 的 0xC0000139 加载崩溃已修复（见 §6.1 坑 5）；8/29 完成 dev 冒烟 + 打包版冒烟 +
 > 插件页"安装依赖"按钮；按钮的 UI 交互点击待用户真机验收。
+
+## 10. Python 插件示例（2026-08-29 新增，仓库 `plugins/`）
+
+| 插件 | 形式 | 演示点 | 依赖安装 |
+|---|---|---|---|
+| `py-jmes` | 方案 A vendored | jmespath 查询 + 事件推送（progress） | 按钮/vendor |
+| `py-files` | — | 核心 API 权限（fs.readText/writeText/listDir + log）+ UTF-8 中文 | 无 |
+| `py-env` | 方案 B env/ | 二进制 wheel（regex cp314）ABI 匹配 | `pip install --target env` |
+| `py-venv` | 方案 C .venv/ | command 用 `.venv/Scripts/python.exe` | venv 创建 + pip |
+| `csv-tool` | 最小骨架 | 协议最小实现 | 无 |
+| `py-tools` | 方案 A vendored | 事件 + 搜索提供者 + 核心 API | 按钮/vendor |
+
+要点：源码（plugin.json/main.py/requirements.txt）入库；**依赖目录不入库**
+（`.gitignore` 已加 `plugins/*/vendor|env|.venv`），靠按钮/命令安装——
+例外：**py-tools/vendor 是 8/16 就入库的老文件**（当时无按钮只能提交依赖），保持现状，
+如想统一为"不入库"可另行 git rm -r --cached。
+「安装依赖」按钮只装 `vendor/`（有 requirements.txt 才显示），故 **py-env/py-venv
+不声明 requirements.txt**（依赖目标分别是 env/ 与 .venv，声明了按钮会装错位置）；
+py-jmes 是按钮的正确验收对象。
+已实测（8/29）：4 个新插件协议冒烟全过（init/call/事件/中文），dev 冒烟 5 个 process
+插件全部使用捆绑解释器（`%APPDATA%\...\python\python.exe` 部署目录优先解析生效）。
+方案 D（插件自带整个 python.exe，+15~25MB）无法入库，做法见插件开发指南 §3.5 与示例清单。

@@ -22,6 +22,12 @@ src-tauri/log.txt
 __pycache__/
 *.pyc
 
+# process 插件依赖目录（由「安装依赖」按钮 / pip install --target 生成，不入库；
+# 仓库只提交 plugin.json + main.py + requirements.txt 源码）
+plugins/*/vendor/
+plugins/*/env/
+plugins/*/.venv/
+
 # 外部插件自带前端构建产物（源码 ui/index.ts 提交；index.js/style.css 本地构建，
 # 见 scripts/build-external-ui.mjs）
 plugins/*/ui/index.js

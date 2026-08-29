@@ -1,0 +1,10 @@
+{
+  "id": "py-jmes",
+  "name": "JSON 查询",
+  "version": "0.1.0",
+  "description": "jmespath 查询示例：方案 A vendored 第三方库 + 事件推送",
+  "runtime": "process",
+  "command": ["python", "main.py"],
+  "permissions": [],
+  "config": {}
+}
