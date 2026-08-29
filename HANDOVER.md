@@ -210,6 +210,11 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
   （cdp-notes-ui.mjs 的选择器已按 md-editor-v3 更新：`.md-editor` / `.md-editor-content textarea`）。
 - 插件 UI 不经 `vue-tsc` 检查（tsconfig include 只有 `src`）——改插件 UI 后靠
   `pnpm build:core` 构建成功 + tauri dev 冒烟验证。
+- **`_core` 残留目录坑（8/29 实测）**：`ensure_core_plugins` 是**逐个覆盖部署、不清空
+  `_core`**（为保留用户手动安装的本地 DLL 插件）——已删除功能的旧部署目录不会自动清掉，
+  会在 refresh 时被扫描并尝试加载旧 DLL。8/29 发现 `core-records`（8/16 旧部署）残留：
+  仓库早已删除 records 功能，但目录还在 `%APPDATA%\...\plugins\_core\`。清理 = 直接删目录
+  （无随包资源，无需记 removed_core）。日后移除核心插件功能时记得检查目标机 `_core` 残留。
 
 ## 7. 重要决策记录
 
