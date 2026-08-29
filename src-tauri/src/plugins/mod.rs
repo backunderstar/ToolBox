@@ -60,7 +60,7 @@ mod tests {
     /// 插件 id 白名单（S1a 第一道闸）：合法 id 通过，穿越/绝对路径/非法字符拒绝。
     #[test]
     fn safe_plugin_id_validation() {
-        for ok in ["core-example", "a", "a1", "text-stats", "theme-maple", "x-y2"] {
+        for ok in ["core-example", "a", "a1", "py-jmes", "theme-maple", "x-y2"] {
             assert!(is_safe_plugin_id(ok), "{ok} 应合法");
         }
         for bad in [

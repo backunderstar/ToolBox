@@ -202,8 +202,7 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 - `build-external-ui.mjs` 会把产物复制回插件目录 `ui/`——**core-plugins 不要用
   build-external-ui 构建**（会把 index.js/style.css 复制进源码目录污染 lint；
   用 build:core，产物只在 target/plugin-ui + 部署到应用目录）。
-- `core-plugins/blog/ui/style.css`、`notes/ui/style.css` 是 **git 跟踪的源文件**（不是产物），勿删。
-- 外部插件 text-stats 的 `plugins/text-stats/ui/index.js` 是 gitignored 产物，构建生成。
+- 外部插件的 `plugins/*/ui/index.js`、`style.css` 是 gitignored 产物，构建生成（勿手改/勿提交）。
 
 ### 6.4 依赖 / 工具链
 
@@ -261,7 +260,7 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 - **插件沙箱**（PLAN.md §5.2）：P0 CSP 收紧 + 命令面最小化 + ShadowRealm，未排期
 - **按教学基线写新核心插件**：`docs/核心插件示例教程.md` 的"照猫画虎"清单已给步骤；
   新插件 = core-plugins/<id>/（crate + ui）+ build-core.mjs PLUGINS 一项 + Cargo members
-- 插件 UI 产物体积：外部插件 text-stats 含 Vue runtime gzip ~36kB（预期内）
+- 插件 UI 产物体积：外部插件自带前端含 Vue runtime gzip ~36kB（预期内）
 
 ## 9. 验证基线（2026-08-29 教学基线收敛后全绿）
 
@@ -274,8 +273,8 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 
 > 注：8/28 的 0xC0000139 加载崩溃已修复（见 §6.1 坑 5）；8/29 完成 dev 冒烟 + 打包版冒烟 +
 > 插件页"安装依赖"按钮 + **教学基线收敛**（6 业务核心插件移除 → core-example 教学示例）。
-> text-stats 的 ui/index.js 曾为旧构建器产物（残留 process.env，打开其界面报
-> `process is not defined`）——已用 build-external-ui 重建；该产物 gitignored，勿手改。
+> 曾踩：旧构建器产物残留 `process.env` 导致插件 UI 报 `process is not defined`
+> （已用 plugin-ui-build.mjs 重建；该产物 gitignored，勿手改）。
 
 ## 10. Python 插件示例（2026-08-29 新增，仓库 `plugins/`）
 
