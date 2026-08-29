@@ -344,6 +344,21 @@ pub fn run() {
                     if let Err(e) = m.ensure_refreshed(&h, &path) {
                         core::log::warn(&format!("[plugin] 预热刷新失败: {e}"));
                     }
+                    drop(m);
+                    // 预热后重建托盘（插件动作段）；失败只记日志不阻断
+                    if let Err(e) = rebuild_tray(&h) {
+                        core::log::warn(&format!("[tray] 重建托盘失败: {e}"));
+                    }
+                });
+            }
+            // 插件列表变化（启停/卸载/重装）→ 前端 plugins-changed → 重建托盘插件动作段
+            {
+                let h = app.handle().clone();
+                let h2 = h.clone();
+                let _ = tauri::Listener::listen(&h, "plugins-changed", move |_| {
+                    if let Err(e) = rebuild_tray(&h2) {
+                        core::log::warn(&format!("[tray] 重建托盘失败: {e}"));
+                    }
                 });
             }
             // 插件事件桥：进程插件事件 → 前端 plugin-event 事件
@@ -394,7 +409,9 @@ fn ensure_main_visible(app: &tauri::AppHandle) {
     }
 }
 
-/// 系统托盘：图标 + 菜单（显示主窗口 / 显示隐藏浮窗 / 退出）+ 单击切换主窗口。
+/// 系统托盘：图标 + 菜单（显示主窗口 / 显示隐藏浮窗 / 插件动作段 / 退出）+ 单击切换主窗口。
+/// 插件动作段由已启用插件 manifest `actions[].tray` 动态构建（rebuild_tray），
+/// 插件启停变化经前端 `plugins-changed` 事件重建。
 fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -408,23 +425,7 @@ fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .tooltip("ToolBox")
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "tray-show-main" => {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.unminimize();
-                    let _ = w.set_focus();
-                }
-            }
-            "tray-toggle-float" => {
-                let _ = float_toggle(app.clone());
-            }
-            "tray-quit" => {
-                EXITING.store(true, Ordering::SeqCst);
-                app.exit(0);
-            }
-            _ => {}
-        })
+        .on_menu_event(handle_tray_event)
         .on_tray_icon_event(|tray, event| {
             // 单击左键：切换主窗口显示/隐藏
             if let TrayIconEvent::Click {
@@ -451,6 +452,112 @@ fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     }
     tray.build(app)?;
     Ok(())
+}
+
+/// 托盘菜单事件：固定项 + 插件动作项（`tray-plugin:<pluginId>:<actionId>`）。
+fn handle_tray_event(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
+    let id = event.id.as_ref();
+    match id {
+        "tray-show-main" => {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }
+        "tray-toggle-float" => {
+            let _ = float_toggle(app.clone());
+        }
+        "tray-quit" => {
+            EXITING.store(true, Ordering::SeqCst);
+            app.exit(0);
+        }
+        _ => {
+            // 插件托盘动作：与前端 triggerPluginAction 同构（事件通道 + 命令通道）
+            if let Some(rest) = id.strip_prefix("tray-plugin:") {
+                let mut parts = rest.splitn(2, ':');
+                if let (Some(pid), Some(action)) = (parts.next(), parts.next()) {
+                    plugin_shell_action(app, pid.to_string(), action.to_string(), "tray");
+                }
+            }
+        }
+    }
+}
+
+/// 重建托盘菜单（含插件动作段）：插件启停/卸载/重装后调用。
+fn rebuild_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    let show_main = MenuItem::with_id(app, "tray-show-main", "显示主窗口", true, None::<&str>)?;
+    let toggle_float = MenuItem::with_id(app, "tray-toggle-float", "显示/隐藏浮窗", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "tray-quit", "退出 ToolBox", true, None::<&str>)?;
+    // 插件段：已启用插件声明的 tray 动作（平铺，label = "插件名：动作名"）
+    let mut plugin_items: Vec<tauri::menu::MenuItem<tauri::Wry>> = Vec::new();
+    if let Ok(m) = app.state::<Mutex<PluginManager>>().lock() {
+        for rec in m.records.iter() {
+            if !m.plugin_enabled(&rec.manifest.id) {
+                continue;
+            }
+            for a in rec.manifest.actions.iter().filter(|a| a.tray) {
+                let label = format!("{}：{}", rec.manifest.name, a.label);
+                if let Ok(it) = tauri::menu::MenuItem::with_id(
+                    app,
+                    format!("tray-plugin:{}:{}", rec.manifest.id, a.id),
+                    &label,
+                    true,
+                    None::<&str>,
+                ) {
+                    plugin_items.push(it);
+                }
+            }
+        }
+    }
+    let mut all: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![&show_main, &toggle_float];
+    all.extend(plugin_items.iter().map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>));
+    all.push(&quit);
+    let menu = Menu::with_items(app, &all)?;
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        tray.set_menu(Some(menu))?;
+    }
+    Ok(())
+}
+
+/// 插件外壳动作（托盘/顶栏/设置页）统一交互（与前端 triggerPluginAction 同构）：
+/// ① 发 `plugin-event` 事件 `action`（插件 UI api.on("action") 订阅）
+/// ② 非 webview 插件调约定命令 `plugin.action {action, source}`（后台线程执行）。
+fn plugin_shell_action(app: &tauri::AppHandle, plugin_id: String, action: String, source: &str) {
+    use tauri::Emitter;
+    let app = app.clone();
+    let _ = app.emit(
+        "plugin-event",
+        crate::plugins::events::PluginEvent {
+            plugin_id: plugin_id.clone(),
+            event: "action".into(),
+            data: serde_json::json!({ "action": action, "source": source }),
+        },
+    );
+    let source = source.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        use plugins::manifest::PluginRuntime;
+        let Ok(Some(vault)) = crate::core::vault::read_vault_path(&app) else {
+            return;
+        };
+        let _ = vault;
+        let state = app.state::<Mutex<PluginManager>>();
+        let Ok(mut m) = state.lock() else {
+            return;
+        };
+        let Some(rec) = m.records.iter().find(|r| r.manifest.id == plugin_id) else {
+            return;
+        };
+        if !m.plugin_enabled(&rec.manifest.id) || rec.manifest.runtime == PluginRuntime::Webview {
+            return; // webview 插件命令在宿主侧无分发，由事件通道响应
+        }
+        let _ = m.invoke(
+            &plugin_id,
+            "plugin.action",
+            serde_json::json!({ "action": action, "source": source }),
+        );
+    });
 }
 
 /// 浮窗可见性记忆：%APPDATA%/com.toolbox.desktop/float.json。

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { pluginsReadFile, searchAll } from "../core/api";
 import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
@@ -20,7 +20,17 @@ interface UiRegistry {
  * 先清理旧挂载再加载新的；context.activePath/activeContent 惰性读取直接用
  * reactive 的 vault.state（始终是最新值，无需 ref 快照）。
  */
-const props = defineProps<{ pluginId: string }>();
+const props = defineProps<{
+  pluginId: string;
+  /** 入口 JS（相对插件目录）；缺省 ui/index.js（主界面） */
+  entry?: string;
+  /** 注册 key：注入后从 window.__TB_PLUGIN_UI__ 取挂载项的 key；缺省 = pluginId */
+  regKey?: string;
+}>();
+
+/** 本组件加载的入口与注册 key（默认主界面入口） */
+const entryPath = computed(() => props.entry ?? "ui/index.js");
+const regKey = computed(() => props.regKey ?? props.pluginId);
 
 const vault = useVault();
 const nav = useNav();
@@ -65,41 +75,44 @@ async function load(): Promise<void> {
 
   disposeCurrent = () => {
     disposed = true;
-    (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[pluginId]?.unmount?.();
+    (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[regKey.value]?.unmount?.();
     scriptUn?.();
     styleEl?.remove();
   };
 
   try {
-    // 1. 样式注入（Vite 提取的 style.css；无则跳过）
+    // 1. 样式注入（与入口同目录的 style.css；无则跳过）
     try {
-      const css = await pluginsReadFile(pluginId, "ui/style.css");
+      const cssDir = entryPath.value.slice(0, entryPath.value.lastIndexOf("/"));
+        const css = await pluginsReadFile(pluginId, `${cssDir}/style.css`);
+        if (disposed) return;
+        styleEl = document.createElement("style");
+        styleEl.textContent = css;
+        document.head.appendChild(styleEl);
+      } catch {
+        /* 无样式文件 */
+      }
+      // 2. 注入入口 JS（Blob URL script，顶层副作用注册 UI）
+      const code = await pluginsReadFile(pluginId, entryPath.value);
       if (disposed) return;
-      styleEl = document.createElement("style");
-      styleEl.textContent = css;
-      document.head.appendChild(styleEl);
-    } catch {
-      /* 无样式文件 */
+      scriptUn = await injectPluginScript(code);
+      if (disposed) return;
+      // 3. 取注册表并挂载（regKey 决定取哪个注册项）
+      const reg = (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[regKey.value];
+      if (!reg?.mount || !containerRef.value) {
+        throw new Error(
+          `插件未注册界面（${entryPath.value} 缺少 __TB_PLUGIN_UI__["${regKey.value}"] 注册）`,
+        );
+      }
+      reg.mount(containerRef.value, api);
+      error.value = null;
+    } catch (e) {
+      error.value = String(e);
     }
-    // 2. 注入入口 JS（Blob URL script，顶层副作用注册 UI）
-    const code = await pluginsReadFile(pluginId, "ui/index.js");
-    if (disposed) return;
-    scriptUn = await injectPluginScript(code);
-    if (disposed) return;
-    // 3. 取注册表并挂载
-    const reg = (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[pluginId];
-    if (!reg?.mount || !containerRef.value) {
-      throw new Error("插件未注册界面（ui/index.js 缺少 __TB_PLUGIN_UI__ 注册）");
-    }
-    reg.mount(containerRef.value, api);
-    error.value = null;
-  } catch (e) {
-    error.value = String(e);
-  }
 }
 
 watch(
-  () => [props.pluginId, vault.state.path] as const,
+  () => [props.pluginId, props.entry, vault.state.path] as const,
   () => void load(),
   { immediate: true },
 );

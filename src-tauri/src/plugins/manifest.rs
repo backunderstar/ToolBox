@@ -64,6 +64,41 @@ pub struct NavDecl {
     pub view: String,
 }
 
+/// 宿主外壳动作声明（顶栏图标按钮 / 托盘菜单项，二选一或都用）：
+/// 点击 → 宿主发 `plugin-event` 事件 `action`（插件 UI 用 api.on("action") 订阅）
+/// + 若插件非 webview 则调用约定命令 `plugin.action {action, source}`。
+/// 交互不感知具体外壳来源（source = topbar | tray），插件统一处理。
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionDecl {
+    /// 动作 id（插件内唯一）
+    #[serde(default)]
+    pub id: String,
+    /// 展示名（托盘菜单项文本 / 顶栏按钮 title）
+    #[serde(default)]
+    pub label: String,
+    /// 顶栏图标名（前端内置图标表的 key，如 "puzzle"）
+    #[serde(default)]
+    pub icon: String,
+    /// 是否显示到顶栏（缺省 false → 仅托盘）
+    #[serde(default)]
+    pub topbar: bool,
+    /// 是否显示到托盘菜单（缺省 false → 仅顶栏）
+    #[serde(default)]
+    pub tray: bool,
+}
+
+/// 插件设置面板声明：设置页「插件设置」段挂载的自定义界面入口
+/// （相对插件目录，如 "ui/settings.js"，自包含 IIFE，注册 key 约定
+/// `window.__TB_PLUGIN_UI__["settings:<pluginId>"]`）。
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsDecl {
+    /// 入口 JS（相对插件目录）
+    #[serde(default)]
+    pub entry: String,
+}
+
 /// 插件清单。v1 字段：
 /// - runtime = "webview"：entry 为 JS 文件相对路径，运行于界面内
 /// - runtime = "process"：command 为启动命令（argv），如 ["python", "main.py"]
@@ -103,6 +138,12 @@ pub struct PluginManifest {
     /// 纯主题插件可省略 entry（webview 运行时仅作类型占位，不加载代码）。
     #[serde(default)]
     pub theme: Option<ThemeDecl>,
+    /// 宿主外壳动作（顶栏图标按钮 / 托盘菜单项）。
+    #[serde(default)]
+    pub actions: Vec<ActionDecl>,
+    /// 设置页插件段入口（有则设置页渲染本插件自定义面板）。
+    #[serde(default)]
+    pub settings: Option<SettingsDecl>,
 }
 
 /// v1 认识的权限（未知权限记录 warning，不阻止加载）。

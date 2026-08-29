@@ -32,6 +32,10 @@ const props = defineProps<{
   onToggleFloat: () => void;
   /** Ctrl+K 快捷键聚焦信号（App 层自增触发） */
   focusSignal?: number;
+  /** 插件顶栏动作（manifest actions 且 topbar=true 的启用插件） */
+  pluginActions?: { pluginId: string; id: string; label: string; icon: string }[];
+  /** 点击插件顶栏动作（统一交互：plugin-action 事件 + plugin.action 命令） */
+  onPluginAction?: (pluginId: string, action: string) => void;
 }>();
 
 /** 搜索结果下拉最多渲染条数：全文搜索可轻易上百条，全量渲染 DOM 开销大。
@@ -184,6 +188,18 @@ function onKeyDown(e: KeyboardEvent): void {
     </div>
 
     <div class="spacer" />
+
+    <!-- 插件顶栏动作（manifest actions 且 topbar=true） -->
+    <button
+      v-for="a in pluginActions"
+      :key="`${a.pluginId}:${a.id}`"
+      class="icon-btn"
+      :title="a.label"
+      :aria-label="a.label"
+      @click="onPluginAction?.(a.pluginId, a.id)"
+    >
+      <Icon :name="a.icon" :size="15" />
+    </button>
 
     <button
       class="icon-btn"

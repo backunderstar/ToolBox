@@ -217,6 +217,11 @@ const MOCK_PLUGINS: PluginInfo[] = [
     ],
     theme: null,
     hasDeps: false,
+    actions: [
+      { id: "greet", label: "示例问候", icon: "puzzle", topbar: true, tray: true },
+      { id: "open", label: "打开示例界面", icon: "file-text", topbar: false, tray: true },
+    ],
+    settings: "ui/settings.js",
   },
 ];
 
@@ -290,6 +295,8 @@ async function refresh(): Promise<void> {
     await Promise.all(
       list.filter((pl) => pl.enabled && pl.runtime === "webview").map((pl) => loadWebviewPlugin(pl)),
     );
+    // 通知 Rust 重建托盘插件菜单（插件列表变化时）
+    void import("@tauri-apps/api/event").then((m) => m.emit("plugins-changed", null)).catch(() => undefined);
   } catch (e) {
     if (seq === refreshSeq) {
       console.error("[plugins] 刷新失败", e);
@@ -322,6 +329,34 @@ async function uninstall(id: string): Promise<void> {
   if (!p) return;
   await pluginsUninstall(p, id); // 停进程 + 清状态 + 删目录（回收站）
   await refresh();
+}
+
+/**
+ * 触发插件外壳动作（顶栏按钮 / 托盘项）——统一交互契约：
+ * ① 发 `plugin-event` 事件 `action`（payload {action, source}）→ 插件自带前端
+ *    UI 用 api.on("action") 订阅响应（webview / native 插件 UI 均可）
+ * ② 插件非 webview 时调约定命令 `plugin.action {action, source}`（native/process
+ *    逻辑响应；未实现该命令则忽略——事件通道已发出）
+ * source = topbar | tray | settings，插件可按来源区分行为。
+ */
+export async function triggerPluginAction(
+  pluginId: string,
+  action: string,
+  source: "topbar" | "tray" | "settings",
+): Promise<void> {
+  const p = vaultState.path;
+  // ① 事件通道（插件 UI 订阅）
+  void import("@tauri-apps/api/event")
+    .then((m) => m.emit("plugin-event", { pluginId, event: "action", data: { action, source } }))
+    .catch(() => undefined);
+  // ② 命令通道（webview 插件命令在宿主侧无分发，跳过）
+  const pl = state.plugins.find((x) => x.id === pluginId);
+  if (!pl || pl.runtime === "webview" || !p) return;
+  try {
+    await pluginCall(p, pluginId, "plugin.action", { action, source });
+  } catch {
+    /* 插件未实现 plugin.action：忽略（事件通道已发出） */
+  }
 }
 
 async function invoke(pluginId: string, command: string, args: unknown): Promise<unknown> {

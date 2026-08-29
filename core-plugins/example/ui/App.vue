@@ -57,9 +57,18 @@ onMounted(() => {
       .then((v) => (items.value = v as ExampleItem[]))
       .catch(() => undefined);
   });
+  // 教学点：宿主外壳动作（顶栏按钮 / 托盘菜单项）经 plugin-event `action` 事件到达
+  const unAction = props.api.on("action", (data) => {
+    const d = (data ?? {}) as { action?: string; source?: string };
+    eventLog.value = [
+      ...eventLog.value,
+      `action ${d.source ?? "?"} → ${d.action ?? "?"}`,
+    ].slice(-5);
+  });
   onBeforeUnmount(() => {
     alive = false;
     un();
+    unAction();
   });
 });
 

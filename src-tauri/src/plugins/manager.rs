@@ -6,7 +6,7 @@
 //! 被命令层与测试跨模块访问的私有项标 `pub(crate)`。
 
 use super::events;
-use super::manifest::{is_valid_plugin_id, NavDecl, PluginManifest, PluginRuntime, ThemeDecl};
+use super::manifest::{is_valid_plugin_id, ActionDecl, NavDecl, PluginManifest, PluginRuntime, SettingsDecl, ThemeDecl};
 use super::native::NativePlugin;
 use super::process::ProcessPlugin;
 use serde::Serialize;
@@ -73,6 +73,10 @@ pub struct PluginInfo {
     pub theme: Option<ThemeDecl>,
     /// 插件目录存在 requirements.txt（前端据此显示"安装依赖"按钮）
     pub has_deps: bool,
+    /// 宿主外壳动作（顶栏图标按钮 / 托盘菜单项）
+    pub actions: Vec<ActionDecl>,
+    /// 设置页插件段入口（有则设置页渲染本插件自定义面板）
+    pub settings: Option<SettingsDecl>,
 }
 
 #[derive(Default)]
@@ -603,6 +607,8 @@ impl PluginManager {
                         ui: None,
                         nav: vec![],
                         theme: None,
+                        actions: vec![],
+                        settings: None,
                     },
                     dir: dir.to_path_buf(),
                     commands: vec![],
@@ -699,6 +705,8 @@ impl PluginManager {
                 nav: r.manifest.nav.clone(),
                 theme: r.manifest.theme.clone(),
                 has_deps: r.dir.join("requirements.txt").is_file(),
+                actions: r.manifest.actions.clone(),
+                settings: r.manifest.settings.clone(),
             })
             .collect()
     }

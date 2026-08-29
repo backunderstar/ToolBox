@@ -310,3 +310,27 @@ py-jmes 是按钮的正确验收对象。
   不应挂在可装卸插件上（webview 桥 fs.readText/writeText 与 process 核心 API 同源）
 - **教学示例 core-example**：覆盖全部核心插件实现要点（见 docs/核心插件示例教程.md）
 - 验证基线见 §9；未推送提交清单见 §8
+
+## 12. 宿主可扩展性增强（2026-08-29）
+
+新增三个"与宿主外壳集成"的**声明式扩展点**（manifest 声明即接入，插件无需改宿主；
+机制见插件开发指南 §7 宿主外壳扩展点）：
+
+1. **顶栏动作**（`actions[].topbar`）：顶栏渲染插件图标按钮
+2. **托盘菜单**（`actions[].tray`）：托盘渲染「插件名：动作」项，插件启停自动重建
+   （宿主监听前端 `plugins-changed` 事件 → `rebuild_tray`；预热后首建）
+3. **设置页插件段**（`settings.entry`）：设置页「插件设置」段挂载插件自定义面板
+   （注册 key 约定 `settings:<pluginId>`；PluginUiView 支持 entry/regKey）
+
+统一交互契约：外壳动作点击 → 宿主发 `plugin-event` 事件 `action`（插件 UI
+`api.on("action")` 订阅）+ 非 webview 插件调约定命令 `plugin.action {action, source}`
+（source = topbar|tray|settings）。实现：前端 `triggerPluginAction`（plugins.ts）、
+Rust `plugin_shell_action`（lib.rs，托盘点击）。
+
+core-example 全量演示：顶栏按钮（greet）+ 托盘两项（greet/open）+ 设置面板
+（ui/settings.ts + SettingsPanel.vue）+ `plugin.action` 命令 + 主界面/面板事件日志。
+build-core.mjs 支持多入口构建（ui/index.ts → index.js、ui/settings.ts → settings.js）。
+
+新增扩展点路径（后续同类需求照此）：manifest.rs 字段 → manager.rs PluginInfo 透出 →
+前端组件遍历渲染（TopBar/SettingsView 等）+ Rust 侧消费（托盘）；交互统一走
+plugin-event `action` + `plugin.action` 命令，插件端无需感知外壳来源。

@@ -24,10 +24,17 @@ const PLUGINS = [
     id: "core-example",
     name: "示例插件",
     dll: "tb_example.dll",
-    description: "核心插件教学示例：命令/事件/搜索提供者/宿主能力/自带前端全覆盖",
+    description: "核心插件教学示例：命令/事件/搜索提供者/宿主能力/自带前端/外壳扩展点全覆盖",
     ui: { entry: "ui/index.js" },
     nav: [{ id: "example", label: "示例插件", icon: "puzzle", group: "工作区" }],
     searchProvider: true,
+    // 宿主外壳动作：顶栏按钮 + 托盘菜单项（统一交互见插件开发指南 §宿主外壳扩展点）
+    actions: [
+      { id: "greet", label: "示例问候", icon: "puzzle", topbar: true, tray: true },
+      { id: "open", label: "打开示例界面", icon: "file-text", topbar: false, tray: true },
+    ],
+    // 设置页插件段：构建 ui/settings.ts → ui/settings.js，设置页「插件设置」段挂载
+    settings: { entry: "ui/settings.js" },
     // 教学点：manifest config 会注入 tb_create 的 cfg（示例读取 author 回显）
     config: { author: "ToolBox 教程" },
   },
@@ -38,29 +45,38 @@ const PLUGINS = [
 
 /** 构建核心插件自带前端（ui/index.ts → 自包含 IIFE，Vue 3 打进产物；
  *  兼容遗留 index.tsx 入口）。
+ *  支持多入口：主界面 ui/index.ts（产物 index.js）+ 可选设置面板 ui/settings.ts
+ *  （产物 settings.js，对应 manifest settings.entry）。
  *  vite 构建部分走公共构建器（scripts/plugin-ui-build.mjs，与 build-external-ui
- *  共用）；本函数只负责定位入口/校验与路径换算。 */
+ *  共用）；本函数只负责定位入口/校验与路径换算。
+ *  @returns {Promise<Array<{outDir: string, jsName: string}>>} 各入口产物目录与目标 js 名 */
 async function buildCorePluginUi(p) {
   const uiDir = path.join(root, "core-plugins", p.id.slice(5), "ui");
+  const outDir = path.join(root, "target", "plugin-ui", p.id);
+  const env = isRelease ? "production" : "development";
+  const built = [];
+  // 主界面入口 ui/index.ts(x)
   const entryTs = path.join(uiDir, "index.ts");
   const entryTsx = path.join(uiDir, "index.tsx");
   const entry = (await exists(entryTs)) ? entryTs : entryTsx;
-  if (!(await exists(entry))) {
+  if (await exists(entry)) {
+    const out = path.join(outDir, "main");
+    await buildPluginUi({ root, entry, outDir: out, env });
+    built.push({ outDir: out, jsName: "index" });
+  }
+  // 可选设置面板入口 ui/settings.ts（manifest settings.entry = ui/settings.js）
+  const settingsTs = path.join(uiDir, "settings.ts");
+  if (await exists(settingsTs)) {
+    const out = path.join(outDir, "settings");
+    await buildPluginUi({ root, entry: settingsTs, outDir: out, env });
+    built.push({ outDir: out, jsName: "settings" });
+  }
+  if (built.length === 0 && p.ui) {
     // 声明了 ui 却缺源文件：静默跳过会部署"声明 ui 但无产物"的坏清单，
     // 运行时挂载失败且难排查——直接抛错暴露问题
-    if (p.ui) {
-      throw new Error(`[build-core] ${p.id} 声明了 ui.entry 但缺少源码: ${entry}`);
-    }
-    return null; // 未声明 ui 的正常插件
+    throw new Error(`[build-core] ${p.id} 声明了 ui.entry 但缺少源码: ${entry}`);
   }
-  const outDir = path.join(root, "target", "plugin-ui", p.id);
-  await buildPluginUi({
-    root,
-    entry,
-    outDir,
-    env: isRelease ? "production" : "development",
-  });
-  return outDir;
+  return built;
 }
 
 const exists = (p) =>
@@ -126,12 +142,15 @@ await Promise.all(
     // 自带前端：构建产物复制到插件目录 ui/
     if (p.ui) {
       const built = await buildCorePluginUi(p);
-      if (built) {
-        const uiTarget = path.join(target, "ui");
-        mkdirSync(uiTarget, { recursive: true });
-        for (const f of ["index.js", "style.css"]) {
-          const s = path.join(built, f);
-          if (await exists(s)) cpSync(s, path.join(uiTarget, f));
+      const uiTarget = path.join(target, "ui");
+      mkdirSync(uiTarget, { recursive: true });
+      for (const { outDir, jsName } of built) {
+        // 各入口产物：index.js / settings.js（style.css 只随主入口复制）
+        const s = path.join(outDir, "index.js");
+        if (await exists(s)) cpSync(s, path.join(uiTarget, `${jsName}.js`));
+        if (jsName === "index") {
+          const ss = path.join(outDir, "style.css");
+          if (await exists(ss)) cpSync(ss, path.join(uiTarget, "style.css"));
         }
       }
     }
@@ -147,6 +166,10 @@ await Promise.all(
       system: p.system ?? false,
       ui: p.ui ?? null,
       nav: p.nav ?? [],
+      // 宿主外壳动作（顶栏按钮 / 托盘菜单项；统一交互见插件开发指南 §宿主外壳扩展点）
+      actions: p.actions ?? [],
+      // 设置页插件段（ui/settings.js 产物；插件自定义设置面板）
+      settings: p.settings ?? null,
       // 教学点：manifest config 注入 tb_create 的 cfg（插件读取；宿主会合并 vault 等运行期键）
       config: p.config ?? {},
       // 随包插件标记：dev 构建清理时据此识别"可清理的旧随包插件"，

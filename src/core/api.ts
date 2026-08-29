@@ -36,6 +36,17 @@ export interface PluginNav {
   pluginId: string;
 }
 
+/** 宿主外壳动作（Rust ActionDecl 对应）：顶栏图标按钮 / 托盘菜单项 */
+export interface PluginAction {
+  id: string;
+  label: string;
+  icon: string;
+  /** 是否显示到顶栏 */
+  topbar: boolean;
+  /** 是否显示到托盘菜单 */
+  tray: boolean;
+}
+
 /** 插件主题声明（与 Rust ThemeDecl 对应）：非空时该插件是主题包 */
 export interface PluginThemeDecl {
   /** 亮/暗基础（驱动 tokens.css 的 [data-theme]） */
@@ -75,6 +86,10 @@ export interface PluginInfo {
   theme: PluginThemeDecl | null;
   /** 插件目录存在 requirements.txt（显示"安装依赖"按钮，用捆绑 Python 的 pip 装到 vendor/） */
   hasDeps: boolean;
+  /** 宿主外壳动作（顶栏图标按钮 / 托盘菜单项） */
+  actions: PluginAction[];
+  /** 设置页插件段入口（相对插件目录；null = 无自定义设置面板） */
+  settings: string | null;
 }
 
 /** 插件运行时 → 界面标签（插件页 / 概览页共用，避免各组件重复定义） */

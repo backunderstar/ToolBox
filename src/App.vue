@@ -15,6 +15,7 @@ import {
   type NavItemDef,
 } from "./core/navPrefs";
 import { floatToggle, openInExplorer } from "./core/api";
+import { triggerPluginAction } from "./core/plugins";
 import {
   applyTheme,
   getInitialTheme,
@@ -216,6 +217,21 @@ function openSearchResult(p: string): void {
 function toggleFloat(): void {
   void floatToggle().catch(() => undefined);
 }
+
+/* 插件顶栏动作（manifest actions 且 topbar=true 的启用插件）→ 统一交互 */
+const pluginActions = computed(() =>
+  pluginCtx.state.plugins
+    .filter((p) => p.enabled)
+    .flatMap((p) =>
+      (p.actions ?? [])
+        .filter((a) => a.topbar)
+        .map((a) => ({ pluginId: p.id, id: a.id, label: a.label, icon: a.icon })),
+    ),
+);
+
+function onPluginAction(pluginId: string, action: string): void {
+  void triggerPluginAction(pluginId, action, "topbar");
+}
 </script>
 
 <template>
@@ -237,6 +253,8 @@ function toggleFloat(): void {
         :on-toggle-nav="() => (navCollapsed = !navCollapsed)"
         :on-toggle-float="toggleFloat"
         :focus-signal="focusTick"
+        :plugin-actions="pluginActions"
+        :on-plugin-action="onPluginAction"
       />
       <div class="body">
         <Sidebar

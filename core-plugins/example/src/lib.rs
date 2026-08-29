@@ -147,6 +147,27 @@ fn call(
             Ok(Value::Null)
         }
 
+        // ---- 宿主外壳动作（顶栏按钮 / 托盘菜单项）的约定命令：
+        // 点击 → 宿主发 plugin-event 事件 `action`（UI 经 api.on 订阅）
+        //   + 调本命令 {action, source}（source = topbar | tray | settings）。
+        // 未实现本命令的插件不受影响（宿主忽略调用错误，事件通道照发）。
+        "plugin.action" => {
+            let action = s("action").unwrap_or_default();
+            let source = s("source").unwrap_or_default();
+            tb_sdk::log(
+                host,
+                ctx,
+                0,
+                &format!("[core-example] 外壳动作触发: {source} → {action}"),
+            );
+            Ok(serde_json::json!({
+                "ok": true,
+                "action": action,
+                "source": source,
+                "author": state.author,
+            }))
+        }
+
         // ---- 搜索提供者：manifest 声明 searchProvider: true 后，宿主 search_all
         // 聚合时调用本命令，返回统一结构 [{filename, snippet, path}] ----
         "search.provide" => {

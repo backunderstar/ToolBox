@@ -29,6 +29,24 @@
   gap: var(--space-4);
   padding: var(--space-2) 0;
 }
+/* 插件设置面板（manifest settings.entry）：卡片内嵌插件自带界面 */
+.plugin-settings-block {
+  margin-top: var(--space-3);
+}
+.plugin-settings-pane {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  min-height: 120px;
+}
+.plugin-settings-pane .plugin-ui-view {
+  height: auto;
+  min-height: 0;
+}
+.plugin-settings-pane .plugin-ui-container {
+  height: auto;
+}
 .settings-label {
   flex-shrink: 0;
   width: 120px;

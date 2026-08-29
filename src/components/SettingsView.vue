@@ -20,6 +20,8 @@ import NavSettings from "./NavSettings.vue";
 import ThemeIoPanel from "./ThemeIoPanel.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import Icon from "./Icon.vue";
+import PluginUiView from "./PluginUiView.vue";
+import { usePlugins } from "../core/plugins";
 import { APP_TAG } from "../core/version";
 import { onRowKeyDown } from "../core/keyboard";
 
@@ -47,6 +49,11 @@ const props = defineProps<{
 const FRONTEND_KEYS = ["toolbox.theme", "toolbox.custom-themes", "toolbox.nav", "toolbox.layout"];
 
 const vault = useVault();
+const pluginsCtx = usePlugins();
+/* 启用的插件中声明了设置面板（manifest settings.entry）的列表 */
+const settingsPlugins = computed(() =>
+  pluginsCtx.state.plugins.filter((p) => p.enabled && p.settings),
+);
 const opening = ref(false);
 const editing = ref<ThemeDef | null>(null);
 const themeIo = ref(false);
@@ -326,6 +333,24 @@ function removeCustom(id: string): void {
 
       <!-- ---- 导航栏 ---- -->
       <NavSettings :config="navConfig" :defs="defs" :on-change="onNavChange" />
+
+      <!-- ---- 插件设置（manifest settings.entry 声明的插件自定义面板） ---- -->
+      <section v-if="settingsPlugins.length > 0" class="settings-card">
+        <h2 class="settings-title">插件设置</h2>
+        <div v-for="p in settingsPlugins" :key="p.id" class="plugin-settings-block">
+          <div class="settings-row">
+            <span class="settings-label">{{ p.name }}</span>
+            <span class="settings-hint">由插件提供的设置面板（manifest settings.entry）</span>
+          </div>
+          <div class="plugin-settings-pane">
+            <PluginUiView
+              :plugin-id="p.id"
+              :entry="p.settings ?? 'ui/settings.js'"
+              :reg-key="`settings:${p.id}`"
+            />
+          </div>
+        </div>
+      </section>
 
       <!-- ---- 配置迁移 ---- -->
       <section class="settings-card">
