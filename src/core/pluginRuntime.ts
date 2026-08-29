@@ -10,11 +10,9 @@
 import { listen } from "@tauri-apps/api/event";
 import { pluginCall } from "./api";
 
-/** 宿主导航桥（主窗口插件界面用：跨视图跳转 / 双向链接） */
+/** 宿主导航桥（主窗口插件界面用：跨视图跳转） */
 export interface PluginNavBridge {
   go: (view: string) => void;
-  openNote: (rel: string) => void;
-  openChecklist: (id: string) => void;
 }
 
 /** 宿主能力（主窗口插件 UI 可用；搜索迁回宿主本体后的统一入口） */

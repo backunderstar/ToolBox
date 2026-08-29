@@ -14,7 +14,7 @@ import {
   type NavConfig,
   type NavItemDef,
 } from "./core/navPrefs";
-import { floatToggle } from "./core/api";
+import { floatToggle, openInExplorer } from "./core/api";
 import {
   applyTheme,
   getInitialTheme,
@@ -31,7 +31,6 @@ import WelcomeView from "./components/WelcomeView.vue";
 import PluginUiView from "./components/PluginUiView.vue";
 import FloatApp from "./components/FloatApp.vue";
 import LoadingView from "./components/LoadingView.vue";
-import CoreDisabled from "./components/CoreDisabled.vue";
 import "./styles/tokens.css";
 import "./styles/base.css";
 /* 样式按域拆分（原 app.css 3600 行）：外壳/插件页/设置/各核心插件视图。
@@ -58,18 +57,8 @@ const PluginsView = defineAsyncComponent({
 
 /** 宿主固定路由的视图 id（ViewId 联合）。外部插件声明同名 nav id 会与内置
  *  路由冲突（侧边栏显示被覆盖，点击仍走内置分支，显示与跳转不一致）——
- *  渲染前过滤。核心插件的同名声明（notes/checklist/…）是合法的，负责提供
- *  侧边栏标签/图标/分组。用 Set<string>：检查对象是任意插件声明的 nav id。 */
-const RESERVED_VIEW_IDS = new Set<string>([
-  "overview",
-  "notes",
-  "plugins",
-  "checklist",
-  "projects",
-  "ai",
-  "blog",
-  "settings",
-]);
+ *  渲染前过滤。用 Set<string>：检查对象是任意插件声明的 nav id。 */
+const RESERVED_VIEW_IDS = new Set<string>(["overview", "plugins", "settings"]);
 
 /** 是否为浮窗窗口（加载同一前端入口，按窗口 label 分流） */
 function isFloatWindow(): boolean {
@@ -205,16 +194,7 @@ const vaultName = computed(() =>
 /* 外部插件自带前端的动态路由：非内置 view（如插件 nav 声明的 id）时，
    查插件导航表 → 命中且插件启用且自带前端 → 渲染该插件的 PluginUiView。 */
 const pluginView = computed<string | null>(() => {
-  if (
-    view.value === "overview" ||
-    view.value === "plugins" ||
-    view.value === "settings" ||
-    view.value === "notes" ||
-    view.value === "checklist" ||
-    view.value === "projects" ||
-    view.value === "ai" ||
-    view.value === "blog"
-  ) {
+  if (view.value === "overview" || view.value === "plugins" || view.value === "settings") {
     return null; // 内置视图由固定分支处理
   }
   const navItem = pluginCtx.navItems.value.find((n) => n.id === view.value);
@@ -224,17 +204,12 @@ const pluginView = computed<string | null>(() => {
   return navItem.pluginId;
 });
 
-/** 核心插件视图守卫：插件启用才渲染（未知/未加载时默认放行）。 */
-function corePluginEnabled(id: string): boolean {
-  const p = pluginCtx.state.plugins.find((x) => x.id === id);
-  return p ? p.enabled : true;
-}
-
 function openSearchResult(p: string): void {
-  // 搜索结果 = 任意 vault 下 .md：必须走 openNote 全流程——笔记界面是
-  // 插件自带前端，只靠 host vault.openFile 更新宿主状态不会让编辑器真正
-  // 打开文件；要经 __TB_PENDING_NOTE__ + tb:open-note 事件驱动插件 UI 打开
-  nav.openNote(p);
+  // 搜索结果 = 任意 vault 下文件：教学基线下宿主不持有业务视图，
+  // 用系统文件管理器定位该文件（用户自己打开查看）
+  const vp = vault.state.path;
+  if (!vp) return;
+  void openInExplorer(`${vp.replace(/\\/g, "/")}/${p}`).catch(() => undefined);
   vault.setQuery("");
 }
 
@@ -278,32 +253,10 @@ function toggleFloat(): void {
             :ping="pingInfo"
             :theme-name="themeName"
             :plugins="pluginCtx.state.plugins"
-            :on-open-notes="() => nav.go('notes')"
+            :on-open-example="() => nav.go('example')"
             :on-open-plugins="() => nav.go('plugins')"
           />
           <PluginsView v-else-if="view === 'plugins'" />
-          <template v-else-if="view === 'checklist'">
-            <PluginUiView
-              v-if="corePluginEnabled('core-checklists')"
-              plugin-id="core-checklists"
-            />
-            <CoreDisabled v-else name="清单" />
-          </template>
-          <template v-else-if="view === 'projects'">
-            <PluginUiView
-              v-if="corePluginEnabled('core-projects')"
-              plugin-id="core-projects"
-            />
-            <CoreDisabled v-else name="项目" />
-          </template>
-          <template v-else-if="view === 'ai'">
-            <PluginUiView v-if="corePluginEnabled('core-ai')" plugin-id="core-ai" />
-            <CoreDisabled v-else name="AI 整理" />
-          </template>
-          <template v-else-if="view === 'blog'">
-            <PluginUiView v-if="corePluginEnabled('core-blog')" plugin-id="core-blog" />
-            <CoreDisabled v-else name="博客发布" />
-          </template>
           <template v-else-if="view === 'settings'">
             <SettingsView
               :theme-id="themeId"
@@ -313,10 +266,6 @@ function toggleFloat(): void {
               :defs="navDefs"
               :on-nav-change="(c: NavConfig) => (navConfig = c)"
             />
-          </template>
-          <template v-else-if="view === 'notes'">
-            <PluginUiView v-if="corePluginEnabled('core-notes')" plugin-id="core-notes" />
-            <CoreDisabled v-else name="笔记" />
           </template>
           <template v-else>
             <!-- 未知视图（nav 声明但插件未启用/无自带前端）：明确占位 -->

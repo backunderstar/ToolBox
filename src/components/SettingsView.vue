@@ -15,7 +15,6 @@ import {
   type ThemeDef,
 } from "../themes/themes";
 import ThemeEditor from "./ThemeEditor.vue";
-import AISettings from "./AISettings.vue";
 import BackupSettings from "./BackupSettings.vue";
 import NavSettings from "./NavSettings.vue";
 import ThemeIoPanel from "./ThemeIoPanel.vue";
@@ -26,7 +25,7 @@ import { onRowKeyDown } from "../core/keyboard";
 
 /**
  * 设置页：工作区 / 主题（选择器 + 新建/删除/导出导入 + 编辑器）/
- * 导航栏全配置（NavSettings）/ AI 提供商（AISettings）/ 备份（BackupSettings）/
+ * 导航栏全配置（NavSettings）/ 备份（BackupSettings）/
  * 关于与自动更新。
  * 主题列表来自 themes.ts（内置 + 皮肤插件投影 + localStorage 自定义）。
  */
@@ -321,9 +320,6 @@ function removeCustom(id: string): void {
           }"
         />
       </section>
-
-      <!-- ---- AI 提供商 ---- -->
-      <AISettings />
 
       <!-- ---- 备份 ---- -->
       <BackupSettings />

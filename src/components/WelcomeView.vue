@@ -10,7 +10,7 @@ const props = defineProps<{
   ping: PingInfo | null;
   themeName: string;
   plugins: PluginInfo[];
-  onOpenNotes: () => void;
+  onOpenExample: () => void;
   onOpenPlugins: () => void;
 }>();
 
@@ -27,7 +27,7 @@ const ok = computed(() => isCoreConnected(props.ping));
         数据始终是你的——随时可迁移、可备份、可发布。
       </p>
       <div class="hero-actions">
-        <button class="btn-primary" @click="onOpenNotes">开始使用</button>
+        <button class="btn-primary" @click="onOpenExample">打开示例插件</button>
       </div>
     </section>
 

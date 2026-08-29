@@ -60,7 +60,7 @@ mod tests {
     /// 插件 id 白名单（S1a 第一道闸）：合法 id 通过，穿越/绝对路径/非法字符拒绝。
     #[test]
     fn safe_plugin_id_validation() {
-        for ok in ["core-notes", "a", "a1", "text-stats", "theme-maple", "x-y2"] {
+        for ok in ["core-example", "a", "a1", "text-stats", "theme-maple", "x-y2"] {
             assert!(is_safe_plugin_id(ok), "{ok} 应合法");
         }
         for bad in [
@@ -109,20 +109,20 @@ mod tests {
     }
 
     /// native 运行时 _core 目录放行（S1b 正向）：核心插件仍能正常加载。
-    /// 需要已构建 tb_notes.dll（cargo build -p tb-notes），否则跳过。
+    /// 需要已构建 tb_example.dll（cargo build -p tb-example），否则跳过。
     #[test]
     fn start_native_accepts_core_dir() {
-        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_notes.dll");
+        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_example.dll");
         if !dll.exists() {
-            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-notes");
+            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-example");
             return;
         }
         let base = std::env::temp_dir().join(format!("tb-native-core-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        // 模拟 plugins/_core/core-notes/（含 DLL）
-        let core_dir = base.join("plugins/_core/core-notes");
+        // 模拟 plugins/_core/core-example/（含 DLL）
+        let core_dir = base.join("plugins/_core/core-example");
         std::fs::create_dir_all(&core_dir).unwrap();
-        std::fs::copy(&dll, core_dir.join("tb_notes.dll")).unwrap();
+        std::fs::copy(&dll, core_dir.join("tb_example.dll")).unwrap();
 
         let mut m = PluginManager {
             vault: Some(PathBuf::from("C:/vault")),
@@ -131,12 +131,12 @@ mod tests {
         };
         m.records.push(PluginRecord {
             manifest: PluginManifest {
-                id: "core-notes".into(),
+                id: "core-example".into(),
                 name: "笔记".into(),
                 version: "0.1.0".into(),
                 runtime: PluginRuntime::Native,
                 entry: None,
-                command: Some(vec!["tb_notes.dll".into()]),
+                command: Some(vec!["tb_example.dll".into()]),
                 permissions: Vec::new(),
                 description: String::new(),
                 config: serde_json::Value::Null,
@@ -163,24 +163,24 @@ mod tests {
     /// native，而 scan 在 push 之前调用它，导致首次刷新核心插件全部 stopped。
     #[test]
     fn scan_starts_native_on_first_pass() {
-        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_notes.dll");
+        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_example.dll");
         if !dll.exists() {
-            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-notes");
+            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-example");
             return;
         }
         let base = std::env::temp_dir().join(format!("tb-scan-native-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        let core_dir = base.join("plugins/_core/core-notes");
+        let core_dir = base.join("plugins/_core/core-example");
         std::fs::create_dir_all(&core_dir).unwrap();
-        std::fs::copy(&dll, core_dir.join("tb_notes.dll")).unwrap();
+        std::fs::copy(&dll, core_dir.join("tb_example.dll")).unwrap();
         std::fs::write(
             core_dir.join("plugin.json"),
             serde_json::json!({
-                "id": "core-notes",
+                "id": "core-example",
                 "name": "笔记",
                 "version": "0.1.0",
                 "runtime": "native",
-                "command": ["tb_notes.dll"]
+                "command": ["tb_example.dll"]
             })
             .to_string(),
         )
@@ -204,23 +204,23 @@ mod tests {
         let base = std::env::temp_dir().join(format!("tb-deploy-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let src = base.join("src/_core");
-        std::fs::create_dir_all(src.join("core-notes")).unwrap();
-        std::fs::write(src.join("core-notes/plugin.json"), "{}").unwrap();
-        std::fs::write(src.join("core-notes/tb_notes.dll"), "dll-bytes").unwrap();
-        std::fs::create_dir_all(src.join("core-blog")).unwrap();
-        std::fs::write(src.join("core-blog/plugin.json"), "{}").unwrap();
+        std::fs::create_dir_all(src.join("core-example")).unwrap();
+        std::fs::write(src.join("core-example/plugin.json"), "{}").unwrap();
+        std::fs::write(src.join("core-example/tb_example.dll"), "dll-bytes").unwrap();
+        std::fs::create_dir_all(src.join("core-removed")).unwrap();
+        std::fs::write(src.join("core-removed/plugin.json"), "{}").unwrap();
 
         let dst = base.join("dst/_core");
         // 已卸载的插件（removed_core）跳过部署
-        let removed = HashSet::from(["core-blog".to_string()]);
+        let removed = HashSet::from(["core-removed".to_string()]);
         deploy_core_plugins(&src, &dst, &removed).unwrap();
-        assert!(dst.join("core-notes/plugin.json").is_file());
-        assert!(dst.join("core-notes/tb_notes.dll").is_file());
-        assert!(!dst.join("core-blog/plugin.json").exists(), "已卸载插件应跳过部署");
+        assert!(dst.join("core-example/plugin.json").is_file());
+        assert!(dst.join("core-example/tb_example.dll").is_file());
+        assert!(!dst.join("core-removed/plugin.json").exists(), "已卸载插件应跳过部署");
 
         // 重复部署 + 手动安装的本地插件保留：
         // 用户把 DLL 插件目录放入 _core 后，随包部署不清空它（重启后仍可用）
-        std::fs::write(dst.join("core-notes/plugin.json"), "{}").unwrap();
+        std::fs::write(dst.join("core-example/plugin.json"), "{}").unwrap();
         std::fs::create_dir_all(dst.join("core-mine")).unwrap();
         std::fs::write(dst.join("core-mine/plugin.json"), "{}").unwrap();
         std::fs::write(dst.join("core-mine/tb_mine.dll"), "dll").unwrap();
@@ -231,17 +231,17 @@ mod tests {
             "用户手动安装的插件应保留（不清空 _core）"
         );
         assert!(dst.join("core-mine/tb_mine.dll").is_file());
-        assert!(dst.join("core-blog/plugin.json").is_file(), "清除标记后恢复部署");
+        assert!(dst.join("core-removed/plugin.json").is_file(), "清除标记后恢复部署");
         let _ = std::fs::remove_dir_all(&base);
     }
 
     /// 原生核心插件全链路：真实 DLL 加载 → create → notes CRUD。
-    /// 需要先构建核心插件（`cargo build -p tb-notes`），DLL 不存在时跳过。
+    /// 需要先构建核心插件（`cargo build -p tb-example`），DLL 不存在时跳过。
     #[test]
     fn native_plugin_load_and_call() {
-        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_notes.dll");
+        let dll = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tb_example.dll");
         if !dll.exists() {
-            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-notes");
+            eprintln!("[skip] 请先构建核心插件: cargo build -p tb-example");
             return;
         }
         let base = std::env::temp_dir().join(format!("tb-native-test-{}", std::process::id()));
@@ -250,7 +250,7 @@ mod tests {
         std::fs::create_dir_all(vault.join("notes")).unwrap();
 
         let cfg = json!({ "vault": vault.to_string_lossy() }).to_string();
-        let plugin = NativePlugin::load(&dll, "core-notes", &cfg).expect("DLL 应能加载");
+        let plugin = NativePlugin::load(&dll, "core-example", &cfg).expect("DLL 应能加载");
 
         // 新建
         plugin.call("notes.create", &json!({ "rel": "notes/测试.md" })).unwrap();

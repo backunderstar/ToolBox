@@ -48,15 +48,23 @@ pub(crate) fn bundled_python_deploy_dir(app: &tauri::AppHandle) -> Option<PathBu
     app.path().app_config_dir().ok().map(|d| d.join(PYTHON_DIR))
 }
 
-/// 部署实现（可测）：先删旧目录再整体复制（与应用版本一致，避免残留旧文件）。
+/// 部署实现（可测）：**原子替换**——先整体复制到同父目录的临时目录，完成后
+/// 一次性切换（删旧 → rename）。
+/// 为什么不能"先删旧目录再复制"：部署期间部署目录会短暂不完整（python.exe 已
+/// 在而 Lib 未到），此时并发启动的 process 插件会把它当作可用捆绑解释器，
+/// Python 启动即崩（Failed to import encodings，8/29 打包冒烟实测）。原子替换
+/// 保证部署目录要么是完整的旧版本，要么不存在（回落资源目录，同样完整）。
 /// 仅 `ensure_bundled_python`（release）调用；dev 下无调用方，压制 dead_code 告警。
 #[cfg_attr(dev, allow(dead_code))]
 pub(crate) fn deploy_bundled_python(src: &Path, dst: &Path) -> Result<(), String> {
     if let Some(parent) = dst.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
     }
+    let tmp = dst.with_extension(format!("tmp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    super::manager::copy_dir_recursive(src, &tmp)?;
     let _ = std::fs::remove_dir_all(dst);
-    super::manager::copy_dir_recursive(src, dst)
+    std::fs::rename(&tmp, dst).map_err(|e| format!("部署失败: {e}"))
 }
 
 /// 当前生效的捆绑解释器目录：优先部署目录（打包版首启后），其次资源目录

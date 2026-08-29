@@ -167,7 +167,7 @@ mod tests {
         let v = json!({
             "format": FORMAT, "version": VERSION,
             "frontend": { "toolbox.theme": "warm" },
-            "backend": { "pluginsEnabled": ["core-notes"] }
+            "backend": { "pluginsEnabled": ["core-example"] }
         });
         assert!(validate(&v).is_ok());
     }

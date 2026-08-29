@@ -44,21 +44,7 @@ async function load(): Promise<void> {
   // （用户切换笔记后插件读到的应是"当前"笔记，而非挂载时快照）。
   const api: PluginBridgeApi = buildBridgeApi(pluginId, () => vault.state.path, {
     nav: {
-      go: (view: string) => nav.go(view as Parameters<typeof nav.go>[0]),
-      openNote: (rel) => {
-        const w2 = window as unknown as Record<string, unknown>;
-        w2.__TB_PENDING_NOTE__ = rel;
-        window.dispatchEvent(new CustomEvent("tb:open-note", { detail: rel }));
-        nav.openNote(rel);
-      },
-      openChecklist: (id) => {
-        // 清单视图恒为插件自带前端。与 openNote 对称：
-        // 广播 tb:open-checklist 事件 + 挂载期标记，清单插件 UI 据此打开清单
-        const w2 = window as unknown as Record<string, unknown>;
-        w2.__TB_PENDING_CHECKLIST__ = id;
-        window.dispatchEvent(new CustomEvent("tb:open-checklist", { detail: id }));
-        nav.openChecklist();
-      },
+      go: (view: string) => nav.go(view),
     },
     context: {
       get activePath() {

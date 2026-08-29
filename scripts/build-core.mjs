@@ -16,55 +16,20 @@ const isRelease = process.argv.includes("--release");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const VERSION = pkg.version;
 
+// 教学基线：核心插件仅保留一个教学示例（core-example）。
+// 新增核心插件：在 core-plugins/<id>/ 写 crate + ui/，然后往 PLUGINS 加一项即可
+// （manifest 由本脚本生成，含 bundled 标记；id 必须与 core-plugins/<id> 目录对应）。
 const PLUGINS = [
   {
-    id: "core-notes",
-    name: "笔记",
-    dll: "tb_notes.dll",
-    description: "核心插件：笔记文件操作（notes/ 列表/读写/新建/删除/重命名）",
+    id: "core-example",
+    name: "示例插件",
+    dll: "tb_example.dll",
+    description: "核心插件教学示例：命令/事件/搜索提供者/宿主能力/自带前端全覆盖",
     ui: { entry: "ui/index.js" },
-    nav: [{ id: "notes", label: "笔记", icon: "file-text", group: "工作区", view: "NotesView" }],
-  },
-  {
-    id: "core-todos",
-    name: "待办",
-    dll: "tb_todos.dll",
-    description: "核心插件：快速待办（vault/data/todos/todos.json，浮窗数据层）",
-    ui: { entry: "ui/index.js" },
-  },
-  {
-    id: "core-checklists",
-    name: "清单",
-    dll: "tb_checklists.dll",
-    description: "核心插件：清单（data/checklists CRUD）",
-    ui: { entry: "ui/index.js" },
-    nav: [
-      { id: "checklist", label: "清单", icon: "check", group: "工作区", view: "ChecklistView" },
-    ],
-  },
-  {
-    id: "core-projects",
-    name: "项目",
-    dll: "tb_projects.dll",
-    description: "核心插件：项目文件管理（projects/ 目录/归档/默认应用打开）",
-    ui: { entry: "ui/index.js" },
-    nav: [{ id: "projects", label: "项目", icon: "folder", group: "工作区", view: "ProjectsView" }],
-  },
-  {
-    id: "core-blog",
-    name: "博客",
-    dll: "tb_blog.dll",
-    description: "核心插件：博客发布（frontmatter/站点生成/内置预览服务器）",
-    ui: { entry: "ui/index.js" },
-    nav: [{ id: "blog", label: "博客发布", icon: "globe", group: "系统", view: "BlogView" }],
-  },
-  {
-    id: "core-ai",
-    name: "AI",
-    dll: "tb_ai.dll",
-    description: "核心插件：AI 整理（OpenAI 兼容对话 + SSE 流式 + keyring 凭据）",
-    ui: { entry: "ui/index.js" },
-    nav: [{ id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", view: "AIChatView" }],
+    nav: [{ id: "example", label: "示例插件", icon: "puzzle", group: "工作区" }],
+    searchProvider: true,
+    // 教学点：manifest config 会注入 tb_create 的 cfg（示例读取 author 回显）
+    config: { author: "ToolBox 教程" },
   },
 ];
 
@@ -110,10 +75,10 @@ const profile = isRelease ? "release" : "debug";
 // 打包资源目录始终存在（tauri build.rs 检查 resources/_core；release 填充 DLL）
 mkdirSync(path.join(root, "src-tauri", "resources", "_core"), { recursive: true });
 console.log(`[build-core] 构建核心插件（${profile}）...`);
-// 只编 6 个插件 cdylib（-p 限定）：宿主 app / tb-sdk 是它们的依赖会被自动带上，
+// 只编插件 cdylib（-p 限定）：宿主 app / tb-sdk 是它们的依赖会被自动带上，
 // 但不构建宿主二进制——避免 beforeBuildCommand 阶段白编译整个宿主应用
 execSync(
-  `cargo build --manifest-path "${path.join(root, "Cargo.toml")}" -p tb-notes -p tb-todos -p tb-checklists -p tb-projects -p tb-blog -p tb-ai${isRelease ? " --release" : ""}`,
+  `cargo build --manifest-path "${path.join(root, "Cargo.toml")}" -p tb-example${isRelease ? " --release" : ""}`,
   { stdio: "inherit" },
 );
 
@@ -182,6 +147,8 @@ await Promise.all(
       system: p.system ?? false,
       ui: p.ui ?? null,
       nav: p.nav ?? [],
+      // 教学点：manifest config 注入 tb_create 的 cfg（插件读取；宿主会合并 vault 等运行期键）
+      config: p.config ?? {},
       // 随包插件标记：dev 构建清理时据此识别"可清理的旧随包插件"，
       // 不误删用户手动安装的插件目录（宿主解析清单时忽略未知字段）
       bundled: true,

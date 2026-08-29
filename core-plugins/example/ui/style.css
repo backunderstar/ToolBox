@@ -1,0 +1,151 @@
+/* core-example 插件私有样式（Vite 提取，宿主注入 <style>；可复用宿主全局 CSS 变量） */
+.ex-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+.ex-info {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--fg-muted, #888);
+}
+.ex-vault {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ex-error {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(192, 57, 43, 0.1);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-danger, #c0392b);
+}
+.ex-error button {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.ex-input-row {
+  display: flex;
+  gap: 6px;
+}
+.ex-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  color: var(--fg, #222);
+  font-size: 13px;
+}
+.ex-add {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent, #3b6ea5);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ex-add:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ex-search {
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.ex-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ex-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--fg-muted, #888);
+}
+.ex-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 13px;
+}
+.ex-item.done .ex-item-text {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+.ex-check {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.3));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent, #3b6ea5);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ex-check.on {
+  background: var(--accent, #3b6ea5);
+  color: #fff;
+}
+.ex-item-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ex-item-time {
+  font-size: 11px;
+  color: var(--fg-muted, #888);
+}
+.ex-del {
+  border: none;
+  background: none;
+  color: var(--fg-muted, #888);
+  font-size: 14px;
+  cursor: pointer;
+}
+.ex-del:hover {
+  color: var(--color-danger, #c0392b);
+}
+.ex-foot {
+  font-size: 12px;
+  color: var(--fg-muted, #888);
+}
+.ex-events {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ex-event {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: var(--fg-muted, #888);
+}

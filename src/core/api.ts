@@ -12,6 +12,8 @@ export interface FileEntry {
   isDir: boolean;
   /** 文件字节数（目录为 null） */
   size: number | null;
+  /** 修改时间（UNIX 毫秒整数；搜索/排序用） */
+  mtime: number | null;
 }
 
 export interface SearchHit {
@@ -87,20 +89,22 @@ export const RUNTIME_LABEL: Record<string, string> = {
 export const vaultGet = () => invoke<VaultSettings>("vault_get");
 export const vaultSet = (path: string) => invoke<void>("vault_set", { path });
 
-/* ---- 笔记文件操作（经 core-notes 原生插件，宿主进程内 FFI） ---- */
+/* ---- 宿主文件服务（vault 内文件列表/读写/增删改；系统级框架能力，
+   插件 webview 桥 fs.readText/writeText 与宿主数据层共用同一封装） ---- */
 
-export const fsList = (vault: string) =>
-  pluginCall(vault, "core-notes", "notes.list", {}) as Promise<FileEntry[]>;
+/** 枚举 vault 内目录（dir 为空 = vault 根；忽略隐藏/工具目录） */
+export const fsList = (vault: string, dir = "") =>
+  invoke<FileEntry[]>("files_list", { vault, dir });
 export const fsRead = (vault: string, rel: string) =>
-  pluginCall(vault, "core-notes", "notes.read", { rel }) as Promise<string>;
+  invoke<string>("files_read", { vault, rel });
 export const fsWrite = (vault: string, rel: string, content: string) =>
-  pluginCall(vault, "core-notes", "notes.write", { rel, content }) as Promise<void>;
+  invoke<void>("files_write", { vault, rel, content });
 export const fsCreate = (vault: string, rel: string) =>
-  pluginCall(vault, "core-notes", "notes.create", { rel }) as Promise<void>;
+  invoke<void>("files_create", { vault, rel });
 export const fsDelete = (vault: string, rel: string) =>
-  pluginCall(vault, "core-notes", "notes.delete", { rel }) as Promise<void>;
+  invoke<void>("files_delete", { vault, rel });
 export const fsRename = (vault: string, from: string, to: string) =>
-  pluginCall(vault, "core-notes", "notes.rename", { from, to }) as Promise<void>;
+  invoke<void>("files_rename", { vault, from, to });
 
 /** 聚合搜索：文件全文 + 启用的搜索提供者插件命中（source 字段标记来源） */
 export const searchAll = (vault: string, query: string) =>
@@ -150,27 +154,6 @@ export const openInExplorer = (path: string) => invoke<void>("open_in_explorer",
  *  传 null 恢复系统默认；非 Windows 平台静默忽略。 */
 export const setWindowCaptionColor = (color: string | null) =>
   invoke<void>("set_window_caption_color", { color });
-
-/* ---- M6 AI 配置（经 core-ai 原生插件；无显式 vault 用当前工作区） ---- */
-
-export interface AiConfig {
-  baseUrl: string;
-  model: string;
-  /** 是否已配置 API Key（Key 存系统凭据管理器，不返回明文） */
-  hasKey: boolean;
-}
-
-export const aiConfigGet = () =>
-  currentVault().then((v) => pluginCall(v, "core-ai", "ai.configGet", {})) as Promise<AiConfig>;
-export const aiConfigSet = (config: { baseUrl: string; model: string }) =>
-  currentVault().then((v) => pluginCall(v, "core-ai", "ai.configSet", { config })) as Promise<void>;
-/** 保存 API Key 到系统凭据管理器（Windows 凭据管理器 / Keychain） */
-export const aiConfigSetKey = (key: string) =>
-  currentVault().then((v) => pluginCall(v, "core-ai", "ai.configSetKey", { key })) as Promise<void>;
-export const aiConfigClearKey = () =>
-  currentVault().then((v) => pluginCall(v, "core-ai", "ai.configClearKey", {})) as Promise<void>;
-export const aiTest = () =>
-  currentVault().then((v) => pluginCall(v, "core-ai", "ai.test", {})) as Promise<string>;
 
 /* ---- 自动备份（宿主内嵌命令，原 core-backup 插件命令；搜索/备份已迁回本体框架） ---- */
 
@@ -228,14 +211,7 @@ export const configExport = (path: string, frontend: Record<string, string>) =>
 /** 导入配置：宿主侧已写回；返回完整配置包供前端写回 localStorage */
 export const configImport = (path: string) => invoke<ConfigBundle>("config_import", { path });
 
-/* ---- 浮窗快速待办（经 core-todos 原生插件；当前工作区来自 vault 配置） ---- */
-
-/** 读取当前工作区路径（todos/plugin_call 等无显式 vault 的命令用） */
-async function currentVault(): Promise<string> {
-  const s = await vaultGet();
-  if (!s.path) throw new Error("请先选择工作区");
-  return s.path;
-}
+/* ---- 浮窗（宿主独立窗口，内容 = 插件自带前端） ---- */
 
 /** 显示 / 隐藏浮窗（返回操作后可见状态） */
 export const floatToggle = () => invoke<boolean>("float_toggle");

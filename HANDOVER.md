@@ -80,12 +80,19 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
 
 ## 2. 项目一句话
 
-个人工具箱桌面应用：**Rust 核心（Tauri 2）+ Vue 3 宿主 + 插件系统**（6 个核心插件自带前端 +
-外部 JS/Python 插件），数据全部是 vault 工作区里的普通文件（Markdown/JSON）。
+个人工具箱桌面应用：**Rust 核心（Tauri 2）+ Vue 3 宿主 + 插件系统**，数据全部是
+vault 工作区里的普通文件（Markdown/JSON）。
+**教学基线（2026-08-29 起）**：宿主框架能力完整（工作区/宿主文件服务/全文搜索/自动
+备份/插件系统/主题/托盘/浮窗/打包分发），业务功能全部插件化；核心插件仅保留一个
+**教学示例 core-example**（cdylib + 自带前端，覆盖全部实现要点，教程见
+docs/核心插件示例教程.md），外部 JS/Python 插件示例见 plugins/。
 
 - 仓库：`D:\WORKSPACE\ToolBox`（远程 `github.com/backunderstar/ToolBox`）
-- 语言/工具：Rust 1.97 + Node ≥20 + pnpm 10 + Vue 3.5 + md-editor-v3 + Vite 8（vite-plus/rolldown）
+- 语言/工具：Rust 1.97 + Node ≥20 + pnpm 10 + Vue 3.5 + Vite 8（vite-plus/rolldown）
 - **分支**：`main` = Vue 3 主线；`react` = React 版冻结存档（只读，勿动）
+
+> ⚠️ 历史功能已移除（git 历史可查，勿按旧文档恢复）：笔记/待办/清单/项目/博客/AI
+> 6 个业务核心插件、记录功能、数据工具页、Git 版本历史、md-editor-v3 编辑器。
 
 ## 3. 技术栈现状（2026 大迁移后）
 
@@ -93,7 +100,7 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
 |---|---|
 | 宿主前端 `src/` | **Vue 3**（`.vue` SFC + 模块级单例 store），`vue-tsc` 类型检查，`defineAsyncComponent` 懒加载设置页/插件页 |
 | 插件 UI `core-plugins/*/ui/` | **全部 Vue 3**（`index.ts` + `App.vue` + `bridge.ts`），Vite lib 构建自包含 IIFE |
-| 笔记编辑器 | **md-editor-v3 v6**（不再用 Vditor，`public/vditor/` 已删除） |
+| 宿主文件服务 | **core/files.rs**（vault 内文件列表/读写/增删改，2026-08 迁回本体；webview 桥与 process 核心 API 共用） |
 | Rust 核心 `src-tauri/` | Cargo workspace 根 = 仓库根，`target/` 在仓库根（**不是** src-tauri/target） |
 | React | **仓库已无任何 React**（含 devDependencies） |
 
@@ -162,6 +169,16 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
    前台能跑不代表 test 能跑。后台下载 0 字节卡死同理。
 7. **背景任务验证模式可靠**：`cargo test --workspace *> target/cargo-test.log; Write-Host "EXIT=$LASTEXITCODE"`
    ——全量测试/构建照此写，输出落 target/（gitignored）不刷屏。
+8. **🔴 捆绑运行时部署竞态（8/29 打包冒烟实测，已修复）**：`deploy_bundled_python` 原为
+   "先删旧目录再复制"——窗口期内部署目录只有 python.exe 没有 Lib，并发启动的 process
+   插件把它当可用解释器 → Python 启动即崩（`Failed to import encodings`）。
+   **修复**：改为**原子替换**（复制到同父目录 `python.tmp-<pid>` → 删旧 → rename）；
+   窗口期部署目录要么完整旧版要么不存在（回落资源目录，同样完整）。
+9. **`tauri build --debug --no-bundle` 不复制资源**：`target/debug/resources` 是 dev 残留
+   （tauri dev 才复制）。打包冒烟前必须手动把 `src-tauri/resources/_core` + `resources/python`
+   复制到 `target/debug/resources/`，且**先清空 target/debug/resources**（tauri 增量复制
+   不删已消失的源目录 → 旧插件/旧资源会残留并被 ensure_core_plugins 部署回 %APPDATA%）。
+   8/29 实测：旧 6 个核心插件经此残留被部署回 app `_core`（连同 core-records 复活）。
 
 ### 6.2 终端 / Git（Windows）
 
@@ -239,23 +256,25 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
   `git config --global http.proxy http://127.0.0.1:<port>` 再 `git push origin main`。
   推送会触发 ci.yml（已修好 resources/python 占位校验）。
 - **插件页"安装依赖"按钮**：✅ 已做（2026-08-29，见 §1.2/§1.4）。剩余：目标机/真实场景交互验收
-  （点击按钮装依赖 → 重载生效），py-tools 已带 requirements.txt 可当验收对象
+  （点击按钮装依赖 → 重载生效），py-jmes 已带 requirements.txt 可当验收对象
 - **插件沙箱**（PLAN.md §5.2）：P0 CSP 收紧 + 命令面最小化 + ShadowRealm，未排期
-- **md-editor-v3 打磨**：当前为分屏模式（原 Vditor 是即时渲染 IR），如有需要可调
-  `md-editor-v3` 配置（工具栏/预览主题/代码高亮主题）
-- 13 个 cdp-*.mjs 脚本的样板重复未收敛（`cdp-lib.mjs` 已抽公共，但各套件仍独立）
-- 插件 UI 产物体积：notes 含 md-editor-v3 gzip ~702kB（预期内）；如优化可考虑按需拆包
+- **按教学基线写新核心插件**：`docs/核心插件示例教程.md` 的"照猫画虎"清单已给步骤；
+  新插件 = core-plugins/<id>/（crate + ui）+ build-core.mjs PLUGINS 一项 + Cargo members
+- 插件 UI 产物体积：外部插件 text-stats 含 Vue runtime gzip ~36kB（预期内）
 
-## 9. 验证基线（2026-08-29 重新全绿）
+## 9. 验证基线（2026-08-29 教学基线收敛后全绿）
 
-`pnpm doctor` 全就绪（含捆绑 Python 运行时）· `pnpm lint` 0 警告（92 文件）·
-`pnpm test` 33 · `pnpm build` ✓ · **`cargo test --workspace` 81**（78 既有 + 3 pyruntime 新测试）·
-`pnpm build:core`（6 插件 + DLL 自检）· `pnpm tauri dev` 冒烟无前端错误、
-**csv-tool/py-tools 均确认使用捆绑解释器** · 打包版冒烟（无 Python PATH 跑 exe：
-部署捆绑运行时 + 核心插件 + 两插件用捆绑解释器）。改动后请跑对应子集。
+`pnpm lint` 0 警告（55 文件）· `pnpm test` 24（2 文件）· `pnpm build` ✓ ·
+**`cargo test --workspace` 59**（宿主 54 + pyruntime 3 + core-example 2，含 native DLL 集成测试）·
+`pnpm build:core`（core-example 1 插件 + DLL 自检，自动清理旧随包插件）·
+`pnpm tauri dev` 冒烟：5 个 process 插件全部使用捆绑解释器、core-example 部署无异常 ·
+打包版冒烟（无 Python PATH 跑 exe：部署捆绑运行时 + 核心插件 + 插件用捆绑解释器）。
+改动后请跑对应子集。
 
 > 注：8/28 的 0xC0000139 加载崩溃已修复（见 §6.1 坑 5）；8/29 完成 dev 冒烟 + 打包版冒烟 +
-> 插件页"安装依赖"按钮；按钮的 UI 交互点击待用户真机验收。
+> 插件页"安装依赖"按钮 + **教学基线收敛**（6 业务核心插件移除 → core-example 教学示例）。
+> text-stats 的 ui/index.js 曾为旧构建器产物（残留 process.env，打开其界面报
+> `process is not defined`）——已用 build-external-ui 重建；该产物 gitignored，勿手改。
 
 ## 10. Python 插件示例（2026-08-29 新增，仓库 `plugins/`）
 
@@ -278,3 +297,16 @@ py-jmes 是按钮的正确验收对象。
 已实测（8/29）：4 个新插件协议冒烟全过（init/call/事件/中文），dev 冒烟 5 个 process
 插件全部使用捆绑解释器（`%APPDATA%\...\python\python.exe` 部署目录优先解析生效）。
 方案 D（插件自带整个 python.exe，+15~25MB）无法入库，做法见插件开发指南 §3.5 与示例清单。
+
+## 11. 教学基线（2026-08-29，用户决策）
+
+- **6 个业务核心插件（笔记/待办/清单/项目/博客/AI）全部移除**（core-plugins/ 只剩 example），
+  宿主引用同步清理：api.ts（fs* 改走宿主命令、删 ai*/todos* 封装）、vault.ts（精简为
+  工作区/搜索/上下文快照，不再持有文件树）、navigation（ViewId 泛化，删 openNote/openChecklist）、
+  App.vue（固定视图分支收敛为 overview/plugins/settings + 插件动态路由）、FloatApp
+  （页签 = core-example）、SettingsView（删 AI 段）、AISettings/blogfm 删除、14 个 cdp-*.mjs 删除
+- **宿主文件服务迁回本体**：`src-tauri/src/core/files.rs`（files_list/read/write/create/
+  delete/rename，全部 S1c vault 校验）——文件操作是插件系统与宿主共用的系统级能力，
+  不应挂在可装卸插件上（webview 桥 fs.readText/writeText 与 process 核心 API 同源）
+- **教学示例 core-example**：覆盖全部核心插件实现要点（见 docs/核心插件示例教程.md）
+- 验证基线见 §9；未推送提交清单见 §8

@@ -2,8 +2,11 @@
 
 个人工具箱桌面应用：Rust 核心 + Tauri 2 + Vue 3/TypeScript。
 
-笔记、清单、待办、项目文件、AI 整理与博客发布等模块（6 个核心插件自带前端），
-详见 [PLAN.md](PLAN.md) 与 [docs/操作手册.md](docs/操作手册.md)。
+**教学基线**：宿主框架能力完整（工作区/全文搜索/自动备份/插件系统/主题/托盘/浮窗/
+打包分发），业务功能以**插件**形态演进；核心插件仅保留一个教学示例 `core-example`
+（覆盖命令/事件/搜索提供者/宿主能力/自带前端全部实现要点），照着它即可从零写新
+核心插件——见 [docs/核心插件示例教程.md](docs/核心插件示例教程.md) 与
+[PLAN.md](PLAN.md)、[docs/操作手册.md](docs/操作手册.md)。
 
 ## 开发（跨平台：Windows / macOS / Linux）
 
@@ -42,10 +45,10 @@ cargo test --workspace                  # Rust 测试（含核心插件与进程
 
 ## 当前状态
 
-- **框架（已完成）**：应用外壳（顶栏/侧栏/状态栏）、设计令牌与亮暗主题（含原生标题栏同步）、系统托盘常驻、桌面半透明浮窗（快速待办 + 全局快捷键 Alt+Q）、自动备份、全文搜索（SQLite FTS5 + 拼音首字母/全拼 + 清单待办内容索引）、导航栏全配置化（分组/排序/标签/图标/隐藏均可配）、自动更新（Tauri updater + GitHub Releases）。
-- **6 个核心插件（已完成，全部自带前端）**：笔记（md-editor-v3 分屏编辑 + 反链）、待办（浮窗数据层）、清单（打卡/进度/笔记关联）、项目文件管理、博客发布（SSG 生成/内置预览）、AI 整理（OpenAI 兼容对话 + SSE 流式 + 笔记问答 RAG）。
-- 插件系统：统一 api 桥（call / on / context / nav / host.search），原生 DLL（FFI）+ 进程（JSON-RPC）+ webview（JS）三类运行时；核心插件可卸载（物理删除 + 标记防复活）、可界面安装（.zip / 目录）。
-- **已移除**：数据工具页、记录功能、Git 版本历史（用户决策，不恢复）。
+- **框架（已完成）**：应用外壳（顶栏/侧栏/状态栏）、设计令牌与亮暗主题（含原生标题栏同步）、系统托盘常驻、桌面半透明浮窗（插件 UI 多窗口复用 + 全局快捷键 Alt+Q）、自动备份、宿主文件服务（vault 内文件列表/读写/增删改，插件核心 API 共用）、全文搜索（SQLite FTS5 + 拼音首字母/全拼 + 搜索提供者聚合）、导航栏全配置化（分组/排序/标签/图标/隐藏均可配）、自动更新（Tauri updater + GitHub Releases）。
+- **核心插件教学示例（core-example）**：cdylib DLL + 自带前端（Vue 3），覆盖全部实现要点——命令 CRUD（vault 文件真源/原子写/损坏隔离）、事件推送、宿主能力（log/open_path）、搜索提供者、manifest 配置、导航声明、crate 单测。教程见 [docs/核心插件示例教程.md](docs/核心插件示例教程.md)。
+- 插件系统：统一 api 桥（call / on / context / nav / host.search），原生 DLL（FFI）+ 进程（JSON-RPC）+ webview（JS）三类运行时；核心插件可卸载（物理删除 + 标记防复活）、可界面安装（.zip / 目录）；Python 插件自带捆绑运行时（目标机无需 Python）+ 插件页「安装依赖」按钮。
+- **已移除**：数据工具页、记录功能、Git 版本历史（用户决策，不恢复）；**2026-08 起 6 个业务核心插件（笔记/待办/清单/项目/博客/AI）按教学基线决策移除**，只保留 core-example。
 
 ## 发布与自动更新
 
@@ -68,12 +71,12 @@ git tag v0.1.1 && git push origin v0.1.1   # 触发 CI（.github/workflows/build
 ## 目录
 
 ```
-src-tauri/     Rust 核心（core 数据层 vault/path/search/backup / plugins 插件管理 / rpc 协议）
+src-tauri/     Rust 核心（core 数据层 vault/path/files/search/backup / plugins 插件管理 / rpc 协议）
 src/           前端（themes 主题引擎 / components 组件 / core IPC 与状态）
-core-plugins/  6 个核心插件（cdylib DLL + 自带前端 ui/）
+core-plugins/  核心插件（cdylib DLL + 自带前端 ui/；教学基线仅 example）
 tb-sdk/        核心插件 SDK（C ABI 契约 + tb_plugin! 样板宏 + 路径安全）
-scripts/       构建与 E2E 脚本（build-core.mjs / fetch-python.mjs / cdp-*.mjs 驱动真实 WebView2 验证）
-docs/          操作手册、技术栈与概念详解、插件开发指南、发布流程
+scripts/       构建脚本（build-core.mjs / fetch-python.mjs / platform.mjs 等）
+docs/          操作手册、插件开发指南、核心插件示例教程、发布流程
 ```
 
 ## 环境要求

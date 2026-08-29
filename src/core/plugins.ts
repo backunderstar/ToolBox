@@ -195,191 +195,27 @@ async function loadWebviewPlugin(plugin: PluginInfo): Promise<void> {
   }
 }
 
-/** 浏览器演示模式的示例插件清单（不经过 Rust / 文件系统） */
+/** 浏览器演示模式的示例插件清单（不经过 Rust / 文件系统）：教学基线 = 一个核心示例插件 */
 const MOCK_PLUGINS: PluginInfo[] = [
   {
-    id: "text-stats",
-    name: "文本统计",
+    id: "core-example",
+    name: "示例插件",
     version: "0.1.0",
-    description: "统计文本的字数、词数、行数与段落数（webview JS 插件示例）",
-    runtime: "webview",
-    entry: "main.js",
-    enabled: true,
-    status: "ready",
-    error: null,
-    commands: ["analyze"],
-    builtin: false,
-    provider: false,
-    system: false,
-    ui: null,
-    nav: [],
-    theme: null,
-    hasDeps: false,
-  },
-  {
-    id: "csv-tool",
-    name: "CSV 工具",
-    version: "0.1.0",
-    description: "CSV ⇄ JSON / TSV 转换（process Python 插件示例）",
-    runtime: "process",
-    entry: null,
-    enabled: true,
-    status: "ready",
-    error: null,
-    commands: ["csv.convert"],
-    builtin: false,
-    provider: false,
-    system: false,
-    ui: null,
-    nav: [],
-    theme: null,
-    hasDeps: false,
-  },
-  {
-    id: "core-notes",
-    name: "笔记",
-    version: "0.1.0",
-    description: "核心插件：笔记文件操作（notes/ 列表/读写/新建/删除/重命名）",
+    description: "核心插件教学示例：命令/事件/搜索提供者/宿主能力/自带前端全覆盖",
     runtime: "native",
     entry: null,
     enabled: true,
     status: "ready",
     error: null,
-    commands: [],
+    commands: ["example.list", "example.add", "example.toggle", "example.delete"],
     builtin: true,
-    provider: false,
+    provider: true,
     system: false,
-    ui: null,
+    ui: "ui/index.js",
     nav: [
-      {
-        id: "notes",
-        label: "笔记",
-        icon: "file-text",
-        group: "工作区",
-        pluginId: "core-notes",
-      },
+      { id: "example", label: "示例插件", icon: "puzzle", group: "工作区", pluginId: "core-example" },
     ],
     theme: null,
-    hasDeps: false,
-  },
-  {
-    id: "core-checklists",
-    name: "清单",
-    version: "0.1.0",
-    description: "核心插件：清单（data/checklists CRUD）",
-    runtime: "native",
-    entry: null,
-    enabled: true,
-    status: "ready",
-    error: null,
-    commands: [],
-    builtin: true,
-    provider: false,
-    system: false,
-    ui: null,
-    nav: [
-      {
-        id: "checklist",
-        label: "清单",
-        icon: "check",
-        group: "工作区",
-        pluginId: "core-checklists",
-      },
-    ],
-    theme: null,
-    hasDeps: false,
-  },
-  {
-    id: "core-projects",
-    name: "项目",
-    version: "0.1.0",
-    description: "核心插件：项目文件管理（projects/ 目录/归档/默认应用打开）",
-    runtime: "native",
-    entry: null,
-    enabled: true,
-    status: "ready",
-    error: null,
-    commands: [],
-    builtin: true,
-    provider: false,
-    system: false,
-    ui: null,
-    nav: [
-      {
-        id: "projects",
-        label: "项目",
-        icon: "folder",
-        group: "工作区",
-        pluginId: "core-projects",
-      },
-    ],
-    theme: null,
-    hasDeps: false,
-  },
-  {
-    id: "core-blog",
-    name: "博客",
-    version: "0.1.0",
-    description: "核心插件：博客发布（frontmatter/站点生成/内置预览服务器）",
-    runtime: "native",
-    entry: null,
-    enabled: true,
-    status: "ready",
-    error: null,
-    commands: [],
-    builtin: true,
-    provider: false,
-    system: false,
-    ui: null,
-    nav: [
-      { id: "blog", label: "博客发布", icon: "globe", group: "系统", pluginId: "core-blog" },
-    ],
-    theme: null,
-    hasDeps: false,
-  },
-  {
-    id: "core-ai",
-    name: "AI",
-    version: "0.1.0",
-    description: "核心插件：AI 整理（OpenAI 兼容对话 + SSE 流式）",
-    runtime: "native",
-    entry: null,
-    enabled: true,
-    status: "ready",
-    error: null,
-    commands: [],
-    builtin: true,
-    provider: false,
-    system: false,
-    ui: null,
-    nav: [
-      { id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", pluginId: "core-ai" },
-    ],
-    theme: null,
-    hasDeps: false,
-  },
-  {
-    id: "theme-maple",
-    name: "枫叶红",
-    version: "0.1.0",
-    description: "皮肤插件示例：陶土枫叶红，演示令牌 + CSS 双通道换肤",
-    runtime: "webview",
-    entry: null,
-    enabled: true,
-    status: "ready",
-    error: null,
-    commands: [],
-    builtin: false,
-    provider: false,
-    system: false,
-    ui: null,
-    nav: [],
-    theme: {
-      base: "light",
-      tokens: { "--accent": "#a8402c", "--accent-strong": "#7d2d1e" },
-      css: null,
-      preview: ["#faf5f0", "#a8402c", "#2b211c"],
-    },
     hasDeps: false,
   },
 ];
@@ -388,44 +224,45 @@ const MOCK_PLUGINS: PluginInfo[] = [
 async function refresh(): Promise<void> {
   if (isMock()) {
     state.plugins = MOCK_PLUGINS;
-    const rt = getRuntime("text-stats");
+    // 浏览器演示：给 core-example 注册内联命令实现（内存列表，模拟后端）
+    const rt = getRuntime("core-example");
     rt.commands.clear();
-    rt.commands.set("analyze", {
-      id: "analyze",
-      name: "统计文本",
+    const mockItems: { id: string; text: string; done: boolean; createdAt: string }[] = [];
+    let seq = 0;
+    const listVal = () => mockItems;
+    rt.commands.set("example.list", {
+      id: "example.list",
+      name: "示例列表",
+      run: async () => listVal(),
+    });
+    rt.commands.set("example.add", {
+      id: "example.add",
+      name: "示例添加",
       run: async (args) => {
-        const text =
-          typeof (args as { text?: unknown })?.text === "string"
-            ? (args as { text: string }).text
-            : "";
-        const trimmed = text.trim();
-        return {
-          chars: [...text].length,
-          words: trimmed ? trimmed.split(/\s+/).length : 0,
-          lines: text.length === 0 ? 0 : text.split("\n").length,
-          paragraphs: trimmed ? trimmed.split(/\n\s*\n/).length : 0,
-          empty: text.length === 0,
-        };
+        const text = String((args as { text?: unknown })?.text ?? "").trim();
+        if (!text) throw new Error("条目内容为空");
+        mockItems.push({ id: `e-${++seq}`, text, done: false, createdAt: new Date().toISOString() });
+        return listVal();
       },
     });
-    const rt2 = getRuntime("csv-tool");
-    rt2.commands.clear();
-    rt2.commands.set("csv.convert", {
-      id: "csv.convert",
-      name: "CSV 转换",
+    rt.commands.set("example.toggle", {
+      id: "example.toggle",
+      name: "示例切换",
       run: async (args) => {
-        const { csv = "", format = "json" } = (args ?? {}) as { csv?: string; format?: string };
-        const rows = csv
-          .split(/\r?\n/)
-          .filter((l) => l.trim().length > 0)
-          .map((l) => l.split(",").map((c) => c.trim()));
-        if (format === "tsv") {
-          return { text: rows.map((r) => r.join("\t")).join("\n") };
-        }
-        if (rows.length === 0) return { text: "[]" };
-        const [header, ...data] = rows;
-        const out = data.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])));
-        return { text: JSON.stringify(out, null, 2) };
+        const id = String((args as { id?: unknown })?.id ?? "");
+        const it = mockItems.find((i) => i.id === id);
+        if (it) it.done = !it.done;
+        return listVal();
+      },
+    });
+    rt.commands.set("example.delete", {
+      id: "example.delete",
+      name: "示例删除",
+      run: async (args) => {
+        const id = String((args as { id?: unknown })?.id ?? "");
+        const idx = mockItems.findIndex((i) => i.id === id);
+        if (idx >= 0) mockItems.splice(idx, 1);
+        return listVal();
       },
     });
     state.runtimeErrors = {};

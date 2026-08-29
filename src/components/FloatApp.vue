@@ -8,14 +8,13 @@ import "./float.css";
 /**
  * 桌面半透明浮窗（快速工具）—— 插件自带前端加载器：
  * - 独立窗口（transparent + 无边框 + 桌面层不置顶），加载同一前端入口，按窗口 label 分流到这里
- * - **宿主统一外壳**：标题栏（拖拽区 + 位置锁定）+ 底部页签（待办 / 清单），
- *   插件只渲染内容区（core-todos / core-checklists 的自带前端，与主窗口 PluginUiView
- *   同一注入机制）；锁定时禁用拖拽与调整大小
+ * - **宿主统一外壳**：标题栏（拖拽区 + 位置锁定）+ 底部页签，
+ *   插件只渲染内容区（core-example 自带前端，与主窗口 PluginUiView
+ *   同一注入机制——同一插件 UI 可同时服务于主窗与浮窗）；锁定时禁用拖拽与调整大小
  * - 插件不可用时显示错误兜底
  */
 const TABS = [
-  { id: "core-todos", label: "待办" },
-  { id: "core-checklists", label: "清单" },
+  { id: "core-example", label: "示例" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -23,7 +22,7 @@ type TabId = (typeof TABS)[number]["id"];
 const containerRef = ref<HTMLDivElement | null>(null);
 const vaultPath = ref<string | null>(null);
 const error = ref<string | null>(null);
-const tab = ref<TabId>("core-todos");
+const tab = ref<TabId>("core-example");
 /* 位置锁定状态（localStorage 持久化；try/catch 兜底浏览器异常环境） */
 let initialLocked = false;
 try {

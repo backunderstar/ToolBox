@@ -56,17 +56,8 @@ export const APP_TAG = "v${v}";
   );
 }
 
-// 3. Cargo.toml（src-tauri + tb-sdk + 6 插件）
-const crates = [
-  "src-tauri",
-  "tb-sdk",
-  "core-plugins/notes",
-  "core-plugins/todos",
-  "core-plugins/checklists",
-  "core-plugins/projects",
-  "core-plugins/blog",
-  "core-plugins/ai",
-];
+// 3. Cargo.toml（src-tauri + tb-sdk + 核心插件）
+const crates = ["src-tauri", "tb-sdk", "core-plugins/example"];
 for (const p of crates) {
   const fp = path.join(root, p, "Cargo.toml");
   const c = readFileSync(fp, "utf8");

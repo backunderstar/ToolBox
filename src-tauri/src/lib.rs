@@ -264,6 +264,13 @@ pub fn run() {
             open_in_explorer,
             vault::vault_get,
             vault::vault_set,
+            // 宿主文件服务（vault 内文件列表/读写/增删改；插件核心 API 与宿主共用）
+            core::files::files_list,
+            core::files::files_read,
+            core::files::files_write,
+            core::files::files_create,
+            core::files::files_delete,
+            core::files::files_rename,
             // 插件命令在 plugins::commands 定义（tauri 宏在定义模块生成
             // __cmd__* 辅助项，路径需指向定义模块；非命令项仍走 plugins::*）
             plugins::commands::plugins_list,
