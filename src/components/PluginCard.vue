@@ -16,6 +16,10 @@ const props = defineProps<{
   onReload: (id: string) => void;
   onUninstall: (id: string) => void;
   onOpen: (view: ViewId) => void;
+  /** 安装依赖（process 插件且有 requirements.txt 时显示按钮） */
+  onInstallDeps: (id: string) => void;
+  /** 依赖安装进行中（按钮显示"安装中…"并禁用） */
+  depsBusy: boolean;
 }>();
 
 const STATUS_TEXT: Record<string, string> = {
@@ -80,6 +84,15 @@ const status = computed(() => (props.runtimeError ? "error" : props.plugin.statu
           :disabled="busy || p.status === 'error'"
         >
           {{ p.enabled ? "禁用" : "启用" }}
+        </button>
+        <button
+          v-if="p.runtime === 'process' && p.hasDeps"
+          class="btn btn-sm"
+          :title="'用捆绑 Python 的 pip 安装 requirements.txt 到 vendor/（需有网）'"
+          @click="onInstallDeps(p.id)"
+          :disabled="busy || depsBusy"
+        >
+          {{ depsBusy ? "安装中…" : "安装依赖" }}
         </button>
         <button class="btn btn-sm" @click="onReload(p.id)" :disabled="busy || !p.enabled">
           重新加载

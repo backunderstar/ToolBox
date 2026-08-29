@@ -257,6 +257,33 @@ pub async fn plugins_reload(
     .map_err(|e| format!("插件重载任务异常: {e}"))?
 }
 
+/// 插件依赖安装：用捆绑 Python 的 pip 把 `requirements.txt` 装进 `<插件>/vendor/`。
+/// 目标机没有 Python 也能自助补依赖（捆绑运行时 full 变体带 pip；需有网）。
+/// 返回 pip 输出尾部；成功后前端重载插件生效。
+#[tauri::command]
+pub async fn plugins_install_deps(
+    app: tauri::AppHandle,
+    vault: String,
+    id: String,
+) -> Result<String, String> {
+    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
+    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
+    // 安全（S1a）：id 会拼进插件目录路径
+    if !is_safe_plugin_id(&id) {
+        return Err(format!("非法插件 id: {id}"));
+    }
+    let v = vault.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<Mutex<PluginManager>>();
+        let mut m = state.lock().map_err(|e| e.to_string())?;
+        m.ensure_refreshed(&app, &v)?;
+        m.install_deps(&app, &id)
+    })
+    .await
+    .map_err(|e| format!("插件依赖安装任务异常: {e}"))?
+}
+
 /// 插件 id 安全校验：小写字母/数字开头，仅含小写字母/数字/`-`/`_`。
 /// 用于所有"id 拼进文件路径"的入口——拒绝 `..`、`/`、`\`、绝对路径等，
 /// 防路径穿越（如 `id="../../.."` 把目录根引到任意位置后读取任意文件）。

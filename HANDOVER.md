@@ -6,30 +6,40 @@
 
 ---
 
-## 1. 🔴 当前状态：捆绑 Python 运行时（✅ 核心链路已完成，剩冒烟/打包/收尾）
+## 1. 🔴 当前状态：捆绑 Python 运行时（✅ 核心链路已完成，含 dev 冒烟 + 打包验证 + 安装依赖按钮）
 
 **目标**（用户已确认方案 A + full 变体）：目标机没装 Python 也能跑 process 插件
-（csv-tool / py-tools）。**核心链路已实现并验证全绿**（cargo 81 测试 / lint 0 / test 33 / build ✓），
-剩余：dev 冒烟、打包验证、插件页"安装依赖"按钮、文档收尾与提交。
+（csv-tool / py-tools）。**全部链路已实现并验证**：cargo 81 测试 / lint 0 / test 33 / build ✓、
+dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒烟（无 Python PATH 下
+部署捆绑运行时 + 两插件用捆绑解释器）、插件页"安装依赖"按钮已上线。
+剩余：文档/交接收尾与提交（勿推送）。
 
-### 1.1 完成状态（2026-08-28）
+### 1.1 完成状态（2026-08-29）
 
 - `src-tauri/resources/python/` 已就位：Python 3.14.7 + pip 26.2.1，**瘦身后 48.7MB**
   （原 180MB：删 pdb 调试符号 ~90MB + Lib/test ~32MB + 字节码缓存）
-- **8/21 写的 11 个文件已在 8/26 被提交为 `5a895b7`（"update something idont know"）**，
-  非本人提交，内容 = 8/21 会话的代码
-- **今天（8/28）新增未提交**：`fetch-python.mjs` 的 `--mirror` 选项 + 瘦身步骤、
-  AppHandle 崩溃修复（manager.rs/pyruntime.rs，见 §6.1 坑 6）、本文档
+- **8/21 写的 11 个文件已在 8/26 被提交为 `5a895b7`**（非本人提交，内容 = 8/21 会话的代码）
+- **8/28 提交**：`0f4fbee`（捆绑 Python 收尾——镜像下载/瘦身 + 0xC0000139 修复）、
+  `2668065`（清理无用文件/整理文档）、`885ea83`（CI 修复 resources/python 校验）、
+  `f2c9e06`（docs: 记录待推送提交与网络情况）
+- **8/29（本轮）改动**：插件页"安装依赖"按钮（后端 `plugins_install_deps` 命令 +
+  `PluginInfo.hasDeps` 标记 + 前端按钮/结果面板）、`start_process` 增解释器日志
+  （`[plugin] <id> 解释器: <路径> (捆绑/自带|系统 PATH 回落)`，冒烟验证用）、
+  py-tools 增 `requirements.txt` 示例、docs 四件套收尾（PLAN §5.1 / README / 操作手册 / 插件开发指南 §3.5）
 
-### 1.2 下一步（按顺序做）
+### 1.2 验证结果（2026-08-29 实测）
 
-1. **dev 冒烟**：`pnpm tauri dev` 启用 csv-tool/py-tools，日志确认捆绑解释器被使用
-   （部署日志 `[python] 已部署捆绑 Python 运行时`）
-2. **打包验证**：`build:core:release` + `tauri build --debug` → 在无 Python 环境跑 exe
-   （注意：`beforeBuildCommand` 前确保 `pnpm fetch:python` 已跑，否则 bundle 缺运行时）
-3. 插件页"安装依赖"按钮（full 变体 pip 已就绪，UI 未做）
-4. 收尾：PLAN.md §5.1 补完成行、README/操作手册 §6.1 补 fetch:python 步骤、
-   提交未提交改动（勿推送）
+1. **dev 冒烟** ✅：`pnpm tauri dev` 日志两条 `[plugin] csv-tool/py-tools 解释器:
+   ...target\debug\resources\python\python.exe (捆绑/自带)`（dev 下 tauri 把
+   resources/python 拷进 target/debug/resources/，`bundled_python_dir` 经 exe 相对路径解析到）
+2. **打包验证** ✅：`build:core:release` + `tauri build --debug --no-bundle` →
+   以**剔除 python 的 PATH** 运行 `target\debug\toolbox.exe`：日志出现
+   `[python] 已部署捆绑 Python 运行时到 %APPDATA%\com.toolbox.desktop\python` +
+   `[plugin] 已部署随应用分发的核心插件` + 两插件解释器均指向捆绑运行时（部署线程与
+   预热 refresh 竞态时回落资源目录路径，同样是捆绑运行时，目标机行为一致）
+3. **安装依赖流程** ✅：手动用捆绑 python 跑 `pip install --target vendor -r requirements.txt`
+   实测 EXIT=0（Successfully installed python-dateutil six）；按钮 UI 的交互点击留待用户验收
+4. 基线：cargo 81 / lint 0 / test 33 / build ✓ / build:core:release 自检 6 插件+DLL ✓
 
 ### 1.3 设计（改动前先看懂）
 
@@ -39,22 +49,32 @@
   插件目录 `python.exe` → 全局捆绑 → 系统 PATH
 - **缺依赖可读报错**：插件 stderr 从 `inherit` 改为 piped 捕获（读线程转发日志 + 保留最近
   40 行），init 失败时把 Python traceback 附到插件错误信息里
+- **安装依赖按钮**：`plugins_install_deps` 命令——捆绑 python
+  `pip install --disable-pip-version-check --no-input --target <插件>/vendor -r requirements.txt`
+  （输出落临时文件再读尾部 40 行，10 分钟超时轮询 try_wait）；`PluginInfo.hasDeps` =
+  插件目录存在 requirements.txt，仅 process 插件显示按钮；前端成功后自动 `reload` 插件生效
 
-### 1.4 已改文件（8/21 部分已提交 5a895b7；表格中 ⭐ 为本轮新改）
+### 1.4 已改文件（8/21 部分已提交 5a895b7；⭐ 为本轮新改；本表为全量）
 
 | 文件 | 改动 |
 |---|---|
-| `scripts/fetch-python.mjs`（新，⭐） | GitHub API 取最新 release → 匹配 `cpython-3.14.*-x86_64-pc-windows-msvc-pgo-full.tar.zst` → 下载 + SHA256SUMS 校验 → bsdtar 解压 → **瘦身**；`--version`/`--force`/`--mirror https://ghfast.top/`（⭐ 镜像选项） |
+| `scripts/fetch-python.mjs`（新） | GitHub API 取最新 release → 匹配 `cpython-3.14.*-x86_64-pc-windows-msvc-pgo-full.tar.zst` → 下载 + SHA256SUMS 校验 → bsdtar 解压 → **瘦身**；`--version`/`--force`/`--mirror https://ghfast.top/`（镜像选项） |
 | `package.json` | `fetch:python` 脚本 |
 | `.gitignore` | `src-tauri/resources/python/` |
 | `src-tauri/tauri.conf.json` | `bundle.resources` += `resources/python` |
-| `src-tauri/src/plugins/pyruntime.rs`（新） | `ensure_bundled_python`（仅 release 部署）、`deploy_bundled_python`、`bundled_python_dir`、`resolve_interpreter`（⭐ 改收纯路径，不再收 AppHandle）、`is_python_command` + 3 单测 |
+| `src-tauri/src/plugins/pyruntime.rs`（新） | `ensure_bundled_python`（仅 release 部署）、`deploy_bundled_python`、`bundled_python_dir`、`resolve_interpreter`（改收纯路径，不再收 AppHandle）、`is_python_command` + 3 单测 |
 | `src-tauri/src/plugins/mod.rs` | `pub mod pyruntime` + `#[cfg(not(dev))]` re-export |
-| `src-tauri/src/plugins/manager.rs` | ⭐ `PluginManager` 存**缓存的捆绑目录路径**（`bundled_python: Option<PathBuf>`，**不存 AppHandle**——崩溃修复，见 §6.1 坑 6）；`start_process` 接入解析 + spawn 失败提示 + init 失败附 stderr 末尾 |
+| `src-tauri/src/plugins/manager.rs` | `PluginManager` 存**缓存的捆绑目录路径**（`bundled_python: Option<PathBuf>`，不存 AppHandle——崩溃修复）；`start_process` 接入解析 + spawn 失败提示 + init 失败附 stderr 末尾；⭐ 新增 `install_deps`（pip install --target vendor）+ `PluginInfo.has_deps` + `tail_lines` + `[plugin] <id> 解释器` 日志 |
 | `src-tauri/src/plugins/process.rs` | stderr piped 捕获（`read_stderr_loop` + `stderr_tail()`） |
-| `src-tauri/src/lib.rs` | setup 的 `cfg(not(dev))` 块先 spawn `ensure_bundled_python` 再 `ensure_core_plugins` |
+| `src-tauri/src/plugins/commands.rs` | ⭐ 新增 `plugins_install_deps` 命令（vault S1c + id S1a 校验，spawn_blocking） |
+| `src-tauri/src/lib.rs` | setup 的 `cfg(not(dev))` 块先 spawn `ensure_bundled_python` 再 `ensure_core_plugins`；⭐ 注册 `plugins_install_deps` |
 | `scripts/dev-env.mjs` | doctor 新增"捆绑 Python 运行时"检查；env:setup 缺失时自动 fetch（失败仅警告） |
-| `docs/插件开发指南.md`、`docs/操作手册.md` | §3.5 两层模型重写；§2/§3.3 解释器解析说明 |
+| `src/core/api.ts` | ⭐ `PluginInfo.hasDeps` + `pluginsInstallDeps` |
+| `src/components/PluginCard.vue` | ⭐ "安装依赖"按钮（process + hasDeps 显示，depsBusy 禁用） |
+| `src/components/PluginsView.vue` | ⭐ `doInstallDeps`（装完自动 reload）+ 结果面板（pip 输出尾部） |
+| `src/styles/notes.css` | ⭐ `.deps-output` 样式 |
+| `plugins/py-tools/requirements.txt`（新） | ⭐ vendored 依赖声明示例（python-dateutil；构建机/按钮通用） |
+| `docs/插件开发指南.md`、`docs/操作手册.md`、`README.md`、`PLAN.md` | ⭐ §3.5/§6.1/README/§5.1 补安装依赖按钮与验证结果 |
 
 ---
 
@@ -147,6 +167,9 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 
 - **终端显示中文文件是乱码**（GBK vs UTF-8）：文件内容用 read/grep 工具看，**不要**用 `Get-Content`/`cat` 判断内容。
 - **绝不使用 `Set-Content` 写含中文的源文件**（会 GBK 损坏文件）——用 write/edit 工具。
+- **`Set-Content -Encoding UTF8` 会写 UTF-8 BOM**（PowerShell 5.1），serde_json 解析直接失败
+  （plugins.json 变 BOM 后启用集合静默变空、插件全不启动——8/29 实测踩过）。改应用配置
+  目录下的 JSON 用 write 工具（无 BOM）或 `[IO.File]::WriteAllText`。
 - **中文 commit message**：`git commit -m "中文"` 在 PowerShell 会解析成 pathspec 错误 →
   用 `git commit -F <文件>`（文件放 `target/` 下，gitignored，不会误提交；提交后删掉）。
 - **PowerShell 的 exit code 误报**：cargo/git 往 stderr 写内容（linker 警告、进度）时，
@@ -196,32 +219,34 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 - 数据/配置目录：业务数据在 vault 工作区；应用配置与插件在应用配置目录（跨平台解析）
 - 提交策略：**本地 git 提交，推送需用户确认**；push 后 CI 自动验证
 - **捆绑 Python 运行时**（2026-08-21 决策）：python-build-standalone full 变体随包分发，
-  两层模型 + 三级解释器解析（进行中，见 §1）
+  两层模型 + 三级解释器解析（**已完成**，见 §1）
 
 ## 8. 待办（除 §1 进行中的工作外）
 
-- **🔴 未推送的本地提交（2026-08-28，3 个）**：`0f4fbee`（捆绑 Python 收尾）、
-  `2668065`（清理无用文件/整理文档）、`885ea83`（CI 修复 resources/python 校验）。
+- **🔴 未推送的本地提交（2026-08-29，4 个，+ 本轮 1 个待提交）**：`0f4fbee`（捆绑 Python 收尾）、
+  `2668065`（清理无用文件/整理文档）、`885ea83`（CI 修复 resources/python 校验）、
+  `f2c9e06`（docs: 记录待推送提交与网络情况）；本轮收尾提交（安装依赖按钮 + 文档）待做。
   网络情况：本机 **github.com:443 HTTPS 直连被墙**（重试多次 `Connection reset`；
   解析到 20.205.243.166 不通），但 **`ssh.github.com:443` 实测可连**（GitHub 官方
   SSH-over-443 通道）。推送选项：① 生成 SSH key 加 GitHub → 远程改
   `ssh://git@ssh.github.com:443/backunderstar/ToolBox.git`；② 开代理后
   `git config --global http.proxy http://127.0.0.1:<port>` 再 `git push origin main`。
   推送会触发 ci.yml（已修好 resources/python 占位校验）。
-- **插件页"安装依赖"按钮**：捆绑运行时 full 变体（pip 26.2.1）已就绪，宿主侧只差一个
-  命令（用捆绑 python 执行 `pip install --target <插件>/vendor -r requirements.txt`）+
-  插件页 UI。目标机有网时第三方插件可自助补依赖
+- **插件页"安装依赖"按钮**：✅ 已做（2026-08-29，见 §1.2/§1.4）。剩余：目标机/真实场景交互验收
+  （点击按钮装依赖 → 重载生效），py-tools 已带 requirements.txt 可当验收对象
 - **插件沙箱**（PLAN.md §5.2）：P0 CSP 收紧 + 命令面最小化 + ShadowRealm，未排期
 - **md-editor-v3 打磨**：当前为分屏模式（原 Vditor 是即时渲染 IR），如有需要可调
   `md-editor-v3` 配置（工具栏/预览主题/代码高亮主题）
 - 13 个 cdp-*.mjs 脚本的样板重复未收敛（`cdp-lib.mjs` 已抽公共，但各套件仍独立）
 - 插件 UI 产物体积：notes 含 md-editor-v3 gzip ~702kB（预期内）；如优化可考虑按需拆包
 
-## 9. 验证基线（2026-08-28 重新全绿）
+## 9. 验证基线（2026-08-29 重新全绿）
 
 `pnpm doctor` 全就绪（含捆绑 Python 运行时）· `pnpm lint` 0 警告（92 文件）·
 `pnpm test` 33 · `pnpm build` ✓ · **`cargo test --workspace` 81**（78 既有 + 3 pyruntime 新测试）·
-`pnpm build:core`（6 插件 + DLL 自检）· `pnpm tauri dev` 冒烟无前端错误。改动后请跑对应子集。
+`pnpm build:core`（6 插件 + DLL 自检）· `pnpm tauri dev` 冒烟无前端错误、
+**csv-tool/py-tools 均确认使用捆绑解释器** · 打包版冒烟（无 Python PATH 跑 exe：
+部署捆绑运行时 + 核心插件 + 两插件用捆绑解释器）。改动后请跑对应子集。
 
-> 注：本次 0xC0000139 加载崩溃已修复（见 §6.1 坑 5），cargo 81 全绿为本会话实测结果；
-> `pnpm tauri dev` 冒烟与打包版 E2E 尚待验证（见 §1.2）。
+> 注：8/28 的 0xC0000139 加载崩溃已修复（见 §6.1 坑 5）；8/29 完成 dev 冒烟 + 打包版冒烟 +
+> 插件页"安装依赖"按钮；按钮的 UI 交互点击待用户真机验收。

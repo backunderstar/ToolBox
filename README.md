@@ -90,6 +90,9 @@ docs/          操作手册、技术栈与概念详解、插件开发指南、�
 > `pnpm doctor` 会检测上述各项并给出缺失项的安装命令。
 > `pnpm fetch:python` 下载捆绑 Python 运行时（python-build-standalone full 变体，
 > 慢时加 `--mirror https://ghfast.top/`）。
+> 目标机无需安装 Python：process 插件（Python）解释器按三级解析（插件自带 `python.exe`
+> → 全局捆绑 → 系统 PATH）；插件目录带 `requirements.txt` 时，插件页「安装依赖」按钮用
+> 捆绑 Python 的 pip 把依赖装进 `<插件>/vendor/`（需有网）。
 
 ## 许可证
 

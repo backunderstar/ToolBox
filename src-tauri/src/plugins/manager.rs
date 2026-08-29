@@ -20,6 +20,8 @@ pub const API_TIMEOUT: Duration = Duration::from_secs(30);
 /// 崩溃自动重启上限（窗口期内）。
 const MAX_RESTARTS: u32 = 3;
 const RESTART_WINDOW: Duration = Duration::from_secs(60);
+/// pip install 超时：装小依赖几秒，pandas 等大 wheel 也要几分钟（网速决定）。
+const PIP_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// 递归复制最大深度：恶意/意外的万层嵌套会让纯递归栈溢出直接 abort（Rust
 /// 栈溢出不可捕获）；超过上限中止复制（与 backup/search 的 MAX_DEPTH 语义一致）。
@@ -69,6 +71,8 @@ pub struct PluginInfo {
     pub nav: Vec<NavDecl>,
     /// 主题声明（皮肤插件）：非空时本插件是主题包，启用后并入主题选择器
     pub theme: Option<ThemeDecl>,
+    /// 插件目录存在 requirements.txt（前端据此显示"安装依赖"按钮）
+    pub has_deps: bool,
 }
 
 #[derive(Default)]
@@ -364,6 +368,13 @@ fn migrate_legacy_enabled(app: &tauri::AppHandle, vault: &Path) {
         }
     }
     let _ = std::fs::remove_file(&legacy);
+}
+
+/// 保留字符串末尾最多 n 行（pip 输出可能很大，只回显尾部）。
+fn tail_lines(s: &str, n: usize) -> String {
+    let lines: Vec<&str> = s.lines().collect();
+    let start = lines.len().saturating_sub(n);
+    lines[start..].join("\n")
 }
 
 /// 递归复制目录（深度护栏见 copy_dir_recursive_depth）。
@@ -687,6 +698,7 @@ impl PluginManager {
                 ui: r.manifest.ui.as_ref().map(|u| u.entry.clone()),
                 nav: r.manifest.nav.clone(),
                 theme: r.manifest.theme.clone(),
+                has_deps: r.dir.join("requirements.txt").is_file(),
             })
             .collect()
     }
@@ -983,6 +995,110 @@ impl PluginManager {
         Ok(())
     }
 
+    /// 插件依赖安装：用捆绑 Python 的 pip 把 `requirements.txt` 装进 `<插件>/vendor/`
+    /// （vendored 放置，main.py 启动时 sys.path 插入，见插件开发指南 §3.5 方案 A）。
+    /// 目标机没有 Python 也能自助补依赖（捆绑运行时 full 变体带 pip；需有网）。
+    /// 返回 pip 输出尾部（stdout + stderr 合并，各最近若干行）；成功后前端应重载插件生效。
+    pub fn install_deps(&mut self, app: &tauri::AppHandle, id: &str) -> Result<String, String> {
+        let dir = self
+            .records
+            .iter()
+            .find(|r| r.manifest.id == id)
+            .map(|r| r.dir.clone())
+            .ok_or("插件不存在")?;
+        let req = dir.join("requirements.txt");
+        if !req.is_file() {
+            return Err(format!("插件 {id} 没有 requirements.txt（无依赖需要安装）"));
+        }
+        // 捆绑解释器：refresh 时缓存的纯路径优先；当前会话未刷新时用 AppHandle 现解析
+        let python = self
+            .bundled_python
+            .clone()
+            .or_else(|| super::pyruntime::bundled_python_dir(app))
+            .map(|d| d.join("python.exe"))
+            .filter(|p| p.is_file())
+            .ok_or(
+                "未找到捆绑 Python 运行时，无法安装依赖。构建期请运行 pnpm fetch:python，\
+                 或安装系统 Python 并加入 PATH。",
+            )?;
+        let vendor = dir.join("vendor");
+        std::fs::create_dir_all(&vendor).map_err(|e| format!("创建 vendor 目录失败: {e}"))?;
+        let tag = format!("{id}-{}", std::process::id());
+        let out_log = std::env::temp_dir().join(format!("tb-pip-{tag}.out.log"));
+        let err_log = std::env::temp_dir().join(format!("tb-pip-{tag}.err.log"));
+        let vendor_s = vendor.to_string_lossy().into_owned();
+        let req_s = req.to_string_lossy().into_owned();
+        // 输出落临时文件再读尾部：piped 缓冲写满会阻塞 pip（Windows 管道 ~4KB），
+        // 且进度条输出（\r 刷新）很大，没必要全量进内存。
+        let result = (|| -> Result<bool, String> {
+            let out = std::fs::File::create(&out_log).map_err(|e| format!("创建日志文件失败: {e}"))?;
+            let err = std::fs::File::create(&err_log).map_err(|e| format!("创建日志文件失败: {e}"))?;
+            let mut child = std::process::Command::new(&python)
+                .args([
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "--no-input",
+                    "--target",
+                    &vendor_s,
+                    "-r",
+                    &req_s,
+                ])
+                .current_dir(&dir)
+                .stdout(std::process::Stdio::from(out))
+                .stderr(std::process::Stdio::from(err))
+                .spawn()
+                .map_err(|e| format!("启动 pip 失败: {e}"))?;
+            let deadline = Instant::now() + PIP_TIMEOUT;
+            loop {
+                if let Some(status) =
+                    child.try_wait().map_err(|e| format!("等待 pip 失败: {e}"))?
+                {
+                    return Ok(status.success());
+                }
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "pip install 超过 {} 秒仍未完成，已终止（网络慢可重试）",
+                        PIP_TIMEOUT.as_secs()
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(300));
+            }
+        })();
+        let tail = |p: &std::path::Path| -> String {
+            std::fs::read_to_string(p)
+                .map(|s| tail_lines(&s, 40))
+                .unwrap_or_default()
+        };
+        let out_tail = tail(&out_log);
+        let err_tail = tail(&err_log);
+        let _ = std::fs::remove_file(&out_log);
+        let _ = std::fs::remove_file(&err_log);
+        match result {
+            Ok(true) => {
+                crate::core::log::info(&format!("[plugins] {id} 依赖安装成功（{vendor:?}）"));
+                let mut out = String::new();
+                if !out_tail.trim().is_empty() {
+                    out.push_str(&out_tail);
+                }
+                if !err_tail.trim().is_empty() {
+                    if !out.is_empty() {
+                        out.push('\n');
+                    }
+                    out.push_str(&err_tail);
+                }
+                Ok(out)
+            }
+            Ok(false) => Err(format!(
+                "pip install 失败（退出码非 0）。pip 输出末尾：\n{err_tail}"
+            )),
+            Err(e) => Err(format!("{e}\npip 输出末尾：\n{err_tail}")),
+        }
+    }
+
     /// 调用插件命令（统一路由）：
     /// - native：宿主进程内 FFI（最高性能）
     /// - process：JSON-RPC over stdio（进程隔离）
@@ -1096,6 +1212,14 @@ impl PluginManager {
             Ok(p) => (p.to_string_lossy().to_string(), true),
             Err(_) => (cmd[0].clone(), false),
         };
+        // 冒烟验证辅助日志：记录 process 插件实际用的解释器（捆绑/自带/系统回落）
+        if super::pyruntime::is_python_command(&cmd[0]) {
+            crate::core::log::info(&format!(
+                "[plugin] {id} 解释器: {} ({})",
+                program,
+                if resolved { "捆绑/自带" } else { "系统 PATH 回落" }
+            ));
+        }
         let mut plugin = match ProcessPlugin::spawn(
             &id,
             &program,

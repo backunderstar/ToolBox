@@ -1,0 +1,5 @@
+# py-tools 第三方依赖（vendored 放置，见 docs/插件开发指南.md §3.5 方案 A）
+# 安装方式：
+#   - 插件页「安装依赖」按钮（用捆绑 Python 的 pip，装到 <插件>/vendor/）
+#   - 构建机手动：pip install --target vendor -r requirements.txt
+python-dateutil>=2.8,<3

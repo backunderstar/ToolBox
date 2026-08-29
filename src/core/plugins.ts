@@ -214,6 +214,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
     ui: null,
     nav: [],
     theme: null,
+    hasDeps: false,
   },
   {
     id: "csv-tool",
@@ -232,6 +233,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
     ui: null,
     nav: [],
     theme: null,
+    hasDeps: false,
   },
   {
     id: "core-notes",
@@ -258,6 +260,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
       },
     ],
     theme: null,
+    hasDeps: false,
   },
   {
     id: "core-checklists",
@@ -284,6 +287,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
       },
     ],
     theme: null,
+    hasDeps: false,
   },
   {
     id: "core-projects",
@@ -310,6 +314,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
       },
     ],
     theme: null,
+    hasDeps: false,
   },
   {
     id: "core-blog",
@@ -330,6 +335,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
       { id: "blog", label: "博客发布", icon: "globe", group: "系统", pluginId: "core-blog" },
     ],
     theme: null,
+    hasDeps: false,
   },
   {
     id: "core-ai",
@@ -350,6 +356,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
       { id: "ai", label: "AI 整理", icon: "sparkle", group: "系统", pluginId: "core-ai" },
     ],
     theme: null,
+    hasDeps: false,
   },
   {
     id: "theme-maple",
@@ -373,6 +380,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
       css: null,
       preview: ["#faf5f0", "#a8402c", "#2b211c"],
     },
+    hasDeps: false,
   },
 ];
 

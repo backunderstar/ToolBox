@@ -9,6 +9,7 @@ import {
   pluginsRemovedCore,
   pluginsReinstallCore,
   pluginsInstall,
+  pluginsInstallDeps,
   pluginsDirGet,
   pluginsDirSet,
 } from "../core/api";
@@ -48,6 +49,10 @@ const events = ref<PluginEventLog[]>([]);
 const removedCore = ref<string[]>([]);
 /** 操作错误提示（卸载/切换/重载失败时显示，可关闭） */
 const actionError = ref<string | null>(null);
+/** 依赖安装进行中（按插件 id；按钮显示"安装中…"） */
+const depsBusy = reactive<Record<string, boolean>>({});
+/** 依赖安装结果输出（pip stdout/stderr 尾部；成功后展示，可关闭） */
+const depsResult = ref<{ id: string; output: string } | null>(null);
 
 /** 选择安装来源：.zip 包或插件目录（系统对话框） */
 async function pickInstall(kind: "zip" | "dir"): Promise<void> {
@@ -178,6 +183,27 @@ async function doReload(id: string): Promise<void> {
   }
 }
 
+/** 安装插件依赖：捆绑 Python 的 pip 装到 <插件>/vendor/，成功后重载插件生效 */
+async function doInstallDeps(id: string): Promise<void> {
+  const v = vault.state.path;
+  if (!v) return;
+  depsBusy[id] = true;
+  try {
+    const output = await pluginsInstallDeps(v, id);
+    depsResult.value = { id, output };
+    // 依赖就位后重启插件进程，让 sys.path 里的 vendor/ 生效
+    try {
+      await pluginsCtx.reload(id);
+    } catch (e) {
+      actionError.value = `依赖安装成功，但重新加载插件失败: ${e}`;
+    }
+  } catch (e) {
+    actionError.value = `安装依赖失败: ${e}`;
+  } finally {
+    depsBusy[id] = false;
+  }
+}
+
 /* 分组：核心插件（native，随应用分发）在前，外部插件在后 */
 const corePlugins = () => pluginsCtx.state.plugins.filter((p) => p.builtin);
 const externalPlugins = () => pluginsCtx.state.plugins.filter((p) => !p.builtin);
@@ -243,6 +269,16 @@ function confirmMessage(id: string): string {
       <button class="btn btn-sm" @click="actionError = null">关闭</button>
     </div>
 
+    <!-- 依赖安装结果：pip 输出尾部（成功或部分输出），可关闭 -->
+    <div v-if="depsResult" class="empty-state" style="margin-bottom: 12px">
+      <p>
+        <strong>「{{ depsResult.id }}」依赖安装完成</strong>（装到
+        <code>vendor/</code>，插件已重新加载）。pip 输出：
+      </p>
+      <pre class="deps-output">{{ depsResult.output || "（无输出）" }}</pre>
+      <button class="btn btn-sm" @click="depsResult = null">关闭</button>
+    </div>
+
     <template v-if="!vault.state.path">
       <div class="empty-state">
         <Icon name="gear" :size="28" />
@@ -282,6 +318,8 @@ function confirmMessage(id: string): string {
             :on-reload="doReload"
             :on-uninstall="(id: string) => (confirmDel = id)"
             :on-open="nav.go"
+            :on-install-deps="doInstallDeps"
+            :deps-busy="!!depsBusy[p.id]"
           />
         </div>
         <div v-if="externalPlugins().length > 0" class="plugin-group">
@@ -298,6 +336,8 @@ function confirmMessage(id: string): string {
             :on-reload="doReload"
             :on-uninstall="(id: string) => (confirmDel = id)"
             :on-open="nav.go"
+            :on-install-deps="doInstallDeps"
+            :deps-busy="!!depsBusy[p.id]"
           />
         </div>
       </div>

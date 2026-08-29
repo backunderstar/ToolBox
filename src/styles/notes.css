@@ -314,6 +314,22 @@
   font-size: var(--text-sm);
   line-height: 1.7;
 }
+/* 依赖安装结果输出（插件页）：左对齐、可滚动、等宽小字 */
+.deps-output {
+  max-width: 560px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--bg-code, rgba(0, 0, 0, 0.05));
+  border-radius: var(--radius, 8px);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .empty-icon {
   display: inline-flex;
   align-items: center;

@@ -71,6 +71,8 @@ export interface PluginInfo {
   nav: PluginNav[];
   /** 主题声明（皮肤插件）：非空时本插件是主题包，启用后并入主题选择器 */
   theme: PluginThemeDecl | null;
+  /** 插件目录存在 requirements.txt（显示"安装依赖"按钮，用捆绑 Python 的 pip 装到 vendor/） */
+  hasDeps: boolean;
 }
 
 /** 插件运行时 → 界面标签（插件页 / 概览页共用，避免各组件重复定义） */
@@ -111,6 +113,10 @@ export const pluginsSetEnabled = (vault: string, id: string, enabled: boolean) =
   invoke<void>("plugins_set_enabled", { vault, id, enabled });
 export const pluginsReload = (vault: string, id: string) =>
   invoke<void>("plugins_reload", { vault, id });
+/** 安装插件依赖：用捆绑 Python 的 pip 把 requirements.txt 装进 <插件>/vendor/（需有网）；
+ *  返回 pip 输出尾部；成功后应重载插件生效 */
+export const pluginsInstallDeps = (vault: string, id: string) =>
+  invoke<string>("plugins_install_deps", { vault, id });
 export const pluginsUninstall = (vault: string, id: string) =>
   invoke<void>("plugins_uninstall", { vault, id });
 /** 重新安装已卸载的核心插件（从随应用分发的资源恢复 DLL + 目录） */

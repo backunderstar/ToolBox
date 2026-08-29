@@ -269,6 +269,7 @@ pub fn run() {
             plugins::commands::plugins_list,
             plugins::commands::plugins_set_enabled,
             plugins::commands::plugins_reload,
+            plugins::commands::plugins_install_deps,
             plugins::commands::plugins_uninstall,
             plugins::commands::plugins_reinstall_core,
             plugins::commands::plugins_removed_core,
