@@ -59,7 +59,7 @@ def _grid_geometry(wires: tuple[Wire, ...], zones: tuple[KeepoutZone, ...],
             ys += [z.center.y - z.radius, z.center.y + z.radius]
 
     if not xs:
-        return (0.0, 0.0), cell, 1, 1, np.full((1, 1), cell)
+        return (0.0, 0.0), cell, 1, 1, np.full((1, 1), float(cell))
 
     xmin, xmax = min(xs) - cell, max(xs) + cell
     ymin, ymax = min(ys) - cell, max(ys) + cell
@@ -67,7 +67,7 @@ def _grid_geometry(wires: tuple[Wire, ...], zones: tuple[KeepoutZone, ...],
     rows = int(np.ceil((ymax - ymin) / cell)) + 1
     origin = (xmin, ymin)
 
-    supply = np.full((rows, cols), cell)
+    supply = np.full((rows, cols), float(cell))
 
     # 网格中心坐标（用于禁布区扣除）
     cxs = xmin + (np.arange(cols) + 0.5) * cell

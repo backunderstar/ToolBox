@@ -172,6 +172,16 @@ def _run_job(job_id: str, args: dict) -> None:
             v = args.get(fld)
             if v is not None:
                 cfg = dataclasses.replace(cfg, **{fld: int(v)})
+        # 数值字段强转 float：UI/JSON 传来 `2` 而非 `2.0` 时，numpy 2.x 对 int 数组
+        # 做 *= float 会抛 UFuncTypeError（same_kind casting，实测踩过）——统一强转
+        for fld in ("sector_angle_deg", "sa_initial_temp", "sa_cooling",
+                    "sa_swap_ratio", "sa_balance_slack", "congestion_grid_cell",
+                    "congestion_demand_factor", "congestion_hard_threshold",
+                    "layer_capacity", "capacity_utilization", "via_area_cost",
+                    "pin_density_weight", "r_end", "keepout_margin_factor"):
+            v = getattr(cfg, fld)
+            if isinstance(v, int):
+                cfg = dataclasses.replace(cfg, **{fld: float(v)})
 
         # 3) 分层（进度回调 + 取消事件）
         result = pipeline.run(data, cfg, on_progress=on_progress,

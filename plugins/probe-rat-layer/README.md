@@ -95,10 +95,14 @@ out_<outDir>/
 ## 5. 独立测试（不启动 ToolBox）
 
 ```powershell
-# A. vendored 包单元测试（需 pytest，开发环境装）：
-#    PYTHONPATH 指到 vendor 后 pytest test/probe_tests（31 passed）
+# A. vendored 包单元测试（需 pytest + 依赖的开发环境，如原项目 uv venv）：
+#    在插件目录下直接跑（pytest.ini 已配置 testpaths/norecursedirs，31 passed）。
+#    注意：vendor/ 是宿主捆绑 Python（cp314）装的 wheel，别用 PYTHONPATH=vendor
+#    去喂别的解释器（ABI 不匹配，shapely.lib 等扩展模块会 ImportError）。
+python -m pytest -q
 
-# B. 协议全链路测试（生成合成 pin 表，不依赖真实数据）：
+# B. 协议全链路测试（生成合成 pin 表，不依赖真实数据；--python 用捆绑解释器
+#    即验证"目标机场景"：main.py 启动时自动把 vendor 插进 sys.path）：
 python test/protocol_test.py --python <含依赖的解释器>
 
 # C. 用模板 mock-host 的异步模式（--wait-done 验证后台任务事件）：
