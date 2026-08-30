@@ -398,7 +398,24 @@ async function renderImage(kind: string): Promise<void> {
     return;
   }
   try {
-    const text = (await props.api.call("layer.render", { jobId: jobId.value, kind })) as string;
+    // 后端异步渲染：未命中返回 {"pending": true}（后台线程渲染，宿主 30s 超时不杀进程），
+    // 前端轮询直到拿到 SVG 字符串（后端缓存命中后秒回）。
+    let text: string | null = null;
+    for (let i = 0; i < 400; i++) {
+      const r = (await props.api.call("layer.render", {
+        jobId: jobId.value,
+        kind,
+      })) as string | { pending?: boolean };
+      if (typeof r === "string") {
+        text = r;
+        break;
+      }
+      // r.pending —— 后台仍在渲染（matplotlib 首次加载可能较久），等 500ms 再问
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    if (text === null) {
+      throw new Error("渲染超时（后台线程长时间无输出）");
+    }
     svgCache.set(cacheKey, text);
     svgText.value = text;
     svgKind.value = kind;

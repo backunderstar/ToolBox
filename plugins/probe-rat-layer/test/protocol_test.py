@@ -205,11 +205,24 @@ def main():
             fail("layer_1.lst 为空")
         print(f"PASS layer.readOut lst/layer_1.lst（{len(lst_text.splitlines())} 行）")
 
-        # 7. 按需渲染 SVG（matplotlib 懒加载）
+        # 7. 按需渲染 SVG（异步：未命中返回 {"pending":true}，轮询直到拿到字符串）
         svg = c.call("layer.render", {"jobId": job_id, "kind": "layer_1"})
-        if "<svg" not in svg:
-            fail("layer.render 未返回合法 SVG")
-        print(f"PASS layer.render layer_1（SVG {len(svg)} 字节）")
+        t_render = time.monotonic()
+        while isinstance(svg, dict) and svg.get("pending"):
+            time.sleep(0.3)
+            svg = c.call("layer.render", {"jobId": job_id, "kind": "layer_1"})
+            if time.monotonic() - t_render > 120:
+                fail("layer.render 轮询 120s 未完成（后台渲染卡住？）")
+        if not isinstance(svg, str) or "<svg" not in svg:
+            fail(f"layer.render 未返回合法 SVG（实际: {type(svg).__name__} len={len(svg) if isinstance(svg,str) else '?'} {str(svg)[:200]!r}）")
+        print(f"PASS layer.render layer_1（SVG {len(svg)} 字节，"
+              f"{time.monotonic() - t_render:.1f}s）")
+        # 二次调用应缓存命中（字符串秒回）
+        t2 = time.monotonic()
+        svg2 = c.call("layer.render", {"jobId": job_id, "kind": "layer_1"})
+        if not isinstance(svg2, str) or svg2 != svg:
+            fail("layer.render 二次调用未命中缓存")
+        print(f"PASS layer.render 二次调用缓存命中（{time.monotonic() - t2:.2f}s）")
 
         # 8. report.json 预览（冲突截断）
         rep = c.call("layer.report", {"jobId": job_id})

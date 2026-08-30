@@ -95,9 +95,12 @@ _SETTINGS_PATH = os.path.join(_PLUGIN_DIR, "settings.json")
 
 # stdout 写锁：主线程（响应）与后台线程（通知）共用，防行内交错
 _OUT_LOCK = threading.Lock()
-# matplotlib 渲染锁：cmd_render（主线程）与预渲染线程（后台）共用，
+# matplotlib 渲染锁：cmd_render 现场渲染与后台渲染线程共用，
 # matplotlib 非线程安全，任何渲染（viz / _render_manual）必须持锁
 _RENDER_LOCK = threading.Lock()
+# 正在后台渲染的 (job_id, kind) 集合：cmd_render 未命中时幂等启动渲染线程
+_RENDER_IN_FLIGHT: set = set()
+_RENDER_IN_FLIGHT_LOCK = threading.Lock()
 
 # ---------- 后台任务引擎 ----------
 
@@ -506,32 +509,88 @@ def _render_manual(wires: list, zones: tuple, out_dir: str) -> str:
     return base
 
 
-def cmd_render(job_id: str, kind: str) -> str:
-    """按需渲染指定图（layer_<i> / overview / rose / manual）→ SVG 文本。
+def _svg_ready(path: str) -> bool:
+    """SVG 文件是否完整：末尾（去空白后）以 </svg> 结尾。
 
-    matplotlib 懒加载（首次约 1.5s）；结果缓存到 jobs/<jobId>/img/，
-    已生成过的图直接读文件返回（不重渲染、不重解析几何数据）。
+    matplotlib 先建文件后写内容，轮询可能撞上"已创建未写完"的半成品；
+    且输出带 CRLF（...\r\n</svg>\r\n），不能精确比对最后 6 字节。
+    文件不存在或未写完 → False（前端继续 pending 轮询）。"""
+    try:
+        with open(path, "rb") as f:
+            f.seek(max(0, os.path.getsize(path) - 64))
+            tail = f.read()
+        return tail.rstrip().endswith(b"</svg>")
+    except OSError:
+        return False
+
+
+def cmd_render(job_id: str, kind: str):
+    """按需渲染指定图（layer_<i> / overview / rose / manual）。
+
+    返回协议：
+    - 缓存命中且文件完整（</svg> 结尾）：SVG 文本（字符串）；
+    - 未命中：启动后台渲染线程（幂等，同一 job+kind 只启一次），立即返回
+      {"pending": true}——前端轮询本命令直到拿到 SVG 字符串；
+    - 渲染失败（已写 .failed 标记）：抛错，前端显示明确错误。
+
+    ⚠️ 为什么异步：宿主对 process 插件单次 call 有 30s 硬超时，超时即杀进程并
+    自动重启（崩溃循环，2026-09 实测踩过多次）。matplotlib 首次加载/字体缓存
+    构建在某些环境可能逼近或超过 30s。渲染放后台线程后，本命令永远秒回，
+    宿主永不超时；渲染进度由前端轮询获得。
     """
-    # kind → 缓存文件名（与 viz/_render_manual 的输出一致）
     svg_path = None
     name = _kind_svg_name(kind)
     if name:
         svg_path = os.path.join(_job_dir(job_id), "img", name)
-    # 命中缓存：直接读，不解析 geometry/result、不调 matplotlib
-    if svg_path and os.path.isfile(svg_path):
+        failed_path = svg_path + ".failed"
+        # 渲染失败标记：明确报错，避免前端无限 pending
+        if os.path.isfile(failed_path):
+            with open(failed_path, encoding="utf-8", errors="replace") as f:
+                raise ValueError(f"渲染失败: {f.read().strip()}")
+    # 命中缓存且文件完整：直接读，不解析 geometry/result、不调 matplotlib
+    if svg_path and _svg_ready(svg_path):
         with open(svg_path, encoding="utf-8", errors="replace") as f:
             return f.read()
 
-    # 未命中：先预热 matplotlib（首次导入 1-2s，放锁外避免阻塞其他渲染），
-    # 再持渲染锁现场渲染（与后台预渲染互斥，matplotlib 非线程安全）
-    _viz()
-    with _RENDER_LOCK:
-        base = _render_one(job_id, kind, with_png=False)
-    svg_path = base + ".svg"
-    if not os.path.isfile(svg_path):
-        raise ValueError(f"渲染失败（无 SVG 输出）: {kind}")
-    with open(svg_path, encoding="utf-8", errors="replace") as f:
-        return f.read()
+    key = (job_id, kind)
+    with _RENDER_IN_FLIGHT_LOCK:
+        if key not in _RENDER_IN_FLIGHT:
+            _RENDER_IN_FLIGHT.add(key)
+            threading.Thread(target=_render_async, args=(key,),
+                             daemon=True).start()
+    return {"pending": True}
+
+
+def _render_async(key: tuple[str, str]) -> None:
+    """后台渲染单张图（cmd_render 未命中时启动）。
+
+    成功：SVG 写入 jobs/<jobId>/img/（完整后前端轮询命中）；
+    失败：写 <kind>.svg.failed 标记（前端读到明确错误）。
+    """
+    job_id, kind = key
+    failed_path = None
+    name = _kind_svg_name(kind)
+    if name:
+        failed_path = os.path.join(_job_dir(job_id), "img", name + ".failed")
+    try:
+        _viz()  # matplotlib 预热放锁外（首次导入不阻塞其他渲染）
+        with _RENDER_LOCK:
+            base = _render_one(job_id, kind, with_png=False)
+        svg_path = base + ".svg"
+        if not os.path.isfile(svg_path) or not _svg_ready(svg_path):
+            raise ValueError("渲染无完整输出")
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write("[rat-layer] 渲染失败 %s/%s: %s\n" % (job_id, kind, e))
+        try:
+            if failed_path:
+                os.makedirs(os.path.dirname(failed_path), exist_ok=True)
+                with open(failed_path, "w", encoding="utf-8") as f:
+                    f.write(str(e))
+        except OSError:
+            pass
+    finally:
+        with _RENDER_IN_FLIGHT_LOCK:
+            _RENDER_IN_FLIGHT.discard(key)
 
 
 def _kind_svg_name(kind: str) -> str | None:
