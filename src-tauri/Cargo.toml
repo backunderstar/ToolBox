@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "ToolBox ? ??????????Rust ???"
 edition = "2021"
 
+# 继承 workspace lints（linker_messages 放行等，见根 Cargo.toml [workspace.lints]）
+[lints]
+workspace = true
+
 [lib]
 name = "toolbox_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

@@ -103,7 +103,9 @@ function onKeyDown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <header class="topbar" data-part="topbar">
+  <!-- nav-collapsed：左 padding 随侧边栏折叠切换，折叠按钮与侧边栏图标列水平对齐
+       （见 shell.css .topbar 的注释；不随折叠变化时按钮会偏右 15px） -->
+  <header class="topbar" :class="{ 'nav-collapsed': navCollapsed }" data-part="topbar">
     <button
       class="icon-btn"
       @click="onToggleNav"

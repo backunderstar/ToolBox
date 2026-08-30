@@ -121,14 +121,52 @@ fn app_settings_set(
     key: String,
     value: serde_json::Value,
 ) -> Result<(), String> {
-    let mut map = load_app_settings(&app);
-    map.insert(key, value);
-    let p = app_settings_path(&app)?;
+    write_app_setting(&app, &key, value)
+}
+
+fn write_app_setting(
+    app: &tauri::AppHandle,
+    key: &str,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let mut map = load_app_settings(app);
+    map.insert(key.to_string(), value);
+    let p = app_settings_path(app)?;
     let raw =
         serde_json::to_string_pretty(&serde_json::Value::Object(map)).map_err(|e| e.to_string())?;
     let tmp = p.with_extension("json.tmp");
     std::fs::write(&tmp, &raw).map_err(|e| format!("保存设置失败: {e}"))?;
     std::fs::rename(&tmp, &p).map_err(|e| format!("保存设置失败: {e}"))
+}
+
+/// 是否启用系统托盘图标（app.json trayEnabled，默认 true）。
+fn tray_enabled(app: &tauri::AppHandle) -> bool {
+    load_app_settings(app)
+        .get("trayEnabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+}
+
+/// 设置托盘图标开关：运行时显示/隐藏托盘（设置页开关调用）。
+#[tauri::command]
+fn tray_set_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    write_app_setting(&app, "trayEnabled", serde_json::json!(enabled))?;
+    if enabled {
+        match app.tray_by_id("main-tray") {
+            // 应用启动时已创建：恢复显示
+            Some(tray) => tray.set_visible(true).map_err(|e| format!("显示托盘失败: {e}"))?,
+            // 启动时被设置关闭而未创建：现在补建
+            None => create_tray(&app).map_err(|e| format!("创建托盘失败: {e}"))?,
+        }
+    } else if let Some(tray) = app.tray_by_id("main-tray") {
+        // 隐藏托盘图标（TrayIcon 无 remove/close 公开方法，资源随 AppHandle 生命周期）
+        tray.set_visible(false).map_err(|e| format!("隐藏托盘失败: {e}"))?;
+        // 托盘被关闭后主窗口若不可见会无法恢复——强制显示主窗口
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.show();
+        }
+    }
+    Ok(())
 }
 
 /* ---- 自动备份（宿主内嵌 core::backup；原 core-backup 插件命令） ---- */
@@ -304,18 +342,21 @@ pub fn run() {
         // 插件命令签名要求 Mutex<PluginManager>（见 plugins/mod.rs 的 State 参数）
         .manage(Mutex::new(PluginManager::default()))
         .on_window_event(|window, event| {
-            // 主窗口关闭：按设置决定「最小化到托盘常驻」还是「退出应用」
-            // （托盘「退出」置 EXITING 后放行真正退出）
+            // 主窗口关闭：按设置分流——
+            // - EXITING（托盘退出）或未启用托盘或 closeBehavior=quit → 放行退出
+            // - 否则（托盘常驻）→ 仅 prevent（不 hide）：hide 由前端在关闭询问/直接
+            //   最小化流程里执行，避免前端弹询问框时窗口已被隐藏（8/30 实测时序坑）
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" && !EXITING.load(Ordering::SeqCst) {
-                    if close_behavior(window.app_handle()) == "tray" {
-                        api.prevent_close();
-                        let _ = window.hide();
-                    } else {
+                    let quit =
+                        !tray_enabled(window.app_handle()) || close_behavior(window.app_handle()) == "quit";
+                    if quit {
                         // 「退出应用」模式：顺带关闭浮窗（否则主窗口关闭后浮窗还在，应用不退出）
                         if let Some(f) = window.app_handle().get_webview_window(FLOAT_WINDOW) {
                             let _ = f.close();
                         }
+                    } else {
+                        api.prevent_close();
                     }
                 }
             }
@@ -359,6 +400,7 @@ pub fn run() {
             config_import,
             app_settings_get,
             app_settings_set,
+            tray_set_enabled,
             float_toggle,
             float_set_locked,
             set_window_caption_color,
@@ -430,8 +472,10 @@ pub fn run() {
             plugins::events::spawn_event_forwarder(app.handle().clone());
             // 原生插件事件回调需要 AppHandle（host 回调）
             plugins::native::init_host_app(app.handle().clone());
-            // 系统托盘（关窗常驻后台）
-            create_tray(app.handle())?;
+            // 系统托盘（关窗常驻后台；设置可关，trayEnabled=false 时跳过创建）
+            if tray_enabled(app.handle()) {
+                create_tray(app.handle())?;
+            }
             // 桌面半透明浮窗（快速待办）
             create_float_window(app.handle())?;
             // 主窗口屏幕外自愈：立即检测 + 延迟复检（window-state 插件在 setup 后
@@ -558,7 +602,11 @@ fn handle_tray_event(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
 }
 
 /// 重建托盘菜单（含插件动作段）：插件启停/卸载/重装后调用。
+/// 托盘被设置关闭（trayEnabled=false）时 no-op。
 fn rebuild_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if !tray_enabled(app) {
+        return Ok(());
+    }
     use tauri::menu::{Menu, MenuItem};
     let show_main = MenuItem::with_id(app, "tray-show-main", "显示主窗口", true, None::<&str>)?;
     let toggle_float = MenuItem::with_id(app, "tray-toggle-float", "显示/隐藏浮窗", true, None::<&str>)?;

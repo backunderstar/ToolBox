@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { isCoreConnected, type PingInfo } from "../core/ipc";
 import type { NavConfig, NavItemDef } from "../core/navPrefs";
 import { useVault } from "../core/vault";
-import { openInExplorer, configExport, configImport, appSettingsGet, appSettingsSet } from "../core/api";
+import { openInExplorer, configExport, configImport, appSettingsGet, appSettingsSet, traySetEnabled } from "../core/api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   listThemes,
@@ -56,15 +56,33 @@ const settingsPlugins = computed(() =>
 );
 /* 关闭主窗口的行为："tray" 最小化到托盘（默认）/ "quit" 退出应用（app.json closeBehavior） */
 const closeBehavior = ref<"tray" | "quit">("tray");
+/* 托盘图标开关（app.json trayEnabled）与关闭前询问开关（app.json closeAsk） */
+const trayEnabled = ref(true);
+const closeAsk = ref(true);
 onMounted(() => {
   appSettingsGet()
     .then((s) => {
       if (s.closeBehavior === "quit") closeBehavior.value = "quit";
+      if (s.trayEnabled === false) trayEnabled.value = false;
+      if (s.closeAsk === false) closeAsk.value = false;
     })
     .catch(() => undefined);
 });
 function persistCloseBehavior(): void {
   void appSettingsSet("closeBehavior", closeBehavior.value).catch(() => undefined);
+}
+async function persistTrayEnabled(v: boolean): Promise<void> {
+  try {
+    await traySetEnabled(v); // Rust 侧写 app.json + 创建/移除托盘
+    trayEnabled.value = v;
+  } catch (e) {
+    trayEnabled.value = !v; // 失败回滚
+    void appSettingsSet("trayEnabled", !v).catch(() => undefined);
+  }
+}
+function persistCloseAsk(v: boolean): void {
+  closeAsk.value = v;
+  void appSettingsSet("closeAsk", v).catch(() => undefined);
 }
 /* 插件设置手风琴：当前展开的插件 id（null = 全收起；同时只展开一个，插件多时页面不臃肿） */
 const expandedPluginSettings = ref<string | null>(null);
@@ -274,6 +292,34 @@ function removeCustom(id: string): void {
               </span>
             </label>
           </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">托盘图标</span>
+          <label class="settings-toggle">
+            <input
+              type="checkbox"
+              :checked="trayEnabled"
+              @change="persistTrayEnabled(($event.target as HTMLInputElement).checked)"
+            />
+            <span>{{ trayEnabled ? "启用" : "关闭" }}</span>
+          </label>
+          <span class="settings-hint">
+            关闭托盘后不再常驻后台，点窗口「×」将直接退出应用（此时「关闭主窗口」选项不生效）
+          </span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">关闭前询问</span>
+          <label class="settings-toggle">
+            <input
+              type="checkbox"
+              :checked="closeAsk"
+              @change="persistCloseAsk(($event.target as HTMLInputElement).checked)"
+            />
+            <span>{{ closeAsk ? "每次询问" : "不再询问" }}</span>
+          </label>
+          <span class="settings-hint">
+            首次关闭时询问「保留托盘 / 退出应用」；关闭询问后按「关闭主窗口」的选择直接执行
+          </span>
         </div>
       </section>
 

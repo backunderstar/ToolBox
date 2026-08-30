@@ -198,5 +198,6 @@ fn to_cstr(s: &str) -> Result<std::ffi::CString, String> {
     std::ffi::CString::new(s).map_err(|_| "路径含 NUL".to_string())
 }
 
-/// 生成全部 C ABI 样板（含 panic 隔离）：State / 构造器 / 分发器 三样即完整插件。
+// 生成全部 C ABI 样板（含 panic 隔离）：State / 构造器 / 分发器 三样即完整插件。
+// （用 // 而非 ///：rustdoc 不为宏调用生成文档，/// 会触发 unused_doc_comments 警告）
 tb_plugin!(ExampleState, state_from_cfg, call);

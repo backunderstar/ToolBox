@@ -109,6 +109,8 @@ export const vaultSet = (path: string) => invoke<void>("vault_set", { path });
 export const appSettingsGet = () => invoke<Record<string, unknown>>("app_settings_get");
 export const appSettingsSet = (key: string, value: unknown) =>
   invoke<void>("app_settings_set", { key, value });
+/** 托盘图标开关（运行时创建/移除托盘；关闭后点 X 直接退出应用） */
+export const traySetEnabled = (enabled: boolean) => invoke<void>("tray_set_enabled", { enabled });
 
 /* ---- 宿主文件服务（vault 内文件列表/读写/增删改；系统级框架能力，
    插件 webview 桥 fs.readText/writeText 与宿主数据层共用同一封装） ---- */

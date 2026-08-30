@@ -43,6 +43,20 @@
   transform: translateY(-8px);
 }
 
+/* 关闭主窗口询问框：「不再询问」勾选项（复用 .confirm-* 对话框样式，见 projects.css） */
+.close-ask-remember {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.close-ask-remember input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
 .body {
   display: flex;
   flex: 1;
@@ -57,8 +71,15 @@
   height: 48px;
   flex-shrink: 0;
   padding: 0 var(--space-5);
+  /* 左侧 padding 与侧边栏图标列水平对齐：折叠按钮（icon-btn 30px）中心应与
+     侧边栏图标中心重合——展开 32px / 折叠 24px，故左 padding = 中心 - 15。
+     不随折叠切换时按钮会相对图标列偏右（折叠时差 15px，8/30 实测不齐）。 */
+  padding-left: 17px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-soft);
+}
+.topbar.nav-collapsed {
+  padding-left: 9px;
 }
 
 .topbar-brand {

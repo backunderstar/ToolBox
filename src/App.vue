@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ping, type PingInfo } from "./core/ipc";
+import { appSettingsGet, appSettingsSet } from "./core/api";
 import { useVault } from "./core/vault";
 import { usePlugins } from "./core/plugins";
 import { useNav } from "./core/navigation";
@@ -36,16 +37,13 @@ import LoadingView from "./components/LoadingView.vue";
 import Icon from "./components/Icon.vue";
 import "./styles/tokens.css";
 import "./styles/base.css";
-/* 样式按域拆分（原 app.css 3600 行）：外壳/插件页/设置/各核心插件视图。
-   顺序即级联顺序：shell（外壳+按钮）→ 各视图（同层类名不冲突，插件
-   UI 复用的宿主类名按需覆盖外壳细节）。 */
+/* 样式按域拆分（外壳 / 插件页 / 设置）：顺序即级联顺序。历史遗留的
+   notes/ai/checklists/projects.css 已随 2026-08 教学基线收敛删除，
+   仍在用的通用类（empty-state、deps-output、confirm-*、nav-settings-* 等）
+   已迁移到 plugins.css / settings.css（注意 CSS 注释里不要出现斜杠星号组合）。 */
 import "./styles/shell.css";
-import "./styles/notes.css";
 import "./styles/plugins.css";
 import "./styles/settings.css";
-import "./styles/ai.css";
-import "./styles/checklists.css";
-import "./styles/projects.css";
 
 /* 低频视图懒加载（defineAsyncComponent + 代码分割）：设置页/插件页包含较多
    组件与样式，按需加载减小首屏 JS parse 量；概览等首屏视图保持静态 import。 */
@@ -187,6 +185,50 @@ onMounted(() => {
   onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 });
 
+/* ---- 关闭主窗口：按设置分流（托盘常驻 hide / 退出 close）+ 首次询问框 ---- */
+const closeAskOpen = ref(false);
+const closeAskRemember = ref(false);
+let closeAskResolve: ((action: "tray" | "quit") => void) | null = null;
+
+function askCloseAction(): Promise<"tray" | "quit"> {
+  closeAskRemember.value = false;
+  closeAskOpen.value = true;
+  return new Promise((resolve) => {
+    closeAskResolve = resolve;
+  });
+}
+function resolveCloseAsk(action: "tray" | "quit"): void {
+  closeAskOpen.value = false;
+  closeAskResolve?.(action);
+  closeAskResolve = null;
+}
+
+onMounted(() => {
+  if (isFloat) return; // 浮窗窗口不处理主窗口关闭流程
+  getCurrentWindow().onCloseRequested(async (event) => {
+    const s = await appSettingsGet().catch(() => ({} as Record<string, unknown>));
+    // 托盘被禁用或已设为退出：放行（Rust 侧同步判断并退出，含关闭浮窗）
+    if (s.trayEnabled === false || s.closeBehavior === "quit") return;
+    event.preventDefault();
+    const shouldAsk = s.closeAsk !== false; // 首次（未设置）默认询问
+    let action: "tray" | "quit" = "tray";
+    if (shouldAsk) {
+      action = await askCloseAction();
+      if (closeAskRemember.value) {
+        // 「不再询问」：记住选择，之后直接按行为执行（设置页可重新开启询问）
+        void appSettingsSet("closeAsk", false).catch(() => undefined);
+      }
+    }
+    if (action === "quit") {
+      // 改为退出模式后再 close：Rust 读到 closeBehavior=quit 放行 → 应用退出
+      await appSettingsSet("closeBehavior", "quit").catch(() => undefined);
+      await getCurrentWindow().close().catch(() => undefined);
+    } else {
+      await getCurrentWindow().hide().catch(() => undefined);
+    }
+  });
+});
+
 const themeMode = computed(() => getThemeBase(themeId.value));
 const themeName = computed(() => findTheme(themeId.value)?.name ?? themeId.value);
 
@@ -264,6 +306,24 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
         </button>
       </div>
     </transition>
+    <!-- 关闭主窗口询问框（首次；勾选「不再询问」后按行为直接执行，设置页可重新开启） -->
+    <div v-if="closeAskOpen" class="confirm-overlay">
+      <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-label="关闭 ToolBox">
+        <h3 class="confirm-title">关闭 ToolBox？</h3>
+        <p class="confirm-message">
+          关闭后应用将退到系统托盘继续运行，可随时从托盘恢复窗口或退出。
+        </p>
+        <label class="close-ask-remember">
+          <input v-model="closeAskRemember" type="checkbox" />
+          <span>不再询问（记住选择，可在设置页重新开启）</span>
+        </label>
+        <div class="confirm-actions">
+          <button class="btn" @click="resolveCloseAsk('tray')">最小化到托盘</button>
+          <button class="btn" @click="resolveCloseAsk('quit')">退出应用</button>
+        </div>
+      </div>
+    </div>
+
     <div class="app" data-part="app">
       <TopBar
         :theme="themeMode"

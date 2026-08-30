@@ -140,13 +140,6 @@ pub struct SearchHit {
 /// （Rust 栈溢出不可捕获，无 panic 钩子）。超过上限的子树跳过。
 const MAX_DEPTH: usize = 64;
 
-/// vault 内需要索引的非 md 数据文件：清单（data/checklists/*.json）与待办
-/// （data/todos/todos.json）内容可被全局搜索命中（用户优化项：搜到清单/待办）。
-fn is_indexed_json(rel: &str) -> bool {
-    rel.ends_with(".json")
-        && (rel.starts_with("data/checklists/") || rel == "data/todos/todos.json")
-}
-
 /// 文件名的拼音键（全拼 + 首字母，均小写、去空白），用于拼音搜索：
 /// - 全拼："项目计划" → "xiangmujihua"
 /// - 首字母："项目计划" → "xmjh"
@@ -209,7 +202,9 @@ fn collect_md_depth(
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
         if is_dir {
             collect_md_depth(&entry.path(), &rel, out, depth + 1);
-        } else if name.ends_with(".md") || is_indexed_json(&rel) {
+        } else if name.ends_with(".md") {
+            // 只索引 Markdown（教学基线：宿主搜索面向通用文档；清单/待办等旧功能
+            // 的 json 特判已随 2026-08 功能移除删除，避免残留文件污染搜索结果）
             out.push((rel, entry.path()));
         }
     }
@@ -824,38 +819,6 @@ mod tests {
         write_note(&v, "API 计划.md", "# x\n");
         let hits = search(&v.to_string_lossy(), "api").unwrap();
         assert_eq!(hits.len(), 1, "ASCII 部分应命中: {hits:?}");
-        std::fs::remove_dir_all(&v).ok();
-    }
-
-    #[test]
-    fn checklist_json_content_hit() {
-        // 清单数据内容可被搜索（用户优化项：搜到清单/待办内容）
-        let v = tmp_vault("cljson");
-        std::fs::create_dir_all(v.join("data/checklists")).unwrap();
-        std::fs::write(
-            v.join("data/checklists/采购.json"),
-            "{\"title\": \"采购清单\", \"items\": [{\"text\": \"买独特术语zzz\"}]}",
-        )
-        .unwrap();
-        write_note(&v, "a.md", "# 普通内容\n");
-        let hits = search(&v.to_string_lossy(), "独特术语zzz").unwrap();
-        assert_eq!(hits.len(), 1, "应命中清单 json: {hits:?}");
-        assert_eq!(hits[0].path, "data/checklists/采购.json");
-        std::fs::remove_dir_all(&v).ok();
-    }
-
-    #[test]
-    fn todos_json_content_hit() {
-        let v = tmp_vault("todosjson");
-        std::fs::create_dir_all(v.join("data/todos")).unwrap();
-        std::fs::write(
-            v.join("data/todos/todos.json"),
-            "[{\"text\": \"待办 独特术语aaa\", \"done\": false}]",
-        )
-        .unwrap();
-        let hits = search(&v.to_string_lossy(), "独特术语aaa").unwrap();
-        assert_eq!(hits.len(), 1, "应命中 todos.json: {hits:?}");
-        assert_eq!(hits[0].path, "data/todos/todos.json");
         std::fs::remove_dir_all(&v).ok();
     }
 

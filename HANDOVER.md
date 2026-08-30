@@ -107,6 +107,33 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   PluginUiView；插件多时页面不臃肿）——SettingsView.vue + settings.css
 - 验证：cargo 61 / lint 0 / build ✓；1412 修复需退出应用实测确认
 
+### 1.7 增量（2026-08-30 傍晚：收尾清理轮）
+
+- **侧边栏折叠对齐**：TopBar 折叠按钮中心（左 padding 24+15=39px）与侧边栏图标列中心
+  （折叠 24px）差 15px 不齐——topbar 左 padding 随 navCollapsed 切换（展开 17px / 折叠 9px，
+  shell.css 有注释说明计算）
+- **首次关闭询问 + 托盘开关**：
+  - 首次点 X 弹询问框（最小化到托盘 / 退出应用 + 「不再询问」勾选）；前端
+    `getCurrentWindow().onCloseRequested` 接管关闭流程，Rust 只 prevent 不 hide（hide 由前端
+    执行，避免弹窗时窗口已被隐藏）；退出 = 设 closeBehavior=quit 后 close（Rust 放行）
+  - 设置页「常规」新增：托盘图标开关（`tray_set_enabled` 命令，运行时 `TrayIcon::set_visible`，
+    Tauri 2 无 remove/close 公开方法）+ 关闭前询问开关（app.json `closeAsk`）
+  - `app.json` 键：closeBehavior / trayEnabled / closeAsk（app_settings_get/set 通用键值）
+- **搜索残留清理**：`is_indexed_json` 对 data/checklists、data/todos 的旧功能特判删除
+  （现在只索引 .md）；删 2 个旧功能测试；本机 e2e-vault（target/ 下测试残留）的
+  notes/data/projects/site 目录与搜索索引已清（用户 vault 现为空，需自行选真实工作区）
+- **警告清零**：`[workspace.lints.rust] linker_messages = "allow"`（MSVC link.exe 正常输出
+  被当警告）+ 三个 member Cargo.toml 加 `[lints] workspace = true`；tb-example 宏前
+  `///` → `//`（rustdoc 不为宏生成文档触发 unused_doc_comments）
+- **无用代码清理**：删除 ai.css / checklists.css / projects.css / notes.css（旧功能样式），
+  在用类迁移到 settings.css（settings-message / nav-settings-* / switch / theme-io-* /
+  confirm-* / btn-danger）与 plugins.css（empty-state / deps-output）；App.vue 移除对应
+  import；target/plugin-ui 旧插件产物清盘（保留 core-example）
+- **文档完善**：操作手册（§2 目录结构 / §3.4 配置 / §3.5 外部插件示例 / §3.6 索引范围 /
+  §4.2 视图表 / §4.4 调试 / §5 里程碑标注教学基线）；技术栈与概念详解（md-editor/AI/博客/
+  SSG/双向链接/CDP 等旧小节删除或标注已移除、架构图/名词表更新）
+- 验证：cargo 59（54+3+2，search 删 2 旧测试）/ lint 0 / build ✓ / test 24
+
 ---
 
 ## 2. 项目一句话

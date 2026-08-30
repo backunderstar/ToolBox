@@ -10,6 +10,12 @@
 resolver = "2"
 members = ["src-tauri", "tb-sdk", "core-plugins/example"]
 
+# workspace 级 lint：linker_messages 放行——MSVC link.exe 每次链接都往 stdout 写
+# "正在创建库 ... 和对象 ..."（创建 .lib/.exp 的正常提示），被该 lint 当成警告刷屏
+# （HANDOVER §6.2 曾记录为"PowerShell 误报"，实际是此 lint 捕获的噪音）。
+[workspace.lints.rust]
+linker_messages = "allow"
+
 # 发布优化（所有 member 生效）：thin LTO 平衡编译时间与体积/性能，
 # strip 去除符号表显著减小安装包（插件 DLL 与宿主均受益）。
 [profile.release]
