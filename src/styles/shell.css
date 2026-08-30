@@ -331,20 +331,40 @@
   color: var(--pastel-green-fg);
 }
 
-/* 导航侧栏折叠：48px 图标窄条 */
+/* 导航侧栏折叠：48px 图标窄条——分组用细分隔线（不用大空隙），图标做圆角钮，
+   hover/active 有底色；归属信息经 tooltip「组名 · 项名」传达（Sidebar.vue） */
 .sidebar.collapsed {
   width: 48px;
-  padding: var(--space-4) 6px;
+  padding: var(--space-3) 6px;
 }
 .sidebar.collapsed .nav-label {
   display: none;
 }
 .sidebar.collapsed .nav-group {
-  margin-bottom: var(--space-4);
+  margin-bottom: 0;
+}
+/* 组与组之间：细分隔线 + 紧凑间距（替代 16px 空洞，分组边界仍然清晰） */
+.sidebar.collapsed .nav-group + .nav-group {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
 }
 .sidebar.collapsed .nav-item {
   justify-content: center;
-  padding: 6px 0;
+  width: 34px;
+  height: 34px;
+  margin: 0 auto;
+  padding: 0;
+  border-radius: var(--radius-md);
+}
+.sidebar.collapsed .nav-item:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  color: var(--fg);
+}
+.sidebar.collapsed .nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 550;
 }
 .sidebar.collapsed .nav-item span {
   display: none;

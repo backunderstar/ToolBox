@@ -62,14 +62,16 @@ const groups = computed(() =>
           <Icon :name="g.group.collapsed ? 'chevron-right' : 'chevron-down'" :size="11" />
         </span>
       </button>
-      <template v-if="!g.group.collapsed">
+      <template v-if="!collapsed ? !g.group.collapsed : true">
+        <!-- 折叠时忽略组折叠状态显示全部项（组归属靠分隔线 + tooltip 组名前缀传达）；
+             展开时按用户分组折叠记忆渲染 -->
         <button
           v-for="item in g.items"
           :key="item.id"
           class="nav-item"
           :class="{ active: item.id === activeView }"
           :aria-current="item.id === activeView ? 'page' : undefined"
-          :title="item.label"
+          :title="collapsed ? `${g.group.label} · ${item.label}` : item.label"
           @click="onSelect(item.id as ViewId)"
         >
           <Icon :name="item.icon" :size="16" />
