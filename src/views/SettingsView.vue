@@ -14,14 +14,14 @@ import {
   SYSTEM_THEME_ID,
   type ThemeDef,
 } from "../themes/themes";
-import ThemeEditor from "./ThemeEditor.vue";
-import BackupSettings from "./BackupSettings.vue";
-import NavSettings from "./NavSettings.vue";
-import LogSettings from "./LogSettings.vue";
-import ThemeIoPanel from "./ThemeIoPanel.vue";
-import ConfirmDialog from "./ConfirmDialog.vue";
-import Icon from "./Icon.vue";
-import PluginUiView from "./PluginUiView.vue";
+import ThemeEditor from "../components/ThemeEditor.vue";
+import BackupSettings from "../components/BackupSettings.vue";
+import NavSettings from "../components/NavSettings.vue";
+import LogSettings from "../components/LogSettings.vue";
+import ThemeIoPanel from "../components/ThemeIoPanel.vue";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
+import Icon from "../components/Icon.vue";
+import PluginUiView from "../components/PluginUiView.vue";
 import { usePlugins } from "../core/plugins";
 import { APP_TAG } from "../core/version";
 import { onRowKeyDown } from "../core/keyboard";

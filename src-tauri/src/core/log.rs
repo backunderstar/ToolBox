@@ -15,6 +15,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
+use tauri::Manager;
 
 /// 日志目录（`%APPDATA%/com.toolbox.desktop/logs/`）；setup 时经 `init` 注入。
 static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -158,4 +159,70 @@ pub fn warn(msg: &str) {
 
 pub fn error(msg: &str) {
     log_line("error", 3, msg);
+}
+
+/* ---- Tauri 命令层（设置页日志卡片；落盘实现在上方） ---- */
+
+/// 调试通道：前端把 console.error / 未捕获错误转发到这里，打印到终端
+/// （`pnpm tauri dev` 的输出中可见，便于排查白屏/编辑器问题）。
+#[tauri::command]
+pub fn log_console(msg: String) {
+    error(&format!("[webview] {msg}"));
+}
+
+/// 日志目录路径（设置页显示 + 在资源管理器中打开）。
+#[tauri::command]
+pub fn logs_path(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?;
+    Ok(dir.join("logs").to_string_lossy().to_string())
+}
+
+/// 读取当天日志尾部（应用内日志查看器；max_lines 取最近 N 行，级别过滤由前端按行做）。
+#[tauri::command]
+pub fn logs_tail(app: tauri::AppHandle, max_lines: usize) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?
+        .join("logs");
+    let today = &tb_sdk::now_iso()[..10];
+    let path = dir.join(format!("toolbox-{today}.log"));
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("读取日志失败: {e}"))?;
+    let lines: Vec<&str> = raw.lines().collect();
+    let start = lines.len().saturating_sub(max_lines.max(1));
+    Ok(lines[start..].join("\n"))
+}
+
+/// 清空日志：删除 logs/ 下全部 .log（今天的也删，下一条日志自动重建）。
+#[tauri::command]
+pub fn logs_clear(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?
+        .join("logs");
+    let Ok(read) = std::fs::read_dir(&dir) else {
+        return Ok(()); // 目录不存在 = 无日志可清
+    };
+    let mut removed = 0usize;
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.ends_with(".log") && std::fs::remove_file(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    info(&format!("[log] 已清空日志（删除 {removed} 个文件）"));
+    Ok(())
+}
+
+/// 设置日志级别（"debug"|"info"|"warn"|"error"）并持久化到 app.json。
+#[tauri::command]
+pub fn log_level_set(app: tauri::AppHandle, level: String) -> Result<(), String> {
+    set_level(&level);
+    crate::core::app::write_app_setting(&app, "logLevel", serde_json::json!(level))?;
+    info(&format!("[log] 日志级别已设为 {level}"));
+    Ok(())
 }

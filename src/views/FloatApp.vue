@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { pluginsList, pluginsReadFile, vaultGet, floatSetLocked, type PluginInfo } from "../core/api";
 import { buildBridgeApi, injectPluginScript, type PluginBridgeApi } from "../core/pluginRuntime";
 import { useTauriListen } from "../core/useTauriListen";
-import "./float.css";
+import "../styles/float.css";
 
 /**
  * 桌面半透明浮窗（快速工具）—— 插件浮窗界面加载器：

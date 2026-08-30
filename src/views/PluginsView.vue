@@ -14,9 +14,9 @@ import {
   pluginsDirGet,
   pluginsDirSet,
 } from "../core/api";
-import ConfirmDialog from "./ConfirmDialog.vue";
-import PluginCard from "./PluginCard.vue";
-import Icon from "./Icon.vue";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
+import PluginCard from "../components/PluginCard.vue";
+import Icon from "../components/Icon.vue";
 
 /**
  * 插件页：插件卡片列表（核心/外部分组，启用/禁用/重载/卸载/「打开」跳转界面）、

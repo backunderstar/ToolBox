@@ -22,6 +22,23 @@ fn sync_snapshot(m: &mut PluginManager, app: &tauri::AppHandle) -> Result<(), St
     Ok(())
 }
 
+/// 插件日志统一通道（webview 插件 / 插件自带前端 UI 用；process 用核心 API log，
+/// native 用 TbHostApi::log）。来源前缀 [plugin:<id>]，按 level 分级落盘。
+#[tauri::command]
+pub fn plugin_log(plugin_id: String, level: String, message: String) -> Result<(), String> {
+    if !is_safe_plugin_id(&plugin_id) {
+        return Err(format!("非法插件 id: {plugin_id}"));
+    }
+    let line = format!("[plugin:{plugin_id}] {message}");
+    match level.as_str() {
+        "debug" => crate::core::log::debug(&line),
+        "warn" => crate::core::log::warn(&line),
+        "error" => crate::core::log::error(&line),
+        _ => crate::core::log::info(&line),
+    }
+    Ok(())
+}
+
 /// 所有 async 命令的阻塞体统一模式：插件扫描/启动/调用是重活（目录扫描、
 /// native FFI、process JSON-RPC 最长 30s、ai.chat 120s），必须放阻塞线程池
 /// （spawn_blocking）执行——Tauri async 命令共享一个 tokio runtime，直接同步

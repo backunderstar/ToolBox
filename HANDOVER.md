@@ -161,6 +161,31 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   native 已有 TbHostApi::log。各形态日志接口/级别/查看位置见 DEVELOPER.md §5.1
 - 验证：cargo 59（+float 声明编译）/ lint 0 / build ✓ / build:core ✓（float.js 已部署）
 
+### 1.9 增量（2026-09：项目结构完善轮，纯整理 + 作者打包 CLI + 补测试）
+
+- **前端分层**：`src/components/` 拆出页面级视图 → `src/views/`（WelcomeView / PluginsView /
+  SettingsView / FloatApp），components 只留通用部件；`float.css` 移入 `src/styles/`（唯一
+  混在组件目录的全局样式已归位）
+- **Rust 后端拆单体（lib.rs 957 行 → 只剩入口 + ping）**：应用设置/托盘/窗口/浮窗/系统命令 →
+  `core/app.rs`（EXITING/FLOAT_WINDOW/FLOAT_HOTKEY 常量随迁）；日志命令（logs_*/log_console）→
+  `core/log.rs`；`plugin_log` → `plugins/commands.rs`（core 层不反向依赖 plugins）；备份命令 →
+  `core/backup.rs`（前缀 `cmd_` 避开与实现函数撞名）；配置命令 → `core/config.rs`
+- **manager.rs（1592 行）再抽**：pip 安装逻辑 → `plugins/deps.rs`（`run_pip_install` +
+  `tail_lines` + PIP_TIMEOUT，纯函数 + 1 个新单测），install_deps 变薄
+- **新增 .editorconfig**（缩进/换行/末行统一；风格仍以 oxlint/rustfmt 为准）
+- **新增 CHANGELOG.md**（面向第三方，Keep a Changelog 格式；HANDOVER 仍是内部会话记录）
+- **作者侧打包 CLI**：`pnpm package-plugin <插件目录> [-o 输出.zip]`（scripts/package-plugin.mjs，
+  archiver 8 ZipArchive）——与应用内「导出」互补：排除 vendor/env/.venv/node_modules/
+  __pycache__（对方「安装依赖」重建），产物顶层 = `<插件id>/`，与 Rust export_zip/install 布局
+  一致；已在 hello-tb / py-tools 实测（tar 校验条目）
+- **复核 docs/技术栈与概念详解.md**：已移除章节此前已标注为占位说明（学习指南保留全貌），
+  无需再动
+- **补前端测试**：`api.ts` 全量 IPC 映射断言（10 用例，mock invoke 记录命令名+参数——Rust 改名
+  即红）；`plugins.ts` mock 模式注册表行为（5 用例：refresh 填充/命令调用与校验/导航与主题投影；
+  node 环境无 window，先装全局 mock 再动态 import——静态 import 会先于赋值执行）
+- 验证：cargo 60（59+1 新：deps tail_lines）/ lint 0 / build ✓ / test 40（24+16 新）
+  / 清理 src-tauri 根 26 个 + target 94 个残留日志
+
 ---
 
 ## 2. 项目一句话
@@ -199,9 +224,10 @@ pnpm build:core       # 构建核心插件（debug DLL + Vue UI → 应用配置
 pnpm build:core:release  # release → src-tauri/resources/_core/（打包用）
 pnpm fetch:python     # 下载捆绑 Python 运行时（python-build-standalone full → resources/python/）
 pnpm build-external-ui plugins/<id>  # 构建外部插件 UI
+pnpm package-plugin <插件目录> [-o 输出.zip]  # 作者侧打包分发包（排除依赖目录，见 §1.9）
 pnpm sync:plugins     # 仓库 plugins/ → 应用插件目录（开发时同步外部插件改动）
 pnpm lint && pnpm build && pnpm test   # 前端验证（lint 必须 0 警告）
-cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
+cargo test --workspace                 # Rust 测试（当前 60）
 ```
 
 跨平台：`scripts/platform.mjs` 提供 `appDataDir()`（Windows `%APPDATA%` / macOS

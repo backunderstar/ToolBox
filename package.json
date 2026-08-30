@@ -23,6 +23,7 @@
     "version:sync": "node scripts/sync-version.mjs",
     "sync:plugins": "node scripts/sync-external-plugins.mjs",
     "build-external-ui": "node scripts/build-external-ui.mjs",
+    "package-plugin": "node scripts/package-plugin.mjs",
     "env:setup": "node scripts/dev-env.mjs --install",
     "doctor": "node scripts/dev-env.mjs"
   },

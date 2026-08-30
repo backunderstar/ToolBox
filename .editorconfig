@@ -1,0 +1,26 @@
+# EditorConfig（跨编辑器统一缩进/换行/末行；代码风格以各语言格式化器为准：
+# oxlint/vp fmt → JS/TS/Vue/JSON/Markdown，rustfmt → Rust）
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{js,ts,mjs,cjs,vue,json,md,html,css}]
+indent_style = space
+indent_size = 2
+
+[*.rs]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# 生成的 / 依赖目录不强制（保持原样）
+[package-lock.json]
+insert_final_newline = false

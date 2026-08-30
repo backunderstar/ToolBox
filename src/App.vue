@@ -30,9 +30,9 @@ import ErrorBoundary from "./components/ErrorBoundary.vue";
 import TopBar from "./components/TopBar.vue";
 import Sidebar from "./components/Sidebar.vue";
 import StatusBar from "./components/StatusBar.vue";
-import WelcomeView from "./components/WelcomeView.vue";
+import WelcomeView from "./views/WelcomeView.vue";
 import PluginUiView from "./components/PluginUiView.vue";
-import FloatApp from "./components/FloatApp.vue";
+import FloatApp from "./views/FloatApp.vue";
 import LoadingView from "./components/LoadingView.vue";
 import Icon from "./components/Icon.vue";
 import "./styles/tokens.css";
@@ -48,11 +48,11 @@ import "./styles/settings.css";
 /* 低频视图懒加载（defineAsyncComponent + 代码分割）：设置页/插件页包含较多
    组件与样式，按需加载减小首屏 JS parse 量；概览等首屏视图保持静态 import。 */
 const SettingsView = defineAsyncComponent({
-  loader: () => import("./components/SettingsView.vue"),
+  loader: () => import("./views/SettingsView.vue"),
   loadingComponent: LoadingView,
 });
 const PluginsView = defineAsyncComponent({
-  loader: () => import("./components/PluginsView.vue"),
+  loader: () => import("./views/PluginsView.vue"),
   loadingComponent: LoadingView,
 });
 

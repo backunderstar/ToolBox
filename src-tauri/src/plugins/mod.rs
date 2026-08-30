@@ -1,12 +1,14 @@
 //! 插件系统：清单发现、注册表、生命周期（启用/禁用/热重载/崩溃重启）。
 //!
-//! 结构（2026-08 拆分，原 1935 行单文件）：
+//! 结构（2026-08 拆分，原 1935 行单文件；2026-09 再抽 deps）：
 //! - `manager`：PluginManager 核心（发现/启停/卸载/安装）与工具函数
+//! - `deps`：插件依赖安装（pip install --target vendor；2026-09 从 manager 抽出）
 //! - `commands`：全部 IPC 命令（tauri::command 层）
-//! - `manifest` / `native` / `process` / `events`：类型与运行时。
+//! - `manifest` / `native` / `process` / `events` / `pyruntime`：类型与运行时。
 //!   本文件保留模块声明、re-export（lib.rs 沿用 `plugins::*` 路径）与集成测试。
 
 pub mod commands;
+pub mod deps;
 pub mod events;
 pub mod manager;
 pub mod manifest;

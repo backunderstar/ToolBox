@@ -84,6 +84,24 @@ pub fn import_config(app: &tauri::AppHandle, path: &str) -> Result<Value, String
     Ok(bundle)
 }
 
+/* ---- Tauri 命令层（设置页「备份/恢复配置」按钮） ---- */
+
+/// 导出配置到指定文件（前端传 localStorage 段，宿主合并自己的配置）。
+#[tauri::command]
+pub fn config_export(
+    app: tauri::AppHandle,
+    path: String,
+    frontend: Value,
+) -> Result<(), String> {
+    export_config(&app, &path, frontend)
+}
+
+/// 导入配置：宿主侧已写回；返回完整配置包供前端写回 localStorage。
+#[tauri::command]
+pub fn config_import(app: tauri::AppHandle, path: String) -> Result<Value, String> {
+    import_config(&app, &path)
+}
+
 /// 结构校验：format/version 是硬门槛；backend 段存在则必须是对象
 /// （字段级错误在 apply_backend 里处理，容错跳过而非整体拒绝）。
 fn validate(bundle: &Value) -> Result<(), String> {

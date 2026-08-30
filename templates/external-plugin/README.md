@@ -37,6 +37,12 @@ npm run build          # → ui/index.js + style.css
 
 改 Python 代码（main.py）后在插件页点「重新加载」即可；改前端（ui/*.vue/ts）需重新 `npm run build` 再重载。
 
+## 分发给别人
+
+用 ToolBox 仓库的 `pnpm package-plugin <插件目录> [-o 输出.zip]`（scripts/package-plugin.mjs）
+打作者侧分发包：自动排除 `vendor/ env/ .venv/ node_modules/ __pycache__/`，产物顶层 =
+`<插件id>/`，对方插件页「安装 .zip」即装（Python 依赖由对方点「安装依赖」重建）。
+
 ## 关键约定
 
 - **解释器**：command 保持 `["python", "main.py"]`，宿主三级解析（插件自带

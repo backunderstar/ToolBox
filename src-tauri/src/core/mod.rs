@@ -1,5 +1,7 @@
 //! 核心能力层：数据、文件与业务逻辑。
 //!
+//! - `app`     应用外壳域：应用设置/托盘/窗口/浮窗/系统集成命令
+//!             （2026-09 从 lib.rs 957 行单体拆出，命令按域归位）
 //! - `path`    路径安全工具（vault 相对路径解析）
 //! - `vault`   Vault 工作区：路径选择与持久化（M1 落地）
 //! - `files`   宿主文件服务：vault 内文件列表/读写/增删改（系统级横切能力，
@@ -11,6 +13,7 @@
 //!
 //! 业务插件为原生核心插件（core-plugins/*，cdylib；教学基线仅 core-example）。
 
+pub mod app;
 pub mod backup;
 pub mod config;
 pub mod files;

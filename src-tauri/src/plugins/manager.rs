@@ -20,8 +20,7 @@ pub const API_TIMEOUT: Duration = Duration::from_secs(30);
 /// 崩溃自动重启上限（窗口期内）。
 const MAX_RESTARTS: u32 = 3;
 const RESTART_WINDOW: Duration = Duration::from_secs(60);
-/// pip install 超时：装小依赖几秒，pandas 等大 wheel 也要几分钟（网速决定）。
-const PIP_TIMEOUT: Duration = Duration::from_secs(600);
+/// pip install 超时（见 plugins::deps）。
 
 /// 递归复制最大深度：恶意/意外的万层嵌套会让纯递归栈溢出直接 abort（Rust
 /// 栈溢出不可捕获）；超过上限中止复制（与 backup/search 的 MAX_DEPTH 语义一致）。
@@ -377,12 +376,6 @@ fn migrate_legacy_enabled(app: &tauri::AppHandle, vault: &Path) {
 }
 
 /// 保留字符串末尾最多 n 行（pip 输出可能很大，只回显尾部）。
-fn tail_lines(s: &str, n: usize) -> String {
-    let lines: Vec<&str> = s.lines().collect();
-    let start = lines.len().saturating_sub(n);
-    lines[start..].join("\n")
-}
-
 /// 递归把目录写入 zip（顶层目录名为 `base`；与 install 的 zip-slip 防护兼容）。
 fn write_dir_to_zip<W: std::io::Write + std::io::Seek>(
     zip: &mut zip::ZipWriter<W>,
@@ -1061,7 +1054,8 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 插件依赖安装：用捆绑 Python 的 pip 把 `requirements.txt` 装进 `<插件>/vendor/`    /// （vendored 放置，main.py 启动时 sys.path 插入，见插件开发指南 §3.5 方案 A）。
+    /// 插件依赖安装：用捆绑 Python 的 pip 把 `requirements.txt` 装进 `<插件>/vendor/`
+    /// （vendored 放置，main.py 启动时 sys.path 插入，见插件开发指南 §3.5 方案 A）。
     /// 目标机没有 Python 也能自助补依赖（捆绑运行时 full 变体带 pip；需有网）。
     /// 返回 pip 输出尾部（stdout + stderr 合并，各最近若干行）；成功后前端应重载插件生效。
     pub fn install_deps(&mut self, app: &tauri::AppHandle, id: &str) -> Result<String, String> {
@@ -1096,61 +1090,9 @@ impl PluginManager {
             )?;
         let vendor = dir.join("vendor");
         std::fs::create_dir_all(&vendor).map_err(|e| format!("创建 vendor 目录失败: {e}"))?;
-        let tag = format!("{id}-{}", std::process::id());
-        let out_log = std::env::temp_dir().join(format!("tb-pip-{tag}.out.log"));
-        let err_log = std::env::temp_dir().join(format!("tb-pip-{tag}.err.log"));
-        let vendor_s = vendor.to_string_lossy().into_owned();
-        let req_s = req.to_string_lossy().into_owned();
-        // 输出落临时文件再读尾部：piped 缓冲写满会阻塞 pip（Windows 管道 ~4KB），
-        // 且进度条输出（\r 刷新）很大，没必要全量进内存。
-        let result = (|| -> Result<bool, String> {
-            let out = std::fs::File::create(&out_log).map_err(|e| format!("创建日志文件失败: {e}"))?;
-            let err = std::fs::File::create(&err_log).map_err(|e| format!("创建日志文件失败: {e}"))?;
-            let mut child = std::process::Command::new(&python)
-                .args([
-                    "-m",
-                    "pip",
-                    "install",
-                    "--disable-pip-version-check",
-                    "--no-input",
-                    "--target",
-                    &vendor_s,
-                    "-r",
-                    &req_s,
-                ])
-                .current_dir(&dir)
-                .stdout(std::process::Stdio::from(out))
-                .stderr(std::process::Stdio::from(err))
-                .spawn()
-                .map_err(|e| format!("启动 pip 失败: {e}"))?;
-            let deadline = Instant::now() + PIP_TIMEOUT;
-            loop {
-                if let Some(status) =
-                    child.try_wait().map_err(|e| format!("等待 pip 失败: {e}"))?
-                {
-                    return Ok(status.success());
-                }
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(format!(
-                        "pip install 超过 {} 秒仍未完成，已终止（网络慢可重试）",
-                        PIP_TIMEOUT.as_secs()
-                    ));
-                }
-                std::thread::sleep(Duration::from_millis(300));
-            }
-        })();
-        let tail = |p: &std::path::Path| -> String {
-            std::fs::read_to_string(p)
-                .map(|s| tail_lines(&s, 40))
-                .unwrap_or_default()
-        };
-        let out_tail = tail(&out_log);
-        let err_tail = tail(&err_log);
-        let _ = std::fs::remove_file(&out_log);
-        let _ = std::fs::remove_file(&err_log);
-        match result {
+        let (pip, out_tail, err_tail) =
+            super::deps::run_pip_install(&python, &req, &vendor, &dir);
+        match pip {
             Ok(true) => {
                 crate::core::log::info(&format!("[plugins] {id} 依赖安装成功（{vendor:?}）"));
                 let mut out = String::new();

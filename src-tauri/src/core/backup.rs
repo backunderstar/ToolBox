@@ -535,6 +535,63 @@ pub fn spawn_auto(config_dir: String) {
     });
 }
 
+/* ---------------- Tauri 命令层（薄封装：作用域校验 + 阻塞线程池） ---------------- */
+
+/// 立即备份当前工作区（设置页「立即备份」）。
+#[tauri::command]
+pub async fn cmd_backup_now(app: tauri::AppHandle, vault: String) -> Result<BackupInfo, String> {
+    // 安全（S1c）：备份会读取并复制 vault 全量内容，作用域必须绑定已配置工作区
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
+    let cfg = crate::core::app::app_config_dir(&app)?;
+    // 全量复制是重 IO：放阻塞线程池，避免冻结主线程（同步命令在主线程执行）
+    tauri::async_runtime::spawn_blocking(move || backup_now_cmd(&cfg, &vault))
+        .await
+        .map_err(|e| format!("备份任务异常: {e}"))?
+}
+
+/// 读取备份配置（设置页「自动备份」卡片）。
+#[tauri::command]
+pub fn cmd_backup_config_get(app: tauri::AppHandle) -> Result<BackupConfig, String> {
+    let cfg = crate::core::app::app_config_dir(&app)?;
+    Ok(backup_config_get(&cfg))
+}
+
+/// 写入备份配置（含钳制；设置页保存）。
+#[tauri::command]
+pub fn cmd_backup_config_set(
+    app: tauri::AppHandle,
+    config: BackupConfig,
+) -> Result<(), String> {
+    let cfg = crate::core::app::app_config_dir(&app)?;
+    backup_config_set(&cfg, config)
+}
+
+/// 列出工作区备份（设置页选择恢复点）。
+#[tauri::command]
+pub async fn cmd_backup_list(app: tauri::AppHandle, vault: String) -> Result<Vec<BackupEntry>, String> {
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
+    // 递归 stat 全部备份目录是重 IO：放阻塞线程池
+    tauri::async_runtime::spawn_blocking(move || backup_list(&vault))
+        .await
+        .map_err(|e| format!("读取备份列表异常: {e}"))
+}
+
+/// 恢复到指定备份点（两阶段：先复制到暂存目录校验源完整再覆盖）。
+#[tauri::command]
+pub async fn cmd_backup_restore(
+    app: tauri::AppHandle,
+    vault: String,
+    name: String,
+) -> Result<BackupInfo, String> {
+    // 恢复会向 vault 覆盖写入，同样绑定已配置工作区
+    crate::core::vault::ensure_vault_matches(&app, &vault)?;
+    let cfg = crate::core::app::app_config_dir(&app)?;
+    // 恢复 = 全量复制 vault（两遍）：放阻塞线程池
+    tauri::async_runtime::spawn_blocking(move || restore_backup(&cfg, &vault, &name))
+        .await
+        .map_err(|e| format!("恢复任务异常: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
