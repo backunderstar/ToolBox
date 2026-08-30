@@ -278,6 +278,11 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
     `svg` 开关（插件用 PNG-only，CLI 默认双格式不变）；完整性校验 `_png_ready`（PNG
     IEND 块结尾）；旧 `.svg`/`.svg.failed` 缓存已清理。协议测试同步改 PNG data URL
     断言（13 项全过）。此经验已写进指南 §3.9（"给前端的图用 PNG"）。
+  - SVG 彻底删除（2026-09）：确认插件只用 PNG 后，viz.py 删掉 `with_png`/`svg` 参数与
+    `.svg` 输出（`_save` 统一只存 PNG）；config/cli 的 `render_svg` 改名 `render_png`
+    （原 CLI `--render-svg` flag 本就冗余——默认 True 总是渲染）。仓库内已无 `.svg`
+    输出代码（仅 viz.py 头注释保留历史说明）；vendored pytest 31 / protocol_test 13
+    全过，CLI `--render-png` 冒烟通过。
 
 ---
 

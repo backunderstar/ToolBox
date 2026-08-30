@@ -136,5 +136,7 @@ python <ToolBox>/templates/external-plugin/test/mock-host.py . `
 原项目改动后按此同步：重拷 `probe_layer/` 与 `test/probe_tests/` → 重新加钩子
 （`pipeline.run_once/run` 的 `on_progress/cancel_event`、`layer_packing` 的
 `on_progress/cancel_event`、`optimizer.optimize_layering` 的 `on_progress/cancel_event`）
+→ 重打 **viz.py 本地改版**（插件只输出 PNG 不输出 SVG：SVG 大图 DOM 在宿主 WebView2
+光栅化慢，见 viz.py 头注释；CLI 侧 `render_svg` 已改名 `render_png`）
 → `pnpm build-external-ui` → 重跑 §5 测试。**保持 `pipeline.run(data, cfg)` 等接口不动**，
 插件壳只面向这三个面。

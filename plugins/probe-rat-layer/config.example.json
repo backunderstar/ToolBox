@@ -29,6 +29,6 @@
   "incremental_repair": true,
   "out_dir": "out",
   "units_out": "mm",
-  "render_svg": true,
+  "render_png": true,
   "render_congestion": false
 }

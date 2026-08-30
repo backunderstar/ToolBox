@@ -48,7 +48,7 @@ class LayeringConfig:
     # —— 输出 ——
     out_dir: str = "out"
     units_out: str = "mm"
-    render_svg: bool = True
+    render_png: bool = True
     render_congestion: bool = False
 
     def to_dict(self) -> dict:

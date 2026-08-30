@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sa-restarts", type=int, default=None,
                    help="SA 多起点次数（默认 1）")
     p.add_argument("--feedback", help="Allegro 布线反馈文件（闭环迭代）")
-    p.add_argument("--render-svg", action="store_true", help="渲染图（PNG+SVG）")
+    p.add_argument("--render-png", action="store_true", help="渲染图（PNG，默认已开）")
     p.add_argument("--render-congestion", action="store_true", help="渲染拥塞热力图")
     args = p.parse_args(argv)
 
@@ -55,8 +55,8 @@ def main(argv: list[str] | None = None) -> int:
                      ("sa_restarts", args.sa_restarts)):
         if val is not None:
             cfg = dataclasses.replace(cfg, **{fld: val})
-    if args.render_svg:
-        cfg = dataclasses.replace(cfg, render_svg=True)
+    if args.render_png:
+        cfg = dataclasses.replace(cfg, render_png=True)
     if args.render_congestion:
         cfg = dataclasses.replace(cfg, render_congestion=True)
 
@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"net 分层 CSV: {csv_net}")
     print(f"层统计 CSV: {csv_stat}")
 
-    if cfg.render_svg:
+    if cfg.render_png:
         wire_by_id = {w.wire_id: w for w in data.wires}
         viz.render_all(result, wire_by_id, data.keepouts, args.out, cfg)
     print(f"输出目录: {args.out}")

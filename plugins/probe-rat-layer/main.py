@@ -698,14 +698,12 @@ def _render_one(job_id: str, kind: str) -> str:
 
     # 注意：viz 各渲染函数内部自带 out_dir/img 拼接（Rat-layer 新输出结构），
     # 这里传 job 根目录，输出落到 <job>/img/；_render_manual 自己写，直接传 img_dir。
-    # 插件只要 PNG（svg=False）：浏览器解码位图快，SVG 大图 DOM 光栅化是性能坑。
+    # viz 本地改版只输出 PNG（SVG 大图 DOM 在 WebView2 光栅化慢，见 viz.py 头注释）。
     job_root = _job_dir(job_id)
     if kind == "overview":
-        return _viz().render_overview(lite, wire_by_id, zones, job_root,
-                                      with_png=True, svg=False)
+        return _viz().render_overview(lite, wire_by_id, zones, job_root)
     if kind == "rose":
-        return _viz().render_rose(lite, wire_by_id, job_root, cfg,
-                                  with_png=True, svg=False)
+        return _viz().render_rose(lite, wire_by_id, job_root, cfg)
     if kind == "manual":
         # 需人工 route 的线：按 manual_route_nets（net 名）从几何里过滤
         manual_nets = set(res.get("manual_route_nets", []))
@@ -718,8 +716,7 @@ def _render_one(job_id: str, kind: str) -> str:
         li = next((l for l in layers if str(l.layer_index) == idx), None)
         if li is None:
             raise ValueError(f"层不存在: {kind}")
-        return _viz().render_layer(li, wire_by_id, zones, conflicts, job_root,
-                                   with_png=True, svg=False)
+        return _viz().render_layer(li, wire_by_id, zones, conflicts, job_root)
     raise ValueError(f"未知渲染类型: {kind}")
 
 # ---------- 核心 API（仅在处理 call 期间可用） ----------
