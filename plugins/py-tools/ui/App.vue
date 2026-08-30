@@ -143,9 +143,15 @@ const STAT_LABELS: [string, string][] = [
         <span class="py-progress-percent">{{ progress.percent }}%</span>
         <span class="py-progress-msg">{{ progress.message }}</span>
       </div>
-      <ul v-if="eventLog.length" class="py-events" aria-label="事件流">
+      <TransitionGroup
+        v-if="eventLog.length"
+        tag="ul"
+        name="py-list"
+        class="py-events"
+        aria-label="事件流"
+      >
         <li v-for="(e, i) in eventLog.slice(-6).reverse()" :key="i" class="py-event">{{ e }}</li>
-      </ul>
+      </TransitionGroup>
     </section>
   </div>
 </template>
@@ -419,5 +425,20 @@ const STAT_LABELS: [string, string][] = [
   font-size: 11px;
   line-height: 1.7;
   color: var(--fg-muted);
+}
+/* 事件流条目过渡（TransitionGroup）：淡入 + 位移 */
+.py-list-enter-active,
+.py-list-leave-active {
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
+}
+.py-list-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.py-list-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>

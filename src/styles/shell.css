@@ -247,6 +247,12 @@
   border-right: 1px solid var(--border);
   background: var(--bg-soft);
   overflow-y: auto;
+  /* 折叠/展开宽度与内边距过渡；背景/边框随主题渐变 */
+  transition:
+    width var(--dur) var(--ease),
+    padding var(--dur) var(--ease),
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .nav-group {

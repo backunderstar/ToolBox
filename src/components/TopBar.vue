@@ -157,36 +157,38 @@ function onKeyDown(e: KeyboardEvent): void {
       />
       <kbd>Ctrl K</kbd>
       <!-- 全局搜索结果下拉：文件名匹配优先（mtime 降序）；source 标记插件提供者命中 -->
-      <div v-if="searchEnabled && query.trim()" class="search-dropdown">
-        <div v-if="searching" class="search-hint">搜索中…</div>
-        <template v-else-if="results !== null">
-          <div v-if="results.length === 0" class="search-hint">无结果</div>
-          <template v-else>
-            <!-- 结果截断：全文搜索可轻易上百条，全量渲染会让下拉 DOM 爆炸 -->
-            <button
-              v-for="(r, i) in visibleResults"
-              :key="`${r.source ?? 'file'}:${r.path}`"
-              class="search-item"
-              :class="{ active: i === activeIdx }"
-              @click="onOpenResult(r.path)"
-              @mouseenter="activeIdx = i"
-              :title="r.snippet"
-            >
-              <span class="search-item-name">{{ r.filename }}</span>
-              <span class="search-item-path">{{ r.path }}</span>
-              <span v-if="r.mtime" class="search-item-time">{{ formatRelTime(r.mtime) }}</span>
-              <span v-if="r.source" class="badge badge-provider">{{ r.source }}</span>
-            </button>
-            <div class="search-meta">
-              {{
-                results.length > MAX_RESULTS
-                  ? `共 ${results.length} 条，仅显示前 ${MAX_RESULTS} 条（继续输入以缩小范围）`
-                  : `共 ${results.length} 条结果`
-              }}
-            </div>
+      <Transition name="fade-slide">
+        <div v-if="searchEnabled && query.trim()" class="search-dropdown">
+          <div v-if="searching" class="search-hint">搜索中…</div>
+          <template v-else-if="results !== null">
+            <div v-if="results.length === 0" class="search-hint">无结果</div>
+            <template v-else>
+              <!-- 结果截断：全文搜索可轻易上百条，全量渲染会让下拉 DOM 爆炸 -->
+              <button
+                v-for="(r, i) in visibleResults"
+                :key="`${r.source ?? 'file'}:${r.path}`"
+                class="search-item"
+                :class="{ active: i === activeIdx }"
+                @click="onOpenResult(r.path)"
+                @mouseenter="activeIdx = i"
+                :title="r.snippet"
+              >
+                <span class="search-item-name">{{ r.filename }}</span>
+                <span class="search-item-path">{{ r.path }}</span>
+                <span v-if="r.mtime" class="search-item-time">{{ formatRelTime(r.mtime) }}</span>
+                <span v-if="r.source" class="badge badge-provider">{{ r.source }}</span>
+              </button>
+              <div class="search-meta">
+                {{
+                  results.length > MAX_RESULTS
+                    ? `共 ${results.length} 条，仅显示前 ${MAX_RESULTS} 条（继续输入以缩小范围）`
+                    : `共 ${results.length} 条结果`
+                }}
+              </div>
+            </template>
           </template>
-        </template>
-      </div>
+        </div>
+      </Transition>
     </div>
 
     <div class="spacer" />

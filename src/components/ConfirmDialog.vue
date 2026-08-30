@@ -73,28 +73,30 @@ function onOverlayKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <div
-    v-if="open"
-    class="confirm-overlay"
-    @click="onCancel"
-    @keydown="onOverlayKeydown"
-  >
+  <Transition name="modal">
     <div
-      ref="dialogRef"
-      class="confirm-dialog"
-      role="alertdialog"
-      aria-modal="true"
-      :aria-label="title"
-      @click.stop
+      v-if="open"
+      class="confirm-overlay"
+      @click="onCancel"
+      @keydown="onOverlayKeydown"
     >
-      <h3 class="confirm-title">{{ title }}</h3>
-      <p class="confirm-message">{{ message }}</p>
-      <div class="confirm-actions">
-        <button ref="cancelRef" class="btn" @click="onCancel">{{ cancelText }}</button>
-        <button :class="danger ? 'btn btn-danger' : 'btn'" @click="onConfirm">
-          {{ confirmText }}
-        </button>
+      <div
+        ref="dialogRef"
+        class="confirm-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        :aria-label="title"
+        @click.stop
+      >
+        <h3 class="confirm-title">{{ title }}</h3>
+        <p class="confirm-message">{{ message }}</p>
+        <div class="confirm-actions">
+          <button ref="cancelRef" class="btn" @click="onCancel">{{ cancelText }}</button>
+          <button :class="danger ? 'btn btn-danger' : 'btn'" @click="onConfirm">
+            {{ confirmText }}
+          </button>
+        </div>
       </div>
     </div>
-  </div>
+  </Transition>
 </template>

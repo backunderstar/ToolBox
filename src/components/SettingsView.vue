@@ -455,13 +455,15 @@ function removeCustom(id: string): void {
               :class="{ open: expandedPluginSettings === p.id }"
             />
           </button>
-          <div v-if="expandedPluginSettings === p.id" class="plugin-settings-pane">
-            <PluginUiView
-              :plugin-id="p.id"
-              :entry="p.settings ?? 'ui/settings.js'"
-              :reg-key="`settings:${p.id}`"
-            />
-          </div>
+          <Transition name="fade-slide">
+            <div v-if="expandedPluginSettings === p.id" class="plugin-settings-pane">
+              <PluginUiView
+                :plugin-id="p.id"
+                :entry="p.settings ?? 'ui/settings.js'"
+                :reg-key="`settings:${p.id}`"
+              />
+            </div>
+          </Transition>
         </div>
       </section>
 

@@ -307,22 +307,24 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
       </div>
     </transition>
     <!-- 关闭主窗口询问框（首次；勾选「不再询问」后按行为直接执行，设置页可重新开启） -->
-    <div v-if="closeAskOpen" class="confirm-overlay">
-      <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-label="关闭 ToolBox">
-        <h3 class="confirm-title">关闭 ToolBox？</h3>
-        <p class="confirm-message">
-          关闭后应用将退到系统托盘继续运行，可随时从托盘恢复窗口或退出。
-        </p>
-        <label class="close-ask-remember">
-          <input v-model="closeAskRemember" type="checkbox" />
-          <span>不再询问（记住选择，可在设置页重新开启）</span>
-        </label>
-        <div class="confirm-actions">
-          <button class="btn" @click="resolveCloseAsk('tray')">最小化到托盘</button>
-          <button class="btn" @click="resolveCloseAsk('quit')">退出应用</button>
+    <Transition name="modal">
+      <div v-if="closeAskOpen" class="confirm-overlay" role="presentation">
+        <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-label="关闭 ToolBox">
+          <h3 class="confirm-title">关闭 ToolBox？</h3>
+          <p class="confirm-message">
+            关闭后应用将退到系统托盘继续运行，可随时从托盘恢复窗口或退出。
+          </p>
+          <label class="close-ask-remember">
+            <input v-model="closeAskRemember" type="checkbox" />
+            <span>不再询问（记住选择，可在设置页重新开启）</span>
+          </label>
+          <div class="confirm-actions">
+            <button class="btn" @click="resolveCloseAsk('tray')">最小化到托盘</button>
+            <button class="btn" @click="resolveCloseAsk('quit')">退出应用</button>
+          </div>
         </div>
       </div>
-    </div>
+    </Transition>
 
     <div class="app" data-part="app">
       <TopBar
@@ -353,17 +355,21 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
           :on-toggle-group="toggleNavGroup"
         />
         <main class="main" data-part="main">
-          <WelcomeView
-            v-if="view === 'overview'"
-            :ping="pingInfo"
-            :theme-name="themeName"
-            :plugins="pluginCtx.state.plugins"
-            :on-open-example="() => nav.go('example')"
-            :on-open-plugins="() => nav.go('plugins')"
-          />
-          <PluginsView v-else-if="view === 'plugins'" />
-          <template v-else-if="view === 'settings'">
+          <!-- 视图切换过渡：mode="out-in" 先出后进，避免重叠；key 保证切换触发 -->
+          <Transition name="view" mode="out-in">
+            <WelcomeView
+              v-if="view === 'overview'"
+              :key="'overview'"
+              :ping="pingInfo"
+              :theme-name="themeName"
+              :plugins="pluginCtx.state.plugins"
+              :on-open-example="() => nav.go('example')"
+              :on-open-plugins="() => nav.go('plugins')"
+            />
+            <PluginsView v-else-if="view === 'plugins'" :key="'plugins'" />
             <SettingsView
+              v-else-if="view === 'settings'"
+              :key="'settings'"
               :theme-id="themeId"
               :on-set-theme-id="(id: string) => (themeId = id)"
               :ping="pingInfo"
@@ -371,15 +377,16 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
               :defs="navDefs"
               :on-nav-change="(c: NavConfig) => (navConfig = c)"
             />
-          </template>
-          <template v-else>
-            <!-- 未知视图（nav 声明但插件未启用/无自带前端）：明确占位 -->
-            <PluginUiView v-if="pluginView" :plugin-id="pluginView" />
-            <div v-else class="empty-state">
+            <PluginUiView
+              v-else-if="pluginView"
+              :key="pluginView"
+              :plugin-id="pluginView"
+            />
+            <div v-else :key="'missing'" class="empty-state">
               <h2>未找到页面</h2>
               <p>该视图不存在或对应插件未启用</p>
             </div>
-          </template>
+          </Transition>
         </main>
       </div>
       <StatusBar

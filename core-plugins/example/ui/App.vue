@@ -198,39 +198,41 @@ function fmtTime(iso: string): string {
 
     <section class="ex-panel ex-list-panel" aria-label="示例条目">
       <div class="ex-list" aria-live="polite">
-        <div v-if="!ready" class="ex-empty">加载中…</div>
-        <div v-else-if="vaultMissing" class="ex-empty">
-          请先在主窗口选择一个工作区，再使用示例列表
-        </div>
-        <div v-else-if="items.length === 0" class="ex-empty">
-          <p class="ex-empty-title">还没有条目</p>
-          <p class="ex-empty-sub">在顶部输入内容，回车或点「添加」创建第一条</p>
-        </div>
-        <div v-for="it in items" :key="it.id" class="ex-item" :class="{ done: it.done }">
-          <button
-            class="ex-check"
-            :class="{ on: it.done }"
-            :title="it.done ? '标记未完成' : '标记完成'"
-            :aria-label="it.done ? `标记未完成：${it.text}` : `标记完成：${it.text}`"
-            @click="toggle(it.id)"
-          >
-            <svg v-if="it.done" viewBox="0 0 16 16" width="11" height="11" fill="none" aria-hidden="true">
-              <path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-          <span class="ex-item-text">{{ it.text }}</span>
-          <span class="ex-item-time" :title="it.createdAt">{{ fmtTime(it.createdAt) }}</span>
-          <button
-            class="ex-del"
-            title="删除"
-            :aria-label="`删除条目：${it.text}`"
-            @click="remove(it.id)"
-          >
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
-              <path d="M3 5h10M6.5 5V3.5h3V5M5 5l.6 7h4.8l.6-7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </div>
+        <TransitionGroup tag="div" name="ex-list" class="ex-list-items">
+          <div v-if="!ready" key="loading" class="ex-empty">加载中…</div>
+          <div v-else-if="vaultMissing" key="no-vault" class="ex-empty">
+            请先在主窗口选择一个工作区，再使用示例列表
+          </div>
+          <div v-else-if="items.length === 0" key="empty" class="ex-empty">
+            <p class="ex-empty-title">还没有条目</p>
+            <p class="ex-empty-sub">在顶部输入内容，回车或点「添加」创建第一条</p>
+          </div>
+          <div v-for="it in items" :key="it.id" class="ex-item" :class="{ done: it.done }">
+            <button
+              class="ex-check"
+              :class="{ on: it.done }"
+              :title="it.done ? '标记未完成' : '标记完成'"
+              :aria-label="it.done ? `标记未完成：${it.text}` : `标记完成：${it.text}`"
+              @click="toggle(it.id)"
+            >
+              <svg v-if="it.done" viewBox="0 0 16 16" width="11" height="11" fill="none" aria-hidden="true">
+                <path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <span class="ex-item-text">{{ it.text }}</span>
+            <span class="ex-item-time" :title="it.createdAt">{{ fmtTime(it.createdAt) }}</span>
+            <button
+              class="ex-del"
+              title="删除"
+              :aria-label="`删除条目：${it.text}`"
+              @click="remove(it.id)"
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
+                <path d="M3 5h10M6.5 5V3.5h3V5M5 5l.6 7h4.8l.6-7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+        </TransitionGroup>
       </div>
       <div v-if="items.length > 0" class="ex-foot">
         <span>共 {{ items.length }} 条 · 完成 {{ doneCount }}</span>
@@ -491,10 +493,27 @@ function fmtTime(iso: string): string {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding: var(--space-2);
+}
+.ex-list-items {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: var(--space-2);
+}
+/* 条目增删过渡（TransitionGroup）：淡入 + 位移，只动 opacity/transform */
+.ex-list-enter-active,
+.ex-list-leave-active {
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
+}
+.ex-list-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.ex-list-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 .ex-empty {
   display: flex;

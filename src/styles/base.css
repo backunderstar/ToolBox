@@ -90,3 +90,68 @@ kbd {
 .fade-in {
   animation: rise 600ms var(--ease) both;
 }
+
+/* ============ 统一过渡动画（Vue <Transition> 用；只动 opacity/transform，
+   避免布局属性动画的抖动；时长对齐 --dur=200ms） ============ */
+
+/* 视图切换：淡入 + 轻微上移（mode="out-in"，先出后进） */
+.view-enter-active,
+.view-leave-active {
+  transition:
+    opacity 220ms var(--ease),
+    transform 220ms var(--ease);
+}
+.view-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.view-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* 模态（确认框/询问框）：遮罩淡入 + 对话框轻微缩放 */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 180ms var(--ease);
+}
+.modal-enter-active .confirm-dialog,
+.modal-leave-active .confirm-dialog {
+  transition:
+    transform 180ms var(--ease),
+    opacity 180ms var(--ease);
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+.modal-enter-from .confirm-dialog,
+.modal-leave-to .confirm-dialog {
+  transform: scale(0.96);
+  opacity: 0;
+}
+
+/* 面板/结果条（手风琴、错误条、下拉等）：淡入 + 4px 位移 */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
+}
+.fade-slide-enter-from,
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+/* 主题切换：外壳层与主要表面随主题渐变（避免瞬变刺眼） */
+body,
+.app,
+.topbar,
+.main,
+.statusbar {
+  transition:
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}

@@ -292,26 +292,30 @@ function confirmMessage(id: string): string {
     </div>
 
     <!-- 操作错误（重载/启停/安装依赖失败）：紧凑提示条，不挤占卡片列表 -->
-    <div v-if="actionError" class="action-bar action-bar-error">
-      <span class="action-bar-text">{{ actionError }}</span>
-      <button class="icon-btn sm" aria-label="关闭" @click="actionError = null">
-        <Icon name="trash" :size="12" />
-      </button>
-    </div>
+    <Transition name="fade-slide">
+      <div v-if="actionError" class="action-bar action-bar-error">
+        <span class="action-bar-text">{{ actionError }}</span>
+        <button class="icon-btn sm" aria-label="关闭" @click="actionError = null">
+          <Icon name="trash" :size="12" />
+        </button>
+      </div>
+    </Transition>
 
     <!-- 依赖安装结果：pip 输出尾部（成功或部分输出），可关闭 -->
-    <div v-if="depsResult" class="action-bar">
-      <div class="action-bar-body">
-        <p class="action-bar-title">
-          <strong>「{{ depsResult.id }}」依赖安装完成</strong>（装到
-          <code>vendor/</code>，插件已重新加载）。pip 输出：
-        </p>
-        <pre class="deps-output">{{ depsResult.output || "（无输出）" }}</pre>
+    <Transition name="fade-slide">
+      <div v-if="depsResult" class="action-bar">
+        <div class="action-bar-body">
+          <p class="action-bar-title">
+            <strong>「{{ depsResult.id }}」依赖安装完成</strong>（装到
+            <code>vendor/</code>，插件已重新加载）。pip 输出：
+          </p>
+          <pre class="deps-output">{{ depsResult.output || "（无输出）" }}</pre>
+        </div>
+        <button class="icon-btn sm" aria-label="关闭" @click="depsResult = null">
+          <Icon name="trash" :size="12" />
+        </button>
       </div>
-      <button class="icon-btn sm" aria-label="关闭" @click="depsResult = null">
-        <Icon name="trash" :size="12" />
-      </button>
-    </div>
+    </Transition>
 
     <template v-if="!vault.state.path">
       <div class="empty-state">
@@ -428,26 +432,28 @@ function confirmMessage(id: string): string {
     />
 
     <!-- 事件桥日志：进程插件实时推送的事件（Notification） -->
-    <div v-if="events.length > 0" class="plugin-events">
-      <div class="plugin-events-head">
-        <span>插件事件（实时）</span>
-        <button
-          class="icon-btn sm"
-          title="清空事件日志"
-          aria-label="清空事件日志"
-          @click="events = []"
-        >
-          <Icon name="trash" :size="12" />
-        </button>
-      </div>
-      <div class="plugin-events-list">
-        <div v-for="(e, i) in events.slice(-15).reverse()" :key="i" class="plugin-event">
-          <span class="plugin-event-time">{{ fmtTime(e.time) }}</span>
-          <span class="plugin-event-id">{{ e.pluginId }}</span>
-          <span class="plugin-event-name">{{ e.event }}</span>
-          <code class="plugin-event-data">{{ JSON.stringify(e.data) }}</code>
+    <Transition name="fade-slide">
+      <div v-if="events.length > 0" class="plugin-events">
+        <div class="plugin-events-head">
+          <span>插件事件（实时）</span>
+          <button
+            class="icon-btn sm"
+            title="清空事件日志"
+            aria-label="清空事件日志"
+            @click="events = []"
+          >
+            <Icon name="trash" :size="12" />
+          </button>
+        </div>
+        <div class="plugin-events-list">
+          <div v-for="(e, i) in events.slice(-15).reverse()" :key="i" class="plugin-event">
+            <span class="plugin-event-time">{{ fmtTime(e.time) }}</span>
+            <span class="plugin-event-id">{{ e.pluginId }}</span>
+            <span class="plugin-event-name">{{ e.event }}</span>
+            <code class="plugin-event-data">{{ JSON.stringify(e.data) }}</code>
+          </div>
         </div>
       </div>
-    </div>
+    </Transition>
   </div>
 </template>
