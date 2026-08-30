@@ -122,7 +122,9 @@ if (import.meta.env.DEV) {
       if (failed.length > 0) {
         console.error(`[failed-resources] ${failed.length} 个:\n${failed.join("\n")}`);
       } else {
-        console.error("[failed-resources] 无失败资源");
+        // 无失败资源 = 正常：用 info 而非 error，避免误导（历史写法用 console.error
+        // 输出"无失败资源"，日志级别像错误，实际是 dev 探针的正常结果）
+        console.info("[failed-resources] 无失败资源");
       }
     } catch {
       /* 忽略 */
