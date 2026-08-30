@@ -365,19 +365,36 @@ const selectedLayer = ref<number | null>(null);
 const svgText = ref<string | null>(null);
 const svgKind = ref("");
 const svgBusy = ref(false);
+const svgError = ref<string | null>(null);
 const viewerText = ref<string | null>(null);
 const viewerTitle = ref("");
+
+/** SVG 文本 → base64 data URL（<img> 展示；宿主 CSP img-src 允许 data:）。
+ * 不用 v-html 内联：matplotlib SVG 带 <?xml?>/<!DOCTYPE> 前缀，WebView2 解析不可靠。 */
+function svgToDataUrl(svg: string): string {
+  const bytes = new TextEncoder().encode(svg);
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return `data:image/svg+xml;base64,${btoa(bin)}`;
+}
+
+const svgUrl = computed(() => (svgText.value ? svgToDataUrl(svgText.value) : ""));
 
 async function renderImage(kind: string): Promise<void> {
   if (!jobId.value) return;
   svgBusy.value = true;
   svgText.value = null;
+  svgError.value = null;
   try {
     svgText.value = (await props.api.call("layer.render", { jobId: jobId.value, kind })) as string;
     svgKind.value = kind;
   } catch (e) {
     svgText.value = null;
-    logEvent(`渲染失败: ${e}`);
+    svgError.value = `渲染失败: ${e}`;
+    logEvent(svgError.value);
   } finally {
     svgBusy.value = false;
   }
@@ -792,12 +809,13 @@ onBeforeUnmount(() => {
           <p v-if="!layersDetail.length" class="prl-meta">（无信号层数据）</p>
         </div>
 
-        <div v-if="svgText || svgBusy" class="prl-card">
+        <div v-if="svgText || svgBusy || svgError" class="prl-card">
           <div class="prl-card-head">
             <h3>{{ svgKind }}（SVG，按需渲染）</h3>
             <span v-if="svgBusy" class="prl-meta">渲染中…（首次约 1.5s）</span>
           </div>
-          <div v-if="svgText" class="prl-svg" v-html="svgText" />
+          <div v-if="svgError" class="prl-error" role="alert">{{ svgError }}</div>
+          <div v-if="svgText" class="prl-svg"><img :src="svgUrl" alt="分层图" /></div>
         </div>
 
         <div class="prl-card">
@@ -1036,7 +1054,7 @@ onBeforeUnmount(() => {
 .prl-table tr:hover { background: var(--bg-soft); }
 .prl-table tr.active { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .prl-svg { border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; overflow: auto; max-height: 520px; }
-.prl-svg svg { width: 100%; height: auto; display: block; }
+.prl-svg img { width: 100%; height: auto; display: block; }
 .prl-file-list { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .prl-file-btn {
   padding: 5px 12px;
