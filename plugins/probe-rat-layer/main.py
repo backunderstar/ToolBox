@@ -71,9 +71,21 @@ _VIZ: "object | None" = None  # 惰性缓存：probe_layer.viz 模块（首次�
 
 
 def _viz():
-    """延迟加载 viz 模块（matplotlib 重依赖，只在渲染时 import 一次）。"""
+    """延迟加载 viz 模块（matplotlib 重依赖，只在渲染时 import 一次）。
+
+    MPLCONFIGDIR 隔离到 <插件>/cache/mpl：matplotlib 首次 import 会构建字体缓存
+    （写用户目录），若进程在构建中被 kill（宿主 30s 超时）缓存损坏会让下次 import
+    卡 30s+ → 崩溃循环（2026-09 实测踩过）。隔离后损坏只影响插件自身缓存，
+    且 import 前会清掉损坏残留。
+    """
     global _VIZ
     if _VIZ is None:
+        _mpl_dir = os.path.join(_PLUGIN_DIR, "cache", "mpl")
+        try:
+            os.makedirs(_mpl_dir, exist_ok=True)
+            os.environ["MPLCONFIGDIR"] = _mpl_dir
+        except OSError:
+            pass
         from probe_layer import viz  # noqa: E402
         _VIZ = viz
     return _VIZ
@@ -277,9 +289,11 @@ def _run_job(job_id: str, args: dict) -> None:
             _ACTIVE.update(state="done", stage="完成", percent=100.0,
                            message="完成", error=None)
         _emit("layer.done", {"jobId": job_id, "summary": summary})
-        # 完成后台预渲染全部图（用户点任何图都命中缓存，不用现场等渲染）
-        threading.Thread(target=_pre_render, args=(job_id,),
-                         daemon=True).start()
+        # ⚠️ 不做后台预渲染：预渲染线程与点击现场渲染并发首用 matplotlib，
+        # 会并发构建字体缓存导致损坏（宿主 30s 超时 kill 时缓存写坏 → 后续
+        # 每次重启 import matplotlib 卡 30s → 崩溃循环，2026-09 实测踩过）。
+        # 点击时现场渲染（LineCollection 批量画线，0.2-0.7s），文件缓存 +
+        # 前端缓存保证同一任务内二次点击秒开。
     except LayeringCancelled:
         with _STATE_LOCK:
             _JOBS[job_id].update(summary=None)
@@ -518,41 +532,6 @@ def cmd_render(job_id: str, kind: str) -> str:
         raise ValueError(f"渲染失败（无 SVG 输出）: {kind}")
     with open(svg_path, encoding="utf-8", errors="replace") as f:
         return f.read()
-
-
-def _pre_render(job_id: str) -> None:
-    """任务完成后的后台预渲染：全部图生成到 <job>/img/，用户点击直接命中缓存。
-
-    只渲染一次（缓存文件已存在则跳过）；失败静默（点击时 cmd_render 会现场补渲）。
-    每张图**独立**拿 _RENDER_LOCK（matplotlib 非线程安全）：预渲染期间用户点击
-    最多等"当前正在渲染的这一张"（0.3-1s），而不是等整批完成。
-    顺序：图层优先（用户最先点的是各层图），overview/rose/manual 殿后。
-    """
-    try:
-        res = json.load(open(os.path.join(_job_dir(job_id), "result.json"), encoding="utf-8"))
-        kinds = [f"layer_{li['layer']}" for li in res.get("layers", [])
-                 if li.get("kind") == "signal"]
-        kinds += ["overview", "rose"]
-        if res.get("manual_route_nets"):
-            kinds.append("manual")
-        for kind in kinds:
-            # 已被现场渲染/之前预渲染过的图跳过（文件缓存命中检查在 cmd_render，
-            # 这里以文件存在为准，避免重复渲染同一张）
-            svg_path = os.path.join(_job_dir(job_id), "img", _kind_svg_name(kind))
-            if svg_path and os.path.isfile(svg_path):
-                continue
-            _viz()  # matplotlib 预热放锁外
-            with _RENDER_LOCK:
-                try:
-                    base = _render_one(job_id, kind, with_png=False)
-                except Exception as e:  # noqa: BLE001
-                    sys.stderr.write("[rat-layer] 预渲染 %s 失败: %s\n" % (kind, e))
-                    continue
-                if base and not os.path.isfile(base + ".svg"):
-                    # 该 kind 无输出（如 rose 空），跳过
-                    continue
-    except Exception as e:  # noqa: BLE001
-        sys.stderr.write("[rat-layer] 预渲染失败: %s\n" % e)
 
 
 def _kind_svg_name(kind: str) -> str | None:
