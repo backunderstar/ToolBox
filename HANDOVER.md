@@ -269,6 +269,11 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
   build-external-ui 构建**（会把 index.js/style.css 复制进源码目录污染 lint；
   用 build:core，产物只在 target/plugin-ui + 部署到应用目录）。
 - 外部插件的 `plugins/*/ui/index.js`、`style.css` 是 gitignored 产物，构建生成（勿手改/勿提交）。
+- **ui 样式必须写在 .vue 的 `<style>` 块（或 JS `import` 的 css）**，Vite 才会提取为
+  style.css 产物并随构建/同步部署；**手写独立 ui/style.css 若不被 import，构建产物里
+  没有它 → 插件界面裸奔**（8/30 实测：core-example 曾手写 style.css，部署目录始终缺
+  style.css、界面无布局。修复：样式并入 App.vue `<style>` 块、删除独立文件；
+  py-tools 同法，两个示例界面已按宿主 tokens 统一升级）。
 
 ### 6.4 依赖 / 工具链
 
