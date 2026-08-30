@@ -49,16 +49,6 @@ pub fn set_level(name: &str) {
     LEVEL.store(lvl, Ordering::Relaxed);
 }
 
-/// 当前日志级别名。
-pub fn level_name() -> &'static str {
-    match LEVEL.load(Ordering::Relaxed) {
-        0 => "debug",
-        2 => "warn",
-        3 => "error",
-        _ => "info",
-    }
-}
-
 /// 日历日序号（civil days since 1970-01-01；days-from-civil 算法，UTC 近似。
 /// 清理粒度是按天，本地/UTC 偏差一天内无碍）。
 fn days_from_civil(y: i64, m: u64, d: u64) -> i64 {

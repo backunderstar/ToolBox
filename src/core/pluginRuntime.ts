@@ -8,7 +8,10 @@
  *   → 宿主注入统一 api 桥（call → plugin_call；on → plugin-event 过滤；context）
  */
 import { listen } from "@tauri-apps/api/event";
-import { pluginCall } from "./api";
+import { pluginCall, pluginLog } from "./api";
+
+/** 日志级别（插件日志统一通道：debug/info/warn/error，落盘 + dev 终端） */
+export type PluginLogLevel = "debug" | "info" | "warn" | "error";
 
 /** 宿主导航桥（主窗口插件界面用：跨视图跳转） */
 export interface PluginNavBridge {
@@ -31,6 +34,9 @@ export interface PluginBridgeApi {
   call: (command: string, args?: unknown, targetPluginId?: string) => Promise<unknown>;
   /** 订阅 plugin-event（默认本插件；可指定 targetPluginId 订阅其他插件的事件），返回取消函数 */
   on: (event: string, cb: (data: unknown) => void, targetPluginId?: string) => () => void;
+  /** 写宿主运行日志（落盘 logs/ + dev 终端，来源 [plugin:<id>]；level 缺省 info）。
+   *  process 插件也可用核心 API `log`（Python call_core("log", {message, level})）。 */
+  log: (level: PluginLogLevel, message: string) => void;
   /** 宿主注入的上下文：vault 路径 + 扩展字段（如 activePath / activeContent） */
   context: { vault: string | null } & Record<string, unknown>;
   /** 宿主导航（主窗口可用；浮窗等独立窗口为 undefined） */
@@ -86,6 +92,11 @@ export function pruneLocalCommands(keepIds: ReadonlySet<string>): void {
   }
 }
 
+/** 是否运行在 Tauri 环境（浏览器 mock 下无 __TAURI_INTERNALS__，插件日志回退 console） */
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 /** 构造统一 api 桥（vault 由调用方提供 getter） */
 export function buildBridgeApi(
   pluginId: string,
@@ -95,6 +106,13 @@ export function buildBridgeApi(
   const vault = () => getVault();
   return {
     pluginId,
+    log: (level, message) => {
+      if (isTauriRuntime()) {
+        pluginLog(pluginId, level, message).catch(() => undefined);
+      } else {
+        console.log(`[plugin:${pluginId}] ${level}:`, message);
+      }
+    },
     call: (command, args, targetPluginId) => {
       // webview 插件本地命令优先（同插件调用；targetPluginId 指定其他插件时走桥）
       if (!targetPluginId || targetPluginId === pluginId) {

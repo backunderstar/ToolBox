@@ -140,7 +140,11 @@ function buildApi(pluginId: string): PluginApi {
         if (set) set.forEach((cb) => void cb(data));
       },
     },
-    log: (...args) => console.log(`[plugin:${pluginId}]`, ...args),
+    log: (...args) => {
+      console.log(`[plugin:${pluginId}]`, ...args);
+      // 同步落盘宿主运行日志（webview 插件 info 级；来源 [plugin:<id>]）
+      bridge.log("info", args.map(String).join(" "));
+    },
     call: bridge.call,
     on: bridge.on,
     context: bridge.context,

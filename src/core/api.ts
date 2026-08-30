@@ -120,6 +120,9 @@ export const logsPath = () => invoke<string>("logs_path");
 export const logsTail = (maxLines: number) => invoke<string>("logs_tail", { maxLines });
 export const logsClear = () => invoke<void>("logs_clear");
 export const logLevelSet = (level: string) => invoke<void>("log_level_set", { level });
+/** 插件日志统一通道（webview 插件 / 插件 UI 用；level: debug|info|warn|error） */
+export const pluginLog = (pluginId: string, level: string, message: string) =>
+  invoke<void>("plugin_log", { pluginId, level, message });
 
 /* ---- 宿主文件服务（vault 内文件列表/读写/增删改；系统级框架能力，
    插件 webview 桥 fs.readText/writeText 与宿主数据层共用同一封装） ---- */

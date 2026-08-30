@@ -206,6 +206,23 @@ fn log_level_set(app: tauri::AppHandle, level: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 插件日志统一通道（webview 插件 / 插件自带前端 UI 用；process 用核心 API log，
+/// native 用 TbHostApi::log）。来源前缀 [plugin:<id>]，按 level 分级落盘。
+#[tauri::command]
+fn plugin_log(plugin_id: String, level: String, message: String) -> Result<(), String> {
+    if !crate::plugins::manager::is_safe_plugin_id(&plugin_id) {
+        return Err(format!("非法插件 id: {plugin_id}"));
+    }
+    let line = format!("[plugin:{plugin_id}] {message}");
+    match level.as_str() {
+        "debug" => crate::core::log::debug(&line),
+        "warn" => crate::core::log::warn(&line),
+        "error" => crate::core::log::error(&line),
+        _ => crate::core::log::info(&line),
+    }
+    Ok(())
+}
+
 /// 设置托盘图标开关：运行时显示/隐藏托盘（设置页开关调用）。
 #[tauri::command]
 fn tray_set_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
@@ -464,6 +481,7 @@ pub fn run() {
             logs_tail,
             logs_clear,
             log_level_set,
+            plugin_log,
             float_toggle,
             float_set_locked,
             set_window_caption_color,

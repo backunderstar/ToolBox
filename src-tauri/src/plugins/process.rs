@@ -313,9 +313,22 @@ impl ProcessPlugin {
                 entries.sort_by_key(|v| v["path"].as_str().unwrap_or("").to_string());
                 Ok(json!(entries))
             }
+            // ---- 插件日志（权限 log）----
+            // 参数 {message, level?}（level: debug|info|warn|error，缺省 info）→ 宿主
+            // 运行日志（logs/ 按天落盘 + dev 终端），来源前缀 [plugin:<id>]。
             "log" => {
                 let msg = params.get("message").map(|v| v.to_string()).unwrap_or_default();
-                crate::core::log::info(&format!("[plugin:{}] {msg}", self.plugin_id));
+                let level = params
+                    .get("level")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("info");
+                let line = format!("[plugin:{}] {msg}", self.plugin_id);
+                match level {
+                    "debug" => crate::core::log::debug(&line),
+                    "warn" => crate::core::log::warn(&line),
+                    "error" => crate::core::log::error(&line),
+                    _ => crate::core::log::info(&line),
+                }
                 Ok(Value::Null)
             }
             // ---- 通知（宿主 UI 横幅；权限 notify）----

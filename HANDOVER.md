@@ -155,6 +155,10 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   跨天首写时 prune，days-from-civil 按日比较）；新命令 logs_path/logs_tail/logs_clear/
   log_level_set；设置页「日志」卡片（级别下拉 + 目录打开 + 应用内查看器：当天尾部 400 行、
   级别过滤、刷新、清空）；manager.rs 补插件安装/卸载/启停/恢复日志
+- **插件日志统一通道（宿主留接口）**：process 核心 API `log` 加 `level` 参数（debug/info/
+  warn/error）；新命令 `plugin_log`（webview 插件与插件 UI 用，桥 `api.log(level, msg)`，
+  来源前缀 [plugin:<id>]）；webview 插件 `api.log` 由纯 console 改为落盘 + console 双写；
+  native 已有 TbHostApi::log。各形态日志接口/级别/查看位置见 DEVELOPER.md §5.1
 - 验证：cargo 59（+float 声明编译）/ lint 0 / build ✓ / build:core ✓（float.js 已部署）
 
 ---

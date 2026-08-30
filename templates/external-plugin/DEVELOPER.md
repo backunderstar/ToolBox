@@ -67,6 +67,10 @@ interface PluginBridgeApi {
    *  返回取消函数——组件卸载时必须调用，防泄漏 */
   on: (event: string, cb: (data: unknown) => void, targetPluginId?: string) => () => void;
 
+  /** 写宿主运行日志（落盘 logs/ + dev 终端，来源 [plugin:<id>]；
+   *  level: debug|info|warn|error）——UI 与 webview 插件用；process 用核心 API log */
+  log: (level: "debug" | "info" | "warn" | "error", message: string) => void;
+
   /** 宿主上下文快照：当前工作区等（随工作区切换更新） */
   context: {
     vault: string | null;              // 当前工作区绝对路径（未选为 null）
@@ -135,7 +139,7 @@ api.nav?.go("plugins");
 | `fs.readText` | `{path}`（vault 相对） | `fs:read:vault` | 读工作区内文件 |
 | `fs.writeText` | `{path, content}` | `fs:write:vault` | 写工作区内文件（自动建父目录） |
 | `fs.listDir` | `{dir}`（空=vault 根） | `fs:read:vault` | 列目录；返回 `[{name,path,isDir,size,mtime}]` |
-| `log` | `{message}` | `log` | 写宿主日志（dev 终端可见） |
+| `log` | `{message, level?}`（level: debug/info/warn/error，缺省 info） | `log` | 写宿主运行日志（logs/ 落盘 + dev 终端，来源 `[plugin:<id>]`） |
 | `notify` | `{title?, body?}` | `notify` | 宿主右上角横幅（5s 自动消失） |
 | `open` | `{path}`（vault 相对） | `open` | 用系统默认应用打开 |
 | `clipboard.read` | — | `clipboard` | 读剪贴板文本 |
@@ -175,6 +179,36 @@ await api.call("fileList");
   收到 `{action, source}`（`source` = `topbar | tray | settings`）。非 webview 插件还可实现
   约定命令 `plugin.action {action, source}`（宿主也会调用，未实现则忽略）。
 - **本插件 UI → 其他插件**：`api.on(event, cb, targetPluginId)` 跨插件订阅。
+
+### 5.1 插件日志（行为日志，各形态统一通道）
+
+**所有插件形态都能写宿主运行日志**（`logs/` 按天落盘 + dev 终端，来源前缀 `[plugin:<id>]`，
+级别 debug/info/warn/error，随宿主日志级别过滤，保留 7 天自动清理）：
+
+| 形态 | 写法 | 权限 |
+|---|---|---|
+| **process（Python）** | `call_core("log", {"message": "...", "level": "warn"})` | `log` |
+| process（Python）stderr | `print("...", file=sys.stderr)`（自动捕获为 info，无需权限） | — |
+| **native（cdylib）** | `tb_sdk::log("...")`（TbHostApi 回调） | — |
+| **webview 插件** | `api.log("info", "...")` | — |
+| **插件自带前端 UI** | `api.log("error", "...")`（桥自带） | — |
+
+示例（Python）：
+
+```python
+call_core("log", {"message": "开始处理", "level": "info"})
+call_core("log", {"message": f"失败: {err}", "level": "error"})
+```
+
+示例（前端 UI / webview）：
+
+```ts
+api.log("debug", "按钮被点击");
+api.log("warn", "结果为空");
+```
+
+> 日志查看：设置页「日志」卡片（应用内查看器 + 级别过滤 + 打开目录 + 清空）；
+> 级别阈值由宿主全局设置控制（低于阈值不落盘）。
 
 ---
 
