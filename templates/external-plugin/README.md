@@ -51,9 +51,22 @@ npm run build          # → ui/index.js + style.css
 - **目录不入库**：`vendor/`、`env/`、`.venv/`、`ui/index.js`、`ui/style.css` 都是
   本地生成物，分发/分享时只带源码 + plugin.json（依赖靠「安装依赖」按钮装）。
 
+## 模板演示了什么
+
+| 命令 / 能力 | 说明 | 涉及知识点 |
+|---|---|---|
+| `hello` | 普通命令（参数 + 返回值） | JSON-RPC call |
+| `eventDemo` | 边处理边推送 `progress` 事件 | Python notify → `api.on("progress")` |
+| `fileList` | 列 vault 内全部 .md | 核心 API `fs.listDir`（权限 `fs:read:vault`） |
+| `notifyDemo` | 宿主右上角横幅通知 | 核心 API `notify`（权限 `notify`） |
+| 宿主搜索卡片 | 全文搜索 | 前端 `api.host.search`（FTS + 搜索提供者） |
+
+界面里每张卡片对应一段"可抄的代码"（调命令 / 收事件 / 读 context / host.search）。
+
 ## 参考
 
 - **[DEVELOPER.md](DEVELOPER.md) —— 宿主接口全量参考**：可调用的方法（桥 API / 核心 API /
-  事件）、plugin.json 字段全量、可复用 CSS 变量（tokens 全量）、推荐实现方式、协议速查、调试。
+  事件）、plugin.json 字段全量、可复用 CSS 变量（tokens 全量）+ 宿主全局 class、推荐实现方式、
+  协议速查、调试。
 - 协议与 API 全量说明：ToolBox 仓库 `docs/插件开发指南.md`（§3 process 插件 / §2.3 自带前端 / §3.8 界面）
 - 更多示例：ToolBox 仓库 `plugins/`（py-tools / py-jmes / csv-tool）与 `core-plugins/example`

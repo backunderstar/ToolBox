@@ -5,7 +5,7 @@
   "description": "外部插件模板：Python 进程（JSON-RPC）+ 自带前端界面（Vue 3）。改这里与代码后按 README 构建安装",
   "runtime": "process",
   "command": ["python", "main.py"],
-  "permissions": ["log"],
+  "permissions": ["fs:read:vault", "log", "notify"],
   "ui": { "entry": "ui/index.js" },
   "nav": [
     {

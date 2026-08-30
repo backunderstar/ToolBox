@@ -141,6 +141,25 @@ api.nav?.go("plugins");
 > 注意：**不是安全沙箱**——process 插件进程本身可做任意 OS 操作；权限门控的只是"经宿主转发的核心 API"。
 > 只安装可信来源的插件。
 
+**核心 API 调用完整示例**（Python 端 → 宿主，端到端）：
+
+```python
+# 插件命令内：列出 vault 根目录（权限 fs:read:vault）
+def list_root():
+    entries = call_core("fs.listDir", {"dir": ""})   # 见模板 main.py 的 call_core
+    return [e["name"] for e in entries if e["isDir"]]
+
+# 插件命令内：写工作区文件（权限 fs:write:vault）
+def save_note(title, content):
+    call_core("fs.writeText", {"path": f"notes/{title}.md", "content": content})
+    return {"ok": True}
+```
+
+```ts
+// 前端侧：任意位置调本插件命令（最终经 Python → 核心 API）
+await api.call("fileList");
+```
+
 ---
 
 ## 5. 事件（双通道）
@@ -180,6 +199,22 @@ api.nav?.go("plugins");
 推荐组合：卡片 = `--bg-elevated` + 1px `--border` + `--radius-lg` + `--shadow-1`；
 输入 = `--bg-soft` + `--border`，focus 时 `--accent` 边框 + 3px 半透明焦点环；主按钮 = `--accent` 底 +
 `--on-accent` 字，hover 用 `--accent-strong`。
+
+### 6.1 宿主全局 CSS class（可选复用）
+
+插件界面除了用变量自建样式，也可直接复用宿主全局 class（随主题自适应，无需重复实现）：
+
+| class | 用途 | 示例 |
+|---|---|---|
+| `.btn` / `.btn-sm` | 通用按钮（描边 + 悬停加深 + 按下缩放） | `<button class="btn">确定</button>` |
+| `.btn-danger` | 危险按钮（红底白字） | 删除确认 |
+| `.icon-btn`（加 `.sm` 变小） | 图标按钮（方形 hover 底） | 关闭/刷新小按钮 |
+| `.badge` + 变体 | 徽标（`.badge-provider` 等） | 来源标记 |
+| `.plugin-error` | 错误提示条（淡红底） | 插件页卡片内错误展示 |
+| `.empty-state` | 空状态（居中 + 图标/文案） | 列表为空引导 |
+
+> 复用宿主 class 的好处：hover/active/focus 等状态宿主已实现；缺点是耦合宿主内部命名——
+> 建议**主要用变量自建**（tpl-* 前缀），宿主 class 只用于通用按钮/错误条这类"语义稳定"的组件。
 
 ---
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """外部插件模板：Python 进程插件骨架（JSON-RPC over stdio，NDJSON）。
 
-协议（完整约定见 ToolBox 插件开发指南 §3）：
+协议（完整约定见 ToolBox 插件开发指南 §3 与本模板 DEVELOPER.md §3）：
 - 宿主 -> 插件  {"id": N, "method": "init"|"call", "params": {...}}
 - 插件 -> 宿主  {"id": N, "result": ...} / {"id": N, "error": {...}}
 - 插件 -> 宿主  {"method": <事件名>, "params": {...}}   # Notification，无 id
@@ -15,6 +15,15 @@
    把 vendor 插进 sys.path（见下注释示例）。
 3. 命令白名单：init 握手声明的 commands 才允许被调用。
 4. 事件推送：notify() 写 stdout（Notification），前端 api.on(event) 订阅。
+5. 核心 API：插件在处理 call 请求期间可反向调用宿主核心 API（fs 读写/日志/通知
+   等，需在 plugin.json 的 permissions 声明对应权限）——call_core() 是现成实现，
+   下面 fileList / notifyDemo 两个命令演示。
+
+本模板演示的命令：
+- hello        ：普通命令（参数 + 返回值）
+- eventDemo    ：边处理边推送 progress 事件
+- fileList     ：核心 API fs.listDir（权限 fs:read:vault）递归列 vault 内文件
+- notifyDemo   ：核心 API notify（权限 notify）→ 宿主右上角横幅
 """
 import json
 import sys
@@ -32,16 +41,25 @@ def handle_request(msg):
     try:
         if method == "init":
             # 命令白名单：在这里声明本插件可被调用的命令
-            result = {"commands": ["hello", "eventDemo"]}
+            result = {"commands": ["hello", "eventDemo", "fileList", "notifyDemo"]}
         elif method == "call":
             command = params.get("command", "")
             args = params.get("args") or {}
             if command == "hello":
-                result = {"message": "你好，来自 Python 插件！"}
+                name = args.get("name", "")
+                result = {"message": "你好%s，来自 Python 插件！" % ("，" + name if name else "")}
             elif command == "eventDemo":
                 for pct in (30, 60, 100):
                     notify("progress", {"percent": pct, "message": "处理中…"})
                 result = {"text": "已发送 3 个进度事件"}
+            elif command == "fileList":
+                result = list_vault_files()
+            elif command == "notifyDemo":
+                call_core(
+                    "notify",
+                    {"title": "模板插件", "body": "宿主右上角横幅通知（核心 API notify，权限 notify）"},
+                )
+                result = {"ok": True}
             else:
                 raise ValueError("未知命令: %s" % command)
         else:
@@ -55,6 +73,45 @@ def notify(event, params):
     """向宿主推送事件（Notification，无 id）→ 前端 api.on(event) 收到。"""
     sys.stdout.write(json.dumps({"method": event, "params": params}, ensure_ascii=False) + "\n")
     sys.stdout.flush()
+
+
+def call_core(method, params):
+    """调用宿主核心 API（fs.readText / fs.listDir / log / notify 等，按 plugin.json
+    的 permissions 放行）。
+
+    插件 → 宿主发 {"id": N, "method": <核心 API>, "params": {...}}，宿主响应同 id。
+    返回响应里的 result（错误则抛异常）。注意：必须在处理 call 请求期间调用
+    （宿主在该期间会响应核心请求）。完整方法表见 DEVELOPER.md §4。
+    """
+    sys.stdout.write(json.dumps({"id": 9000, "method": method, "params": params}, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+    msg = json.loads(sys.stdin.readline())
+    if "error" in msg:
+        err = msg["error"]
+        raise ValueError(err.get("message", "核心 API 错误"))
+    return msg.get("result")
+
+
+def list_vault_files():
+    """演示核心 API：递归枚举 vault 内全部 .md 文件（fs.listDir，权限 fs:read:vault）。"""
+    hits = []
+
+    def walk(rel, depth):
+        if depth > 12:
+            return
+        try:
+            entries = call_core("fs.listDir", {"dir": rel})
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write("[模板] fs.listDir(%r) 失败: %s\n" % (rel, e))
+            return
+        for e in entries:
+            if e.get("isDir"):
+                walk(e["path"], depth + 1)
+            elif e["name"].endswith(".md"):
+                hits.append(e["path"])
+
+    walk("", 0)
+    return {"count": len(hits), "files": hits[:50]}
 
 
 def main():
