@@ -260,7 +260,6 @@ function fmtTime(iso: string): string {
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-6);
-  max-width: 760px;
   height: 100%;
   min-height: 0;
   box-sizing: border-box;

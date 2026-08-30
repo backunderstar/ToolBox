@@ -158,7 +158,6 @@ const STAT_LABELS: [string, string][] = [
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-6);
-  max-width: 760px;
   box-sizing: border-box;
   overflow-y: auto;
 }
