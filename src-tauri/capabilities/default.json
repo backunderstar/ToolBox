@@ -1,10 +1,14 @@
 {
   "identifier": "default",
-  "description": "主窗口默认能力：基础 IPC + 标题栏主题同步 + 文件夹选择对话框 + 自动更新检查",
+  "description": "主窗口默认能力：基础 IPC + 窗口关闭/隐藏（关闭询问与托盘常驻流程）+ 标题栏主题同步 + 文件夹选择对话框 + 自动更新检查",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-set-theme",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-hide",
+    "core:window:allow-show",
     "dialog:default",
     "opener:default",
     "window-state:default",
