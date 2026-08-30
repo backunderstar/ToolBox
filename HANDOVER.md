@@ -202,6 +202,22 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   （曾对应 py-env/py-venv，已删）。§6.1 相关坑记录照旧有效（排障经验）
 - 验证：cargo 60 / lint 0 / build ✓ / test 40 / sync:plugins 无异常
 
+### 1.11 增量（2026-09：插件独立测试能力，模板自带，第三方开发可离线验证）
+
+- **process 协议模拟宿主** `templates/external-plugin/test/mock-host.py`：读 plugin.json →
+  spawn command → init 握手 → 逐命令 call → 自动应答核心 API 请求（fs.listDir 列 --vault
+  目录或临时 mock vault，其余 ok）→ 收集事件（--expect-events N 校验）→ shutdown 断言干净
+  退出。PowerShell 单引号吃双引号的坑：文档示例用 `'{\"name\":\"张三\"}'` 转义；脚本另有
+  裸键容错（{name:张三} → 合法 JSON）
+- **前端测试**（模板 vitest + jsdom + @vue/test-utils）：`npm test` 覆盖入口契约
+  （__TB_PLUGIN_UI__[id].mount/unmount 渲染与清空）+ App.vue 行为（api.call 参数与返回值
+  上屏 / api.on 事件流 / host.search / 错误条），api 全 mock（test/helpers.ts）
+- **文档**：模板 DEVELOPER.md §12 独立测试（三层：独立测 / npm test / 必须回宿主的
+  能力清单——权限门控、事件到前端、Blob/CSP、托盘动作）；模板 README 目录结构与用法；
+  插件开发指南 §0.6 补独立测试要点
+- 验证：模板 mock-host 实测（冒烟/单命令/事件数/失败分支）+ npm test 7/7；宿主
+  cargo 60 / lint 0 / build ✓ / test 40（模板新 .ts/.vue 进宿主 oxlint 无告警）
+
 ---
 
 ## 2. 项目一句话

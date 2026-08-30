@@ -326,3 +326,59 @@ Alt+Q）显示该插件界面**——类似自带前端的另一个窗口形态�
 - 宿主日志 `log` 核心 API（权限 `log`）或 `print(..., file=sys.stderr)`。
 - 启动时宿主打印解释器来源：`[plugin] <id> 解释器: <路径> (插件自带|全局捆绑|系统 PATH 回落)`。
 - 界面错误：`api.call` 的 reject 文案会包含插件返回的 error message（Python 异常文本）。
+
+## 12. 独立测试（不启动 ToolBox 就能测）
+
+第三方开发时的测试分两层：**独立测试**（本模板自带，覆盖协议与界面逻辑）+
+**宿主集成冒烟**（装进 ToolBox 验证权限门控、事件到前端、UI 注入等宿主侧能力）。
+
+### 12.1 process 协议：`test/mock-host.py`（模拟宿主）
+
+模拟宿主按真实协议（JSON-RPC over stdio）spawn 你的 `main.py`：init 握手 → 逐命令
+call → 自动应答核心 API 请求（fs.listDir 列 `--vault` 目录或临时 mock vault，
+其余返回 `{"ok": true}`）→ 收集事件 → shutdown。全部 PASS 退出码 0（可进 CI）。
+
+```bash
+# 冒烟：init + 白名单每条命令 call({})（参数必填的命令会 WARN 不算失败）
+python test/mock-host.py .
+
+# 单命令 + 参数（bash/zsh：JSON 直接写）
+python test/mock-host.py . --call hello --args '{"name":"张三"}'
+
+# PowerShell：双引号要转义（否则被吃掉变成 {name:张三}，脚本会尝试裸键容错）
+python test/mock-host.py . --call hello --args '{\"name\":\"张三\"}'
+
+# 校验事件推送数量（eventDemo 应推 3 个 progress）
+python test/mock-host.py . --call eventDemo --expect-events 3
+
+# 核心 API 用真实目录（fileList 递归列真实 vault）
+python test/mock-host.py . --call fileList --vault D:\my-vault
+```
+
+### 12.2 自带前端：`npm test`（vitest + jsdom）
+
+api 桥全部打桩（`test/helpers.ts` 的 `mockApi()`），覆盖：
+
+- **入口契约**（`test/index.test.ts`）：`window.__TB_PLUGIN_UI__["<你的id>"]`
+  注册了 `{ mount, unmount }`；mount 渲染、unmount 清空。
+- **界面行为**（`test/App.test.ts`）：点击按钮 → `api.call` 收到正确命令与参数、
+  返回值上屏；`api.on("progress")` 订阅后 mock 宿主 push 事件 → 事件流更新；
+  `host.search` 结果显示；命令失败 → 错误条。
+
+改完 `ui/` 后 `npm test` 即可回归。mock api 只覆盖本模板用到的桥字段；
+用了 `nav` / `context.activePath` 等更多字段时在 `mockApi()` 里补。
+
+### 12.3 命令注册式 webview 插件 / native / 主题
+
+- **webview 命令注册式**（无自带前端）：入口只依赖宿主注入的 api 对象——node 里
+  mock api 后直接 import 入口、调用 `api.app.registerCommand` 注册的命令即可单测
+  （宿主指南 §1/§2 的内联代码即此形态）。
+- **native（cdylib）**：依赖宿主进程（libloading + C ABI + TbHostApi 回灌），
+  独立测试成本高——装进 ToolBox 后用插件页「命令试玩台」+ 事件流冒烟最实际。
+- **主题插件**：纯数据包，校验 plugin.json 结构与 tokens 键引用即可。
+
+### 12.4 必须回宿主测的能力（独立测试覆盖不到）
+
+- 权限门控：`permissions` 未声明时宿主会拒绝核心 API（mock-host 不强制权限）。
+- 事件到前端全链路、Blob/CSP 注入、托盘/顶栏动作、宿主搜索聚合。
+- 打包后安装（插件页「安装 .zip」）与目标机无 Python 场景（捆绑运行时解析）。

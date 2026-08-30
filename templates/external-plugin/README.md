@@ -10,7 +10,13 @@ external-plugin/
 ├── plugin.json          # 插件清单（id/name/runtime/command/permissions/ui/nav）
 ├── main.py              # Python 进程骨架：JSON-RPC 协议（init/call/事件/shutdown）
 ├── build.mjs            # 前端构建脚本（vite lib，照抄 ToolBox 的构建逻辑）
-├── package.json         # 构建依赖（vue/vite/@vitejs/plugin-vue）
+├── package.json         # 构建/测试依赖（vue/vite/vitest）
+├── vitest.config.ts     # 前端测试配置（jsdom）
+├── test/
+│   ├── mock-host.py     # 模拟宿主：独立验证 process 协议（不启动 ToolBox）
+│   ├── App.test.ts      # 界面行为测试（api 全 mock）
+│   ├── index.test.ts    # 自带前端入口契约测试（mount/unmount）
+│   └── helpers.ts       # mock api 构造
 ├── ui/
 │   ├── index.ts         # 入口：createApp 挂载 + 注册 __TB_PLUGIN_UI__["<id>"]
 │   ├── App.vue          # 界面组件（宿主注入 api 桥；样式在 <style> 块）
@@ -18,6 +24,22 @@ external-plugin/
 │   ├── index.js         # 构建产物（npm run build 生成，勿手改）
 │   └── style.css        # 构建产物（Vite 从 <style> 提取，勿手改）
 └── requirements.txt     # 可选：第三方依赖（pip install --target vendor）时创建
+```
+
+## 独立测试（不启动 ToolBox）
+
+```bash
+# process 协议：模拟宿主全量冒烟（init + 白名单命令逐条 call）
+python test/mock-host.py .
+
+# 单命令 + 参数（PowerShell 下双引号需转义，见 DEVELOPER.md §12.1）
+python test/mock-host.py . --call hello --args '{"name":"张三"}'
+
+# 事件推送数量校验
+python test/mock-host.py . --call eventDemo --expect-events 3
+
+# 自带前端：入口契约 + 界面行为（vitest + jsdom，api 全 mock）
+npm test
 ```
 
 ## 三步跑通
