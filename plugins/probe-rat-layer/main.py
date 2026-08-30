@@ -58,11 +58,25 @@ for _stream in (sys.stdin, sys.stdout, sys.stderr):
 
 from probe_layer.io.loader import make_loader            # noqa: E402
 from probe_layer.config import default_config, load_config  # noqa: E402
-from probe_layer import pipeline, report, viz           # noqa: E402
+from probe_layer import pipeline, report                 # noqa: E402
 from probe_layer.core import geometry as geo             # noqa: E402
 from probe_layer.model import (Point, Wire, LayerInfo,   # noqa: E402
                                RectZone, CircleZone)
 from probe_layer.cancel import LayeringCancelled          # noqa: E402
+# ⚠️ 不在这里 import probe_layer.viz：viz 顶部 import matplotlib（重依赖，首次构建
+# 字体缓存可能数秒；进程被 kill 时缓存损坏会让下次启动 import 卡 30s+ → 宿主判
+# 崩溃重启循环）。matplotlib 延迟到真正渲染时才加载（见 _render_one）。
+
+_VIZ: "object | None" = None  # 惰性缓存：probe_layer.viz 模块（首次渲染时加载）
+
+
+def _viz():
+    """延迟加载 viz 模块（matplotlib 重依赖，只在渲染时 import 一次）。"""
+    global _VIZ
+    if _VIZ is None:
+        from probe_layer import viz  # noqa: E402
+        _VIZ = viz
+    return _VIZ
 
 _JOBS_DIR = os.path.join(_PLUGIN_DIR, "jobs")
 _SETTINGS_PATH = os.path.join(_PLUGIN_DIR, "settings.json")
@@ -485,24 +499,18 @@ def cmd_render(job_id: str, kind: str) -> str:
     已生成过的图直接读文件返回（不重渲染、不重解析几何数据）。
     """
     # kind → 缓存文件名（与 viz/_render_manual 的输出一致）
-    cache_map = {"overview": "overview.svg", "rose": "rose.svg",
-                 "manual": "manual.svg"}
     svg_path = None
-    if kind in cache_map:
-        svg_path = os.path.join(_job_dir(job_id), "img", cache_map[kind])
-    elif kind.startswith("layer_"):
-        try:
-            idx = int(kind[len("layer_"):])
-        except ValueError:
-            idx = None
-        if idx is not None:
-            svg_path = os.path.join(_job_dir(job_id), "img", f"layer_{idx:02d}.svg")
+    name = _kind_svg_name(kind)
+    if name:
+        svg_path = os.path.join(_job_dir(job_id), "img", name)
     # 命中缓存：直接读，不解析 geometry/result、不调 matplotlib
     if svg_path and os.path.isfile(svg_path):
         with open(svg_path, encoding="utf-8", errors="replace") as f:
             return f.read()
 
-    # 未命中：持渲染锁现场渲染（与后台预渲染互斥，matplotlib 非线程安全）
+    # 未命中：先预热 matplotlib（首次导入 1-2s，放锁外避免阻塞其他渲染），
+    # 再持渲染锁现场渲染（与后台预渲染互斥，matplotlib 非线程安全）
+    _viz()
     with _RENDER_LOCK:
         base = _render_one(job_id, kind, with_png=False)
     svg_path = base + ".svg"
@@ -516,21 +524,50 @@ def _pre_render(job_id: str) -> None:
     """任务完成后的后台预渲染：全部图生成到 <job>/img/，用户点击直接命中缓存。
 
     只渲染一次（缓存文件已存在则跳过）；失败静默（点击时 cmd_render 会现场补渲）。
+    每张图**独立**拿 _RENDER_LOCK（matplotlib 非线程安全）：预渲染期间用户点击
+    最多等"当前正在渲染的这一张"（0.3-1s），而不是等整批完成。
+    顺序：图层优先（用户最先点的是各层图），overview/rose/manual 殿后。
     """
     try:
         res = json.load(open(os.path.join(_job_dir(job_id), "result.json"), encoding="utf-8"))
-        kinds = ["overview", "rose"]
-        kinds += [f"layer_{li['layer']}" for li in res.get("layers", [])
-                  if li.get("kind") == "signal"]
+        kinds = [f"layer_{li['layer']}" for li in res.get("layers", [])
+                 if li.get("kind") == "signal"]
+        kinds += ["overview", "rose"]
         if res.get("manual_route_nets"):
             kinds.append("manual")
         for kind in kinds:
-            base = _render_one(job_id, kind, with_png=False)
-            if base and not os.path.isfile(base + ".svg"):
-                # 该 kind 无输出（如 rose 空），跳过
+            # 已被现场渲染/之前预渲染过的图跳过（文件缓存命中检查在 cmd_render，
+            # 这里以文件存在为准，避免重复渲染同一张）
+            svg_path = os.path.join(_job_dir(job_id), "img", _kind_svg_name(kind))
+            if svg_path and os.path.isfile(svg_path):
                 continue
+            _viz()  # matplotlib 预热放锁外
+            with _RENDER_LOCK:
+                try:
+                    base = _render_one(job_id, kind, with_png=False)
+                except Exception as e:  # noqa: BLE001
+                    sys.stderr.write("[rat-layer] 预渲染 %s 失败: %s\n" % (kind, e))
+                    continue
+                if base and not os.path.isfile(base + ".svg"):
+                    # 该 kind 无输出（如 rose 空），跳过
+                    continue
     except Exception as e:  # noqa: BLE001
         sys.stderr.write("[rat-layer] 预渲染失败: %s\n" % e)
+
+
+def _kind_svg_name(kind: str) -> str | None:
+    """kind → img 下缓存文件名（与渲染输出一致）；非法 kind 返回 None。"""
+    cache_map = {"overview": "overview.svg", "rose": "rose.svg",
+                 "manual": "manual.svg"}
+    if kind in cache_map:
+        return cache_map[kind]
+    if kind.startswith("layer_"):
+        try:
+            idx = int(kind[len("layer_"):])
+        except ValueError:
+            return None
+        return f"layer_{idx:02d}.svg"
+    return None
 
 
 def _render_one(job_id: str, kind: str, with_png: bool = False) -> str:
@@ -573,9 +610,9 @@ def _render_one(job_id: str, kind: str, with_png: bool = False) -> str:
     # 这里传 job 根目录，输出落到 <job>/img/；_render_manual 自己写，直接传 img_dir
     job_root = _job_dir(job_id)
     if kind == "overview":
-        return viz.render_overview(lite, wire_by_id, zones, job_root, with_png=with_png)
+        return _viz().render_overview(lite, wire_by_id, zones, job_root, with_png=with_png)
     if kind == "rose":
-        return viz.render_rose(lite, wire_by_id, job_root, cfg)
+        return _viz().render_rose(lite, wire_by_id, job_root, cfg)
     if kind == "manual":
         # 需人工 route 的线：按 manual_route_nets（net 名）从几何里过滤
         manual_nets = set(res.get("manual_route_nets", []))
@@ -588,8 +625,8 @@ def _render_one(job_id: str, kind: str, with_png: bool = False) -> str:
         li = next((l for l in layers if str(l.layer_index) == idx), None)
         if li is None:
             raise ValueError(f"层不存在: {kind}")
-        return viz.render_layer(li, wire_by_id, zones, conflicts, job_root,
-                                with_png=with_png)
+        return _viz().render_layer(li, wire_by_id, zones, conflicts, job_root,
+                                   with_png=with_png)
     raise ValueError(f"未知渲染类型: {kind}")
 
 # ---------- 核心 API（仅在处理 call 期间可用） ----------
