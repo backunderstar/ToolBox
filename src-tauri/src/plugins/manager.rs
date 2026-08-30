@@ -1286,13 +1286,17 @@ impl PluginManager {
             Ok(p) => (p.to_string_lossy().to_string(), true),
             Err(_) => (cmd[0].clone(), false),
         };
-        // 冒烟验证辅助日志：记录 process 插件实际用的解释器（捆绑/自带/系统回落）
+        // 冒烟验证辅助日志：记录 process 插件实际用的解释器来源（三级解析命中哪一级：
+        // 插件自带 python.exe / 全局捆绑 / 系统 PATH 回落），排查优先级问题用。
         if super::pyruntime::is_python_command(&cmd[0]) {
-            crate::core::log::info(&format!(
-                "[plugin] {id} 解释器: {} ({})",
-                program,
-                if resolved { "捆绑/自带" } else { "系统 PATH 回落" }
-            ));
+            let source = if !resolved {
+                "系统 PATH 回落".to_string()
+            } else if paths_equal(Path::new(&program), &dir.join("python.exe")) {
+                "插件自带".to_string()
+            } else {
+                "全局捆绑".to_string()
+            };
+            crate::core::log::info(&format!("[plugin] {id} 解释器: {program} ({source})"));
         }
         let mut plugin = match ProcessPlugin::spawn(
             &id,

@@ -24,13 +24,14 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   `f2c9e06`（docs: 记录待推送提交与网络情况）
 - **8/29（本轮）改动**：插件页"安装依赖"按钮（后端 `plugins_install_deps` 命令 +
   `PluginInfo.hasDeps` 标记 + 前端按钮/结果面板）、`start_process` 增解释器日志
-  （`[plugin] <id> 解释器: <路径> (捆绑/自带|系统 PATH 回落)`，冒烟验证用）、
+  （`[plugin] <id> 解释器: <路径> (插件自带|全局捆绑|系统 PATH 回落)`，冒烟验证用；
+  8/30 改三态——此前"(捆绑/自带)"不区分插件自带与全局捆绑，排查优先级易误判）、
   py-tools 增 `requirements.txt` 示例、docs 四件套收尾（PLAN §5.1 / README / 操作手册 / 插件开发指南 §3.5）
 
 ### 1.2 验证结果（2026-08-29 实测）
 
 1. **dev 冒烟** ✅：`pnpm tauri dev` 日志两条 `[plugin] csv-tool/py-tools 解释器:
-   ...target\debug\resources\python\python.exe (捆绑/自带)`（dev 下 tauri 把
+   ...target\debug\resources\python\python.exe (全局捆绑)`（dev 下 tauri 把
    resources/python 拷进 target/debug/resources/，`bundled_python_dir` 经 exe 相对路径解析到）
 2. **打包验证** ✅：`build:core:release` + `tauri build --debug --no-bundle` →
    以**剔除 python 的 PATH** 运行 `target\debug\toolbox.exe`：日志出现
