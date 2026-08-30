@@ -427,7 +427,8 @@ cargo test --workspace                 # Rust 测试（当前 60）
 
 - **🔴 未推送的本地提交（2026-08-29 教学基线收敛起累积，勿推送）**：完整清单见
   `git log origin/main..HEAD`；最新为 9/ 结构完善轮 `ba1df14`（views 分层 / lib.rs 拆模块 /
-  deps 抽取 / .editorconfig / CHANGELOG / package-plugin CLI / api+plugins 补测）。
+  deps 抽取 / .editorconfig / CHANGELOG / package-plugin CLI / api+plugins 补测）与
+  示例精简 `1928bc9`（plugins/ 9→4，每种运行时留一典型，主题全保留，见 §1.10）。
   网络情况：本机 **github.com:443 HTTPS 直连被墙**（重试多次 `Connection reset`；
   解析到 20.205.243.166 不通），但 **`ssh.github.com:443` 实测可连**（GitHub 官方
   SSH-over-443 通道）。推送选项：① 生成 SSH key 加 GitHub → 远程改
