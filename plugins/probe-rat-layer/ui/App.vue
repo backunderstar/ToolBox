@@ -415,6 +415,11 @@ async function showRose(): Promise<void> {
   void renderImage("rose");
 }
 
+async function showManual(): Promise<void> {
+  selectedLayer.value = null;
+  void renderImage("manual");
+}
+
 async function openOutDir(): Promise<void> {
   if (!result.value) return;
   try {
@@ -780,6 +785,11 @@ onBeforeUnmount(() => {
             <div class="prl-actions prl-actions-inline">
               <button class="prl-btn" @click="showOverview">总览图</button>
               <button class="prl-btn" @click="showRose">玫瑰图</button>
+              <button
+                v-if="result.summary.manual_route_net_count > 0"
+                class="prl-btn"
+                @click="showManual"
+              >人工 route 图（{{ result.summary.manual_route_net_count }}）</button>
               <button class="prl-btn" @click="viewReport">查看 report.json</button>
             </div>
           </div>

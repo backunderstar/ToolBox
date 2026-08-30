@@ -59,6 +59,7 @@ for _stream in (sys.stdin, sys.stdout, sys.stderr):
 from probe_layer.io.loader import make_loader            # noqa: E402
 from probe_layer.config import default_config, load_config  # noqa: E402
 from probe_layer import pipeline, report, viz           # noqa: E402
+from probe_layer.core import geometry as geo             # noqa: E402
 from probe_layer.model import (Point, Wire, LayerInfo,   # noqa: E402
                                RectZone, CircleZone)
 from probe_layer.cancel import LayeringCancelled          # noqa: E402
@@ -409,8 +410,71 @@ def _load_job_render_data(job_id: str) -> tuple[dict, dict]:
     return geo, res
 
 
+def _render_manual(wires: list, zones: tuple, out_dir: str) -> str:
+    """人工 route 图：红色虚线画所有需人工的线 + 它们的交点（× 标记）。
+
+    matplotlib 已在 viz 导入时加载；只画 manual 线（不含各层已分配线）。
+    交点 = 任意两条 manual 线严格相交的位置（硬冲突来源的直观呈现）。
+    线数 > 300 时跳过交点标记：O(n²) 交点计算 + 稠密标记对排障无益
+    （如误配参数导致上千条人工线时，重点是"哪些线"，不是交点）。
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    for z in zones:
+        if isinstance(z, RectZone):
+            ax.add_patch(mpatches.Rectangle(
+                (z.xmin, z.ymin), z.xmax - z.xmin, z.ymax - z.ymin,
+                facecolor="0.85", edgecolor="red", hatch="///", alpha=0.6))
+        else:
+            ax.add_patch(mpatches.Circle(
+                (z.center.x, z.center.y), z.radius,
+                facecolor="0.85", edgecolor="red", hatch="///", alpha=0.6))
+    for w in wires:
+        ax.plot([w.start.x, w.end.x], [w.start.y, w.end.y],
+                color="#d62728", lw=1.5, ls="--", alpha=0.8)
+
+    # 交点（两两严格相交）：线少时 O(n²) 可接受且信息量大
+    xs: list[float] = []
+    ys: list[float] = []
+    if len(wires) <= 300:
+        for i in range(len(wires)):
+            for j in range(i + 1, len(wires)):
+                p = geo.seg_seg_intersection(wires[i].start, wires[i].end,
+                                             wires[j].start, wires[j].end)
+                if p is not None:
+                    xs.append(p.x)
+                    ys.append(p.y)
+        if xs:
+            ax.plot(xs, ys, "x", color="#000", markersize=9, mew=2)
+
+    ax.set_aspect("equal")
+    all_x = [w.start.x for w in wires] + [w.end.x for w in wires]
+    all_y = [w.start.y for w in wires] + [w.end.y for w in wires]
+    for z in zones:
+        if isinstance(z, RectZone):
+            all_x += [z.xmin, z.xmax]
+            all_y += [z.ymin, z.ymax]
+        else:
+            all_x += [z.center.x - z.radius, z.center.x + z.radius]
+            all_y += [z.center.y - z.radius, z.center.y + z.radius]
+    if all_x:
+        pad = max(max(all_x) - min(all_x), max(all_y) - min(all_y), 1.0) * 0.05
+        ax.set_xlim(min(all_x) - pad, max(all_x) + pad)
+        ax.set_ylim(min(all_y) - pad, max(all_y) + pad)
+    ax.set_title(f"Manual route — {len(wires)} wires / {len(xs)} crossings")
+    ax.grid(alpha=0.2)
+    base = os.path.join(out_dir, "manual")
+    fig.tight_layout()
+    fig.savefig(base + ".png", dpi=120)
+    fig.savefig(base + ".svg")
+    plt.close(fig)
+    return base
+
+
 def cmd_render(job_id: str, kind: str) -> str:
-    """按需渲染指定图（layer_<i> / overview / rose）→ SVG 文本。
+    """按需渲染指定图（layer_<i> / overview / rose / manual）→ SVG 文本。
 
     matplotlib 懒加载（首次约 1.5s）；结果缓存到 jobs/<jobId>/img/。
     """
@@ -452,6 +516,13 @@ def cmd_render(job_id: str, kind: str) -> str:
         base = viz.render_overview(lite, wire_by_id, zones, img_dir)
     elif kind == "rose":
         base = viz.render_rose(lite, wire_by_id, img_dir, cfg)
+    elif kind == "manual":
+        # 需人工 route 的线：按 manual_route_nets（net 名）从几何里过滤
+        manual_nets = set(res.get("manual_route_nets", []))
+        manual_wires = [w for w in wires if w.net_id in manual_nets]
+        if not manual_wires:
+            raise ValueError("无人工 route 线（本结果全部自动分层）")
+        base = _render_manual(manual_wires, zones, img_dir)
     elif kind.startswith("layer_"):
         idx = kind[len("layer_"):]
         li = next((l for l in layers if str(l.layer_index) == idx), None)
