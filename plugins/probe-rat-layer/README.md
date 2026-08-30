@@ -46,6 +46,34 @@ pnpm sync:plugins
 > （实测 1800 线 DC 信号全量用默认参数会 manual 1758 条；DC 信号预设 manual 仅 18 条）。
 > 首次打开与「自定义」手调后都建议确认预设；参数与预设会持久化到 `settings.json` 下次恢复。
 
+### 参数速查（界面每个字段下方也有小字解释）
+
+| 分组 | 字段 | 说明 |
+|---|---|---|
+| 分层方法 | `method` | packing（扇区轮询，默认）/ dsatur（图着色基线，A/B 用） |
+| | `sector_angle_deg` | 扇区角（45°=8 扇区；越小扇区越多、层间越均匀） |
+| 迭代 | `resolve_conflict_rounds` | 同层硬冲突微调轮数（越大越少冲突、越慢） |
+| | `balance_length_rounds` | 各层线长均衡交换轮数 |
+| | `minimize_crossings_passes` | 贪心最小化软冲突轮数（每轮扫全部软冲突对） |
+| | `sa_restarts` | SA 多起点次数（>1 耗时 ×N，结果更稳） |
+| 精修 | `optimizer` | sa（模拟退火，默认）/ greedy（只贪心）/ none（关精修） |
+| | `sa_initial_temp` | 退火初始温度（越高探索越广） |
+| | `sa_cooling` | 每步降温系数（越接近 1 越慢越充分） |
+| | `sa_max_steps` | 步数（0=自动 max(4000, 30×线数)） |
+| | `sa_swap_ratio` | 交换移动占比（其余为单线移动） |
+| | `sa_balance_slack` | 均衡护栏：允许恶化到初始值的倍数 |
+| 拥塞 | `congestion_grid_cell` | 拥塞网格边长 mm（HV 用 2.0；越小判得越细） |
+| | `congestion_hard_threshold` | 交点拥塞超此值判硬冲突（HV 用 3.0；越大层越少、人工线越多） |
+| | `layer_capacity` | 每层 occupancy 上限（勿 >1） |
+| | `capacity_utilization` | 目标容量利用率（越小越保守、层数越多） |
+| | `via_area_cost` | 过孔占用面积折算成本（越大越避免过孔密集区） |
+| 输入 | `layers` | 信号层数（xlsx 输入；旧 JSON 由文件决定） |
+| | `width` | 线宽 mm（HV/DC 0.2，AC 0.1） |
+| | `clearance` | 线距 mm |
+
+未列出的字段（`sa_seed`、`same_net_same_layer`、`pin_density_weight` 等）用 `probe_layer` 默认值，
+可经 `layer.run` 的 `config` 覆盖（见 §3）。
+
 ---
 
 ## 3. 命令白名单（init 握手声明）
@@ -128,7 +156,8 @@ python <ToolBox>/templates/external-plugin/test/mock-host.py . `
   首方插件 + 本说明明示；`layer.readOut` 有防穿越校验（只读输出目录内）。
 - 权限仅声明 `log / notify / shell`（`shell` 用于 explorer 打开输出目录）。
 - **已知限制**：渲染图不含冲突标记（v1 只做各层汇总 + report.json 原文）；取消在
-  SA/打包循环边界生效（最迟 ≤2% 步数）；`jobs/` 在插件进程重启后丢失（UI 自动回 idle）。
+  SA/打包循环边界生效（最迟 ≤2% 步数）；**进程重启后恢复上次完成的任务**（`jobs/<id>/meta.json`
+  持久化摘要，`_restore_jobs` 启动时扫描），但正在运行中的任务重启后丢失（UI 自动回 idle）。
 
 ## 7. 与原项目同步（副本维护）
 

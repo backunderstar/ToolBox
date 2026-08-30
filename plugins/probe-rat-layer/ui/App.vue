@@ -648,14 +648,17 @@ onBeforeUnmount(() => {
           <div class="prl-field">
             <label class="prl-label">层数（xlsx 输入）</label>
             <input v-model.number="layers" type="number" min="1" max="16" class="prl-input" />
+            <p class="prl-field-hint">信号层数量（Allegro 建层数）；旧 JSON 输入时由文件决定</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">线宽 mm（HV/DC 0.2，AC 0.1）</label>
             <input v-model.number="width" type="number" step="0.05" class="prl-input" />
+            <p class="prl-field-hint">信号线宽：影响走线占用的拥塞估算（HV/DC 用 0.2，AC 用 0.1）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">线距 mm</label>
             <input v-model.number="clearance" type="number" step="0.05" class="prl-input" />
+            <p class="prl-field-hint">线与线的间距：参与拥塞网格的占用估算</p>
           </div>
         </div>
       </div>
@@ -679,6 +682,7 @@ onBeforeUnmount(() => {
               <option value="packing">packing（扇区轮询，默认）</option>
               <option value="dsatur">dsatur（图着色基线）</option>
             </select>
+            <p class="prl-field-hint">分层算法：packing 按扇区轮询分配（默认，效果好）；dsatur 图着色（基线对比用）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">精修 optimizer</label>
@@ -687,26 +691,32 @@ onBeforeUnmount(() => {
               <option value="greedy">greedy（只贪心）</option>
               <option value="none">none（关精修）</option>
             </select>
+            <p class="prl-field-hint">packing 后的多目标精修：sa 全局搜索（默认）；greedy 只做局部贪心；none 关闭精修（最快但最差）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">迭代① 硬冲突微调轮数</label>
             <input v-model.number="resolveConflictRounds" type="number" min="0" class="prl-input" />
+            <p class="prl-field-hint">同层硬冲突（交点拥塞超阈值）的微调轮数，越大冲突越少、越慢</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">迭代② 长短均衡轮数</label>
             <input v-model.number="balanceLengthRounds" type="number" min="0" class="prl-input" />
+            <p class="prl-field-hint">各层线长均衡的交换轮数，避免某层线特别长/短</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">迭代③ 贪心交叉轮数</label>
             <input v-model.number="minimizeCrossingsPasses" type="number" min="0" class="prl-input" />
+            <p class="prl-field-hint">贪心最小化软冲突（线对交叉）的轮数，每轮扫全部软冲突对</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">迭代④ SA 多起点（耗时 ×N）</label>
             <input v-model.number="saRestarts" type="number" min="1" class="prl-input" />
+            <p class="prl-field-hint">模拟退火多起点次数：&gt;1 时多次退火取最优，结果更稳但耗时按倍数增加</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">扇区角 sector_angle_deg（360/45=8 扇区）</label>
             <input v-model.number="sectorAngleDeg" type="number" min="5" step="5" class="prl-input" />
+            <p class="prl-field-hint">把圆按角度分成几个扇区轮询分配（45°=8 扇区；越小扇区越多、层间更均匀）</p>
           </div>
         </div>
       </div>
@@ -714,27 +724,33 @@ onBeforeUnmount(() => {
       <div class="prl-card">
         <div class="prl-card-head">
           <h3>SA 精修参数</h3>
+          <code class="prl-cmd">仅 optimizer=sa 时生效</code>
         </div>
         <div class="prl-grid3">
           <div class="prl-field">
             <label class="prl-label">初始温度</label>
             <input v-model.number="saInitialTemp" type="number" step="0.5" class="prl-input" />
+            <p class="prl-field-hint">退火起始温度（软冲突对数尺度）：越高初期越敢接受恶化、探索越广</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">降温系数</label>
             <input v-model.number="saCooling" type="number" step="0.0001" class="prl-input" />
+            <p class="prl-field-hint">每步温度乘数（慢降温探索充分）：越接近 1 越慢越充分，耗时越长</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">步数（0=自动 max(4000, 30×线数)）</label>
             <input v-model.number="saMaxSteps" type="number" min="0" class="prl-input" />
+            <p class="prl-field-hint">退火总步数：0 自动按线数估算；越大搜索越充分、越慢</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">交换移动占比</label>
             <input v-model.number="saSwapRatio" type="number" min="0" max="1" step="0.1" class="prl-input" />
+            <p class="prl-field-hint">每步移动中"交换两线归属"的比例，其余为"单线换层"</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">均衡护栏 slack</label>
             <input v-model.number="saBalanceSlack" type="number" min="1" step="0.1" class="prl-input" />
+            <p class="prl-field-hint">均衡护栏：允许目标值恶化到初始值的倍数（防过度破坏线长均衡）</p>
           </div>
         </div>
       </div>
@@ -742,27 +758,33 @@ onBeforeUnmount(() => {
       <div class="prl-card">
         <div class="prl-card-head">
           <h3>拥塞估计</h3>
+          <code class="prl-cmd">决定"哪些线进人工 route"</code>
         </div>
         <div class="prl-grid3">
           <div class="prl-field">
             <label class="prl-label">拥塞网格 cell mm（HV 用 2.0）</label>
             <input v-model.number="congestionGridCell" type="number" step="0.5" class="prl-input" />
+            <p class="prl-field-hint">拥塞网格边长 mm（绕行邻域 ≈ 数个走线节距）：越小判得越细、越容易判冲突</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">硬冲突阈值（HV 用 3.0）</label>
             <input v-model.number="congestionHardThreshold" type="number" step="0.1" class="prl-input" />
+            <p class="prl-field-hint">交点拥塞超过此值判硬冲突（走线可弯折所以可放宽）：越大层越少、人工线越多</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">层容量（勿 >1）</label>
             <input v-model.number="layerCapacity" type="number" step="0.05" class="prl-input" />
+            <p class="prl-field-hint">每层 occupancy 上限（布线容量，满=1.0）：越大每层塞得越多、层数越少</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">容量利用率</label>
             <input v-model.number="capacityUtilization" type="number" min="0" max="1" step="0.1" class="prl-input" />
+            <p class="prl-field-hint">目标容量利用率（低于 100% 留余量）：越小越保守、层数越多</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">过孔预留比例</label>
             <input v-model.number="viaAreaCost" type="number" step="0.05" class="prl-input" />
+            <p class="prl-field-hint">过孔占用面积的折算成本：越大越避免线挤在过孔密集区</p>
           </div>
         </div>
         <p class="prl-hint">阈值越大层越少、人工线越多；参数未列出的字段用 probe_layer 默认值</p>
@@ -1050,6 +1072,8 @@ onBeforeUnmount(() => {
 }
 .prl-select { flex: none; min-width: 220px; }
 .prl-hint { margin: 0; font-size: var(--text-xs); color: var(--fg-faint); line-height: 1.6; }
+/* 参数小字解释：字段下方一行，说明含义/影响/默认值 */
+.prl-field-hint { margin: 0; font-size: 11px; color: var(--fg-faint); line-height: 1.55; }
 .prl-meta { margin: 0; font-size: var(--text-xs); color: var(--fg-muted); line-height: 1.7; }
 .prl-error {
   display: flex;
