@@ -67,7 +67,7 @@ pub struct NavDecl {
 /// 宿主外壳动作声明（顶栏图标按钮 / 托盘菜单项，二选一或都用）：
 /// 点击 → 宿主发 `plugin-event` 事件 `action`（插件 UI 用 api.on("action") 订阅）
 /// + 若插件非 webview 则调用约定命令 `plugin.action {action, source}`。
-/// 交互不感知具体外壳来源（source = topbar | tray），插件统一处理。
+///   交互不感知具体外壳来源（source = topbar | tray），插件统一处理。
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionDecl {

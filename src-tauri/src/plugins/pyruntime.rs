@@ -106,7 +106,7 @@ pub(crate) fn is_python_command(cmd: &str) -> bool {
 ///    AppHandle 时经 `bundled_python_dir` 解析后缓存——**数据对象不持有 tauri 类型**，
 ///    见 manager.rs struct 注释的历史教训）
 /// 3. 都没有 → Err（调用方保留原命令走系统 PATH，spawn 失败时给安装提示）
-/// 非 Python 命令不解析（Err，走原命令）。
+///    非 Python 命令不解析（Err，走原命令）。
 pub(crate) fn resolve_interpreter(
     bundled_dir: Option<&Path>,
     plugin_dir: &Path,

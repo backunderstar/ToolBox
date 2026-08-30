@@ -20,7 +20,6 @@ pub const API_TIMEOUT: Duration = Duration::from_secs(30);
 /// 崩溃自动重启上限（窗口期内）。
 const MAX_RESTARTS: u32 = 3;
 const RESTART_WINDOW: Duration = Duration::from_secs(60);
-/// pip install 超时（见 plugins::deps）。
 
 /// 递归复制最大深度：恶意/意外的万层嵌套会让纯递归栈溢出直接 abort（Rust
 /// 栈溢出不可捕获）；超过上限中止复制（与 backup/search 的 MAX_DEPTH 语义一致）。
@@ -392,13 +391,17 @@ fn write_dir_to_zip<W: std::io::Write + std::io::Seek>(
             format!("{base}/{name}")
         };
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            // zip 4.x FileOptions 带泛型生命周期，clippy needless_borrows_for_generic_args
+            // 误报（auto-deref 会破坏 'static 生命周期匹配），保持显式解引用。
+            #[allow(clippy::needless_borrows_for_generic_args)]
             zip.add_directory(&format!("{rel}/"), *options)
                 .map_err(|e| format!("写入目录失败: {e}"))?;
             write_dir_to_zip(zip, &entry.path(), &rel, options)?;
         } else {
+            #[allow(clippy::needless_borrows_for_generic_args)]
             zip.start_file(&rel, *options)
                 .map_err(|e| format!("写入文件失败: {e}"))?;
-            let mut f = std::fs::File::open(&entry.path())
+            let mut f = std::fs::File::open(entry.path())
                 .map_err(|e| format!("打开文件失败: {e}"))?;
             std::io::copy(&mut f, zip).map_err(|e| format!("写入文件失败: {e}"))?;
         }

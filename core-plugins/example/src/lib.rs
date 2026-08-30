@@ -9,7 +9,7 @@
 //!    原子写（临时文件 + rename）、损坏文件隔离保留现场、空输入拒绝（见 `data` 模块）
 //! 3. **插件样板 `tb_plugin!`**：State 类型 + `state_from_cfg`（从 manifest 配置构造实例）
 //!    + `call`（命令分发）——宏自动生成 5 个 C ABI 导出（tb_abi_version/tb_create/
-//!    tb_call/tb_free_string/tb_destroy）并隔离 panic（见文件末尾）
+//!      tb_call/tb_free_string/tb_destroy）并隔离 panic（见文件末尾）
 //! 4. **命令集**：`example.list/add/toggle/delete`（业务 CRUD）、`example.echo`
 //!    （参数 + 中文 UTF-8）、`example.info`（回显 manifest config 与运行环境）
 //! 5. **事件推送**：写操作成功后 `tb_sdk::emit` 发 `example-changed` → 宿主转发
