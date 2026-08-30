@@ -53,7 +53,7 @@ const capacityUtilization = ref(0.6);
 const viaAreaCost = ref(0.1);
 const sectorAngleDeg = ref(45.0);
 
-// 首启默认 HV 预设（cell 2.0 / threshold 3.0）——原项目文档明确"默认 0.8/0.5 对 HV 太严"，
+// 首启默认 DC 信号预设（cell 2.0 / threshold 3.0）——原项目文档明确"默认 0.8/0.5 对 DC/HV 太严"，
 // 默认值若用 probe_layer 原默认会让真实数据大量进人工（实测 1800 线 manual 1758）。
 const presetName = ref<"custom" | "hv" | "full">("hv");
 
@@ -127,7 +127,7 @@ function applyParams(v: Record<string, unknown>): void {
 function applyPreset(p: "custom" | "hv" | "full"): void {
   presetName.value = p;
   if (p === "hv") {
-    // HV 推荐：cell 2.0 / threshold 3.0 + 4 层 + 0.2/0.2（对应原项目 in/hv_config.json + README）
+    // DC 信号推荐：cell 2.0 / threshold 3.0 + 4 层 + 0.2/0.2（对应原项目 in/hv_config.json + README）
     layers.value = 4;
     width.value = 0.2;
     clearance.value = 0.2;
@@ -147,7 +147,7 @@ function applyPreset(p: "custom" | "hv" | "full"): void {
   }
 }
 
-/** 人工线占比过高提示（结果页）：超过 30% 大概率是拥塞阈值过严，建议 HV 预设 */
+/** 人工线占比过高提示（结果页）：超过 30% 大概率是拥塞阈值过严，建议 DC 信号预设 */
 const manualRatio = computed(() => {
   if (!result.value) return 0;
   const s = result.value.summary;
@@ -462,7 +462,7 @@ void (async () => {
     if (s && typeof s === "object" && "preset" in s) {
       applyParams(s); // 恢复上次预设与全部参数（含 layers/width/clearance）
     } else {
-      applyPreset("hv"); // 首次使用：默认 HV 预设（默认 0.5/0.8 对 HV 太严）
+      applyPreset("hv"); // 首次使用：默认 DC 信号预设（默认 0.5/0.8 对 DC/HV 太严）
     }
   } catch {
     applyPreset("hv");
@@ -543,7 +543,7 @@ onBeforeUnmount(() => {
           <div class="prl-row">
             <select v-model="presetName" class="prl-input prl-select" @change="applyPreset(presetName)">
               <option value="custom">自定义</option>
-              <option value="hv">HV（cell 2.0 / threshold 3.0 / 4 层 / 0.2mm）</option>
+              <option value="hv">DC 信号（cell 2.0 / threshold 3.0 / 4 层 / 0.2mm）</option>
               <option value="full">全量（不筛选）</option>
             </select>
           </div>
@@ -693,8 +693,8 @@ onBeforeUnmount(() => {
           <br />输出：{{ outDir || "（未指定）" }} ｜ 层数 {{ layers }} / 线宽 {{ width }} / 线距 {{ clearance }}
         </p>
         <p v-if="presetName === 'custom' && congestionHardThreshold < 1.5" class="prl-warn prl-warn-inline">
-          ⚠️ 当前是自定义参数且拥塞阈值 {{ congestionHardThreshold }} 偏严（HV 推荐 3.0）——
-          真实数据可能大量进人工清单，建议先用「HV 预设」。
+          ⚠️ 当前是自定义参数且拥塞阈值 {{ congestionHardThreshold }} 偏严（DC 信号推荐 3.0）——
+          真实数据可能大量进人工清单，建议先用「DC 信号预设」。
         </p>
         <div class="prl-actions">
           <button class="prl-btn prl-btn-primary" :disabled="runBusy || isRunning" @click="startRun">
@@ -749,10 +749,10 @@ onBeforeUnmount(() => {
         <div v-if="manualRatio > 0.3" class="prl-warn" role="alert">
           <div class="prl-warn-body">
             <strong>{{ (manualRatio * 100).toFixed(0) }}% 的线进了人工 route 清单</strong>
-            <span>通常是拥塞参数太严（默认 threshold 0.8 / cell 0.5 对 HV 偏严，会把绝大多数线判为硬冲突）。</span>
+            <span>通常是拥塞参数太严（默认 threshold 0.8 / cell 0.5 对 DC 信号偏严，会把绝大多数线判为硬冲突）。</span>
           </div>
           <button class="prl-btn prl-btn-primary" @click="applyPreset('hv'); activeTab = 'run'">
-            应用 HV 预设并重跑
+            应用 DC 信号预设并重跑
           </button>
         </div>
 
