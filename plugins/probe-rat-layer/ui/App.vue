@@ -506,7 +506,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="prl-ui">
-    <!-- 页签 -->
+    <!-- 页签：固定不随内容滚动（内容在 prl-body 内独立滚动） -->
     <nav class="prl-tabs" role="tablist">
       <button
         v-for="t in tabs"
@@ -521,8 +521,9 @@ onBeforeUnmount(() => {
       </button>
     </nav>
 
-    <!-- ═══ Tab 1 输入设置 ═══ -->
-    <section v-show="activeTab === 'input'" class="prl-pane">
+    <div class="prl-body">
+      <!-- ═══ Tab 1 输入设置 ═══ -->
+      <section v-show="activeTab === 'input'" class="prl-pane">
       <div v-if="inputError" class="prl-error" role="alert">{{ inputError }}</div>
 
       <div class="prl-card">
@@ -841,6 +842,7 @@ onBeforeUnmount(() => {
       </template>
       <div v-else class="prl-empty">尚无结果 —— 先到「运行」页开始一次分层</div>
     </section>
+    </div><!-- /prl-body -->
 
     <!-- ═══ 文件浏览器弹层 ═══ -->
     <div v-if="browserOpen" class="prl-modal" @click.self="browserOpen = false">
@@ -893,21 +895,27 @@ onBeforeUnmount(() => {
 .prl-ui {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-6);
+  height: 100%;
   box-sizing: border-box;
-  overflow-y: auto;
-  min-height: 100%;
+  overflow: hidden;
 }
 .prl-tabs {
+  flex: none;
   display: flex;
   gap: var(--space-1);
   border-bottom: 1px solid var(--border);
-  padding-bottom: var(--space-2);
-  position: sticky;
-  top: 0;
+  padding: var(--space-2) var(--space-6);
   background: var(--bg);
   z-index: 2;
+}
+.prl-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
 }
 .prl-tab {
   padding: 8px 16px;
@@ -1053,8 +1061,8 @@ onBeforeUnmount(() => {
 .prl-table tr { cursor: pointer; }
 .prl-table tr:hover { background: var(--bg-soft); }
 .prl-table tr.active { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.prl-svg { border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; overflow: auto; max-height: 520px; }
-.prl-svg img { width: 100%; height: auto; display: block; }
+.prl-svg { border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; overflow: auto; height: 60vh; display: flex; align-items: center; justify-content: center; }
+.prl-svg img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }
 .prl-file-list { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .prl-file-btn {
   padding: 5px 12px;
