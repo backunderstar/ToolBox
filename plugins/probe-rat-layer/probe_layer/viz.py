@@ -1,4 +1,9 @@
-"""可视化（matplotlib，输出 PNG + SVG）。"""
+"""可视化（matplotlib，输出 PNG + SVG）。
+
+⚠️ 插件本地优化（2026-09）：render_layer/render_overview 逐条 `ax.plot` 改为
+`LineCollection` 批量画线（大线数时提速数倍~一个数量级）；新增 `with_png`
+参数供插件按需跳过 PNG（只用 SVG）。CLI 默认行为不变（with_png=True）。
+"""
 from __future__ import annotations
 
 import hashlib
@@ -10,6 +15,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.collections import LineCollection
 
 from .model import (LayeringResult, LayerInfo, Wire, KeepoutZone, RectZone,
                     CircleZone, Conflict, ConflictLevel)
@@ -55,24 +61,30 @@ def _draw_keepouts(ax, zones: tuple[KeepoutZone, ...]) -> None:
                 facecolor="0.85", edgecolor="red", hatch="///", alpha=0.6))
 
 
-def _save(fig, base: str) -> None:
+def _save(fig, base: str, with_png: bool = True) -> None:
     fig.tight_layout()
-    fig.savefig(base + ".png", dpi=120)
+    if with_png:
+        fig.savefig(base + ".png", dpi=120)
     fig.savefig(base + ".svg")
     plt.close(fig)
 
 
 def render_layer(layer: LayerInfo, wire_by_id: dict[str, Wire],
                  zones: tuple[KeepoutZone, ...], conflicts: tuple[Conflict, ...],
-                 out_dir: str) -> str:
+                 out_dir: str, with_png: bool = True) -> str:
     fig, ax = plt.subplots(figsize=(10, 8))
     _draw_keepouts(ax, zones)
 
     layer_wires = set(layer.wires)
+    # 批量画线（LineCollection）：逐条 ax.plot 在大线数时是性能瓶颈
+    segs: list[list[tuple[float, float]]] = []
+    colors: list[str] = []
     for wid in layer.wires:
         w = wire_by_id[wid]
-        ax.plot([w.start.x, w.end.x], [w.start.y, w.end.y],
-                color=_color(w.net_id), lw=1.5)
+        segs.append([(w.start.x, w.start.y), (w.end.x, w.end.y)])
+        colors.append(_color(w.net_id))
+    if segs:
+        ax.add_collection(LineCollection(segs, colors=colors, lw=1.5))
 
     for c in conflicts:
         if c.intersect_pt is None:
@@ -93,35 +105,38 @@ def render_layer(layer: LayerInfo, wire_by_id: dict[str, Wire],
     img_dir = os.path.join(out_dir, "img")
     os.makedirs(img_dir, exist_ok=True)
     base = os.path.join(img_dir, f"layer_{layer.layer_index:02d}")
-    _save(fig, base)
+    _save(fig, base, with_png=with_png)
     return base
 
 
 def render_overview(result: LayeringResult, wire_by_id: dict[str, Wire],
-                    zones: tuple[KeepoutZone, ...], out_dir: str) -> str:
+                    zones: tuple[KeepoutZone, ...], out_dir: str,
+                    with_png: bool = True) -> str:
     fig, ax = plt.subplots(figsize=(10, 8))
     _draw_keepouts(ax, zones)
     cmap = plt.get_cmap("tab10")
-    styles = ["-", "--", "-.", ":"]
+    segs: list[list[tuple[float, float]]] = []
+    colors: list[str] = []
     for li in result.layers:
         if li.kind == "plane":
             continue
         color = cmap((li.layer_index - 1) % 10)
-        ls = styles[(li.layer_index - 1) % len(styles)]
         for wid in li.wires:
             w = wire_by_id[wid]
-            ax.plot([w.start.x, w.end.x], [w.start.y, w.end.y],
-                    color=color, ls=ls, lw=1.2)
+            segs.append([(w.start.x, w.start.y), (w.end.x, w.end.y)])
+            colors.append(color)
+    if segs:
+        ax.add_collection(LineCollection(segs, colors=colors, lw=1.2))
     ax.set_aspect("equal")
     xmin, xmax, ymin, ymax = _bbox(wire_by_id, zones)
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
-    ax.set_title("Overview (line style = layer)")
+    ax.set_title("Overview (color = layer)")
     ax.grid(alpha=0.2)
     img_dir = os.path.join(out_dir, "img")
     os.makedirs(img_dir, exist_ok=True)
     base = os.path.join(img_dir, "overview")
-    _save(fig, base)
+    _save(fig, base, with_png=with_png)
     return base
 
 

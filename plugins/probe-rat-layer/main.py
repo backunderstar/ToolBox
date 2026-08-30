@@ -69,6 +69,9 @@ _SETTINGS_PATH = os.path.join(_PLUGIN_DIR, "settings.json")
 
 # stdout 写锁：主线程（响应）与后台线程（通知）共用，防行内交错
 _OUT_LOCK = threading.Lock()
+# matplotlib 渲染锁：cmd_render（主线程）与预渲染线程（后台）共用，
+# matplotlib 非线程安全，任何渲染（viz / _render_manual）必须持锁
+_RENDER_LOCK = threading.Lock()
 
 # ---------- 后台任务引擎 ----------
 
@@ -260,6 +263,9 @@ def _run_job(job_id: str, args: dict) -> None:
             _ACTIVE.update(state="done", stage="完成", percent=100.0,
                            message="完成", error=None)
         _emit("layer.done", {"jobId": job_id, "summary": summary})
+        # 完成后台预渲染全部图（用户点任何图都命中缓存，不用现场等渲染）
+        threading.Thread(target=_pre_render, args=(job_id,),
+                         daemon=True).start()
     except LayeringCancelled:
         with _STATE_LOCK:
             _JOBS[job_id].update(summary=None)
@@ -467,7 +473,6 @@ def _render_manual(wires: list, zones: tuple, out_dir: str) -> str:
     ax.grid(alpha=0.2)
     base = os.path.join(out_dir, "manual")
     fig.tight_layout()
-    fig.savefig(base + ".png", dpi=120)
     fig.savefig(base + ".svg")
     plt.close(fig)
     return base
@@ -497,6 +502,39 @@ def cmd_render(job_id: str, kind: str) -> str:
         with open(svg_path, encoding="utf-8", errors="replace") as f:
             return f.read()
 
+    # 未命中：持渲染锁现场渲染（与后台预渲染互斥，matplotlib 非线程安全）
+    with _RENDER_LOCK:
+        base = _render_one(job_id, kind, with_png=False)
+    svg_path = base + ".svg"
+    if not os.path.isfile(svg_path):
+        raise ValueError(f"渲染失败（无 SVG 输出）: {kind}")
+    with open(svg_path, encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
+def _pre_render(job_id: str) -> None:
+    """任务完成后的后台预渲染：全部图生成到 <job>/img/，用户点击直接命中缓存。
+
+    只渲染一次（缓存文件已存在则跳过）；失败静默（点击时 cmd_render 会现场补渲）。
+    """
+    try:
+        res = json.load(open(os.path.join(_job_dir(job_id), "result.json"), encoding="utf-8"))
+        kinds = ["overview", "rose"]
+        kinds += [f"layer_{li['layer']}" for li in res.get("layers", [])
+                  if li.get("kind") == "signal"]
+        if res.get("manual_route_nets"):
+            kinds.append("manual")
+        for kind in kinds:
+            base = _render_one(job_id, kind, with_png=False)
+            if base and not os.path.isfile(base + ".svg"):
+                # 该 kind 无输出（如 rose 空），跳过
+                continue
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write("[rat-layer] 预渲染失败: %s\n" % e)
+
+
+def _render_one(job_id: str, kind: str, with_png: bool = False) -> str:
+    """渲染单张图（调用方必须已持有 _RENDER_LOCK）。返回 base（含扩展名前的路径）。"""
     geo, res = _load_job_render_data(job_id)
     wires = [Wire(w["wire_id"], w["net_id"], Point(*w["start"]), Point(*w["end"]),
                   w["width"], w["clearance"]) for w in geo["wires"]]
@@ -535,30 +573,24 @@ def cmd_render(job_id: str, kind: str) -> str:
     # 这里传 job 根目录，输出落到 <job>/img/；_render_manual 自己写，直接传 img_dir
     job_root = _job_dir(job_id)
     if kind == "overview":
-        base = viz.render_overview(lite, wire_by_id, zones, job_root)
-    elif kind == "rose":
-        base = viz.render_rose(lite, wire_by_id, job_root, cfg)
-    elif kind == "manual":
+        return viz.render_overview(lite, wire_by_id, zones, job_root, with_png=with_png)
+    if kind == "rose":
+        return viz.render_rose(lite, wire_by_id, job_root, cfg)
+    if kind == "manual":
         # 需人工 route 的线：按 manual_route_nets（net 名）从几何里过滤
         manual_nets = set(res.get("manual_route_nets", []))
         manual_wires = [w for w in wires if w.net_id in manual_nets]
         if not manual_wires:
             raise ValueError("无人工 route 线（本结果全部自动分层）")
-        base = _render_manual(manual_wires, zones, img_dir)
-    elif kind.startswith("layer_"):
+        return _render_manual(manual_wires, zones, img_dir)
+    if kind.startswith("layer_"):
         idx = kind[len("layer_"):]
         li = next((l for l in layers if str(l.layer_index) == idx), None)
         if li is None:
             raise ValueError(f"层不存在: {kind}")
-        base = viz.render_layer(li, wire_by_id, zones, conflicts, job_root)
-    else:
-        raise ValueError(f"未知渲染类型: {kind}")
-
-    svg_path = base + ".svg"
-    if not os.path.isfile(svg_path):
-        raise ValueError(f"渲染失败（无 SVG 输出）: {kind}")
-    with open(svg_path, encoding="utf-8", errors="replace") as f:
-        return f.read()
+        return viz.render_layer(li, wire_by_id, zones, conflicts, job_root,
+                                with_png=with_png)
+    raise ValueError(f"未知渲染类型: {kind}")
 
 # ---------- 核心 API（仅在处理 call 期间可用） ----------
 

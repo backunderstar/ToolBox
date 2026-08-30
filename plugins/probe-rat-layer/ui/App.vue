@@ -369,19 +369,17 @@ const svgError = ref<string | null>(null);
 const viewerText = ref<string | null>(null);
 const viewerTitle = ref("");
 
-/** SVG 文本 → base64 data URL（<img> 展示；宿主 CSP img-src 允许 data:）。
- * 不用 v-html 内联：matplotlib SVG 带 <?xml?>/<!DOCTYPE> 前缀，WebView2 解析不可靠。 */
-function svgToDataUrl(svg: string): string {
-  const bytes = new TextEncoder().encode(svg);
-  let bin = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return `data:image/svg+xml;base64,${btoa(bin)}`;
+/** SVG 文本 → Blob URL（<img> 展示；宿主 CSP img-src 允许 blob:）。
+ * 不用 v-html 内联（matplotlib SVG 带 <?xml?>/<!DOCTYPE> 前缀，WebView2 解析不可靠）；
+ * 不用 base64（大 SVG 编码开销大），Blob URL 零复制。切换时 revoke 旧 URL 防泄漏。 */
+let svgUrlValue = "";
+function svgToUrl(svg: string): string {
+  if (svgUrlValue) URL.revokeObjectURL(svgUrlValue);
+  svgUrlValue = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  return svgUrlValue;
 }
 
-const svgUrl = computed(() => (svgText.value ? svgToDataUrl(svgText.value) : ""));
+const svgUrl = computed(() => (svgText.value ? svgToUrl(svgText.value) : ""));
 
 /** 已渲染过的图按 jobId+kind 缓存（点过的图秒显，不再调后端） */
 const svgCache = new Map<string, string>();
