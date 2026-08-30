@@ -256,6 +256,21 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   lint 0 警告；UI 已 build + sync 到 D:\ToolBoxData\plugins（vendor 98MB）。
 - **副本同步规则**：Rat-layer 改动后重拷 probe_layer + tests → 重加钩子 → rebuild UI →
   重跑 §1.12 测试；保持 `pipeline.run(data, cfg)` 等接口不动（见插件 README §7）。
+- **1.12 后续两轮（2026-09）**：
+  - 渲染稳定性（§1.12 内）：`layer.render` 异步化（未命中返回 `{"pending":true}` 后台
+    线程渲染，宿主 30s 永不超时）+ SVG 完整性校验 `_svg_ready`（matplotlib 先建文件后
+    写内容，轮询会撞上"已创建未写完"的半成品 → 读空串"加载不出来"的根因）+ `.failed`
+    标记（前端拿到明确错误）。matplotlib 非线程安全 → 全渲染持 `_RENDER_LOCK`；字体
+    缓存 `MPLCONFIGDIR` 隔离到 `<插件>/cache/mpl`（缓存损坏会让 import 卡 30s+ 崩溃循环）。
+  - 前端状态恢复（本次）：**`layer.status` 原返回 snake_case `job_id`，前端读 camelCase
+    `jobId` 永远是 undefined → 离开页面再回来结果恢复不出来，"又得重头开始"的根因**。
+    修复：status 同时返回 `jobId`；前端挂载时恢复 running（续轮询+回运行页）/done
+    （拉结果+回结果页）/failed/cancelled（报错回运行页）；每个 jobId 只弹一次完成通知
+    （恢复态不重复弹）；输入/参数表单改防抖 600ms 实时持久化（原来只在点开始时存一次，
+    填一半切走就丢）；分层成功写 `jobs/<id>/meta.json`，进程重启（宿主崩溃重启/插件
+    重载）后 `_restore_jobs` 扫描恢复上次 done 任务 → 结果页和 SVG 文件缓存照常可用。
+    验证：protocol_test 13 项全过（新增 camelCase jobId 断言 + **新起进程恢复断言**），
+    vendored pytest 31、lint 0。
 
 ---
 
@@ -485,7 +500,7 @@ cargo test --workspace                 # Rust 测试（当前 60）
   deps 抽取 / .editorconfig / CHANGELOG / package-plugin CLI / api+plugins 补测）、
   示例精简 `1928bc9`（plugins/ 9→4，每种运行时留一典型，主题全保留，见 §1.10）、
   独立测试 `2a60108`（模板 mock-host + npm test，见 §1.11）与探针卡插件轮（`probe-rat-layer`，
-  见 §1.12，未推送提交累计 45 个）。
+  见 §1.12，未推送提交累计 56 个）。
   网络情况：本机 **github.com:443 HTTPS 直连被墙**（重试多次 `Connection reset`；
   解析到 20.205.243.166 不通），但 **`ssh.github.com:443` 实测可连**（GitHub 官方
   SSH-over-443 通道）。推送选项：① 生成 SSH key 加 GitHub → 远程改

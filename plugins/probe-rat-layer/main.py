@@ -129,6 +129,42 @@ def _job_dir(job_id: str) -> str:
     return os.path.join(_JOBS_DIR, job_id)
 
 
+def _restore_jobs() -> None:
+    """启动时从 jobs/<id>/meta.json 恢复已完成任务（进程重启后结果不丢）。
+
+    进程插件由宿主随应用启动/崩溃重启自动拉起；_JOBS 是内存字典，重启即空。
+    分层成功时在 job 目录写 meta.json（摘要 + 输出目录 + 文件清单），
+    这里扫描恢复进 _JOBS，并把 _ACTIVE 置为最新的 done 任务——前端挂载时
+    layer.status 即可拿到 jobId，结果页/图片缓存照常工作（SVG 文件本来就在
+    jobs/<id>/img/ 磁盘上）。job_id 是 %Y%m%d_%H%M%S，字典序即时间序。
+    """
+    if not os.path.isdir(_JOBS_DIR):
+        return
+    restored: list[str] = []
+    for name in sorted(os.listdir(_JOBS_DIR), reverse=True):
+        jdir = os.path.join(_JOBS_DIR, name)
+        mpath = os.path.join(jdir, "meta.json")
+        if not os.path.isfile(mpath):
+            continue
+        try:
+            with open(mpath, encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        _JOBS[name] = {
+            "cancel_event": threading.Event(),
+            "summary": meta.get("summary"),
+            "layers_detail": meta.get("layers_detail", []),
+            "out_dir": meta.get("out_dir"),
+            "files": meta.get("files", []),
+        }
+        restored.append(name)
+    if restored:
+        with _STATE_LOCK:
+            _ACTIVE.update(job_id=restored[0], state="done", stage="完成",
+                           percent=100.0, message="完成", error=None)
+
+
 def _serialize_wire(w) -> dict:
     return {"wire_id": w.wire_id, "net_id": w.net_id,
             "start": [w.start.x, w.start.y], "end": [w.end.x, w.end.y],
@@ -291,6 +327,15 @@ def _run_job(job_id: str, args: dict) -> None:
                                  out_dir=out_dir, files=_list_out_files(out_dir))
             _ACTIVE.update(state="done", stage="完成", percent=100.0,
                            message="完成", error=None)
+        # 结果持久化：进程重启（宿主崩溃重启/插件重载）后 layer.status/layer.result
+        # 仍能恢复本任务（_restore_jobs 扫描恢复）。SVG 文件缓存本就在磁盘上。
+        try:
+            with open(os.path.join(jdir, "meta.json"), "w", encoding="utf-8") as f:
+                json.dump({"summary": summary, "layers_detail": layers_detail,
+                           "out_dir": out_dir, "files": _list_out_files(out_dir)},
+                          f, ensure_ascii=False)
+        except OSError:
+            pass
         _emit("layer.done", {"jobId": job_id, "summary": summary})
         # ⚠️ 不做后台预渲染：预渲染线程与点击现场渲染并发首用 matplotlib，
         # 会并发构建字体缓存导致损坏（宿主 30s 超时 kill 时缓存写坏 → 后续
@@ -720,6 +765,10 @@ def handle_request(msg: dict) -> dict:
             elif command == "layer.status":
                 with _STATE_LOCK:
                     result = dict(_ACTIVE)
+                    # 前端 Status 类型用 camelCase jobId；事件/run 返回也是 jobId。
+                    # 历史版本返回 snake_case job_id，前端读到 undefined 导致离开页面
+                    # 回来无法恢复结果（2026-09 用户反馈"离开再回来又得重头开始"）。
+                    result["jobId"] = _ACTIVE.get("job_id")
             elif command == "layer.cancel":
                 with _STATE_LOCK:
                     ev = _JOBS.get(_ACTIVE.get("job_id"), {}).get("cancel_event")
@@ -757,6 +806,7 @@ def handle_request(msg: dict) -> dict:
 
 
 def main():
+    _restore_jobs()  # 进程重启后恢复上次完成任务（结果/状态不丢）
     for line in sys.stdin:
         line = line.strip()
         if not line:

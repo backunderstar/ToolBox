@@ -183,6 +183,8 @@ def main():
         st, progress = c.status_until(("done", "failed", "cancelled"))
         if st["state"] != "done":
             fail(f"任务终态异常: {st}")
+        if st.get("jobId") != job_id:
+            fail(f"layer.status 未返回 jobId（camelCase，前端靠它恢复结果）: {st}")
         if not any(p["state"] == "running" and p.get("percent") for p in progress):
             fail("未观察到进度阶段（status 轮询应带回 percent/stage）")
         print(f"PASS 异步完成（轮询 {len(progress)} 次，末状态 percent={st.get('percent')}）")
@@ -237,7 +239,23 @@ def main():
             fail("layer.readOut 越界应被拒")
         print(f"PASS 路径越界被拒: {err['_error']}")
 
-        # 10. shutdown
+        # 10. 重启恢复：新起进程（模拟宿主重启插件/应用）→ layer.status 应恢复 done + jobId
+        c2 = PluginClient(args.python)
+        try:
+            c2.send({"id": 0, "method": "init",
+                     "params": {"apiVersion": 1, "pluginId": "probe-rat-layer"}})
+            r2 = c2.recv()
+            st2 = c2.call("layer.status")
+            if st2["state"] != "done" or st2.get("jobId") != job_id:
+                fail(f"重启后未恢复上次任务（state={st2['state']} jobId={st2.get('jobId')}）")
+            res2 = c2.call("layer.result", {"jobId": job_id})
+            if res2["summary"]["layer_count"] != 4:
+                fail("重启后 layer.result 摘要异常")
+            print("PASS 进程重启后恢复上次任务（status done + result 可读，前端不用重头开始）")
+        finally:
+            c2.shutdown()
+
+        # 11. shutdown
         c.shutdown()
         print("PASS shutdown 干净退出")
     finally:

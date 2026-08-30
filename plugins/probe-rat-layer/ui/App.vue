@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type {
   PluginBridgeApi, DirEntry, Status, JobResult, ProgressData, DoneData,
 } from "./bridge";
@@ -228,6 +228,8 @@ const runError = ref<string | null>(null);
 const result = ref<JobResult | null>(null);
 const pollTimer = ref<number | null>(null);
 let lastLoggedProgress = "";
+/** 已通知过的 jobId：页面切换重挂载后不重复弹完成通知 */
+const notifiedJobs = new Set<string>();
 
 const isRunning = computed(() => status.value.state === "running");
 const percent = computed(() => Math.round(status.value.percent ?? 0));
@@ -254,10 +256,14 @@ async function handleStatus(s: Status): Promise<void> {
         result.value = (await props.api.call("layer.result", { jobId: jobId.value })) as JobResult;
         activeTab.value = "result";
         logEvent("分层完成");
-        void props.api.call("layer.notifyDone", {
-          title: "探针卡分层完成",
-          body: `耗时 ${result.value.summary.elapsed_sec}s，硬冲突 ${result.value.summary.hard_conflict_count}`,
-        });
+        // 每个 job 只弹一次完成通知（页面切换重挂载恢复 done 状态时不重复弹）
+        if (!notifiedJobs.has(jobId.value)) {
+          notifiedJobs.add(jobId.value);
+          void props.api.call("layer.notifyDone", {
+            title: "探针卡分层完成",
+            body: `耗时 ${result.value.summary.elapsed_sec}s，硬冲突 ${result.value.summary.hard_conflict_count}`,
+          });
+        }
       } catch (e) {
         runError.value = `读取结果失败: ${e}`;
       }
@@ -499,7 +505,7 @@ const lstFiles = computed(() =>
   result.value?.files.filter((f) => f.endsWith(".lst") && f.startsWith("lst/")) ?? [],
 );
 
-/* ---------- 初始化：恢复上次输入/预设 + 订阅状态变化 ---------- */
+/* ---------- 初始化：恢复上次输入/预设 + 恢复后台任务（离开页面/重启不丢） ---------- */
 void (async () => {
   try {
     const r = (await props.api.call("layer.config", { action: "get" })) as {
@@ -517,20 +523,67 @@ void (async () => {
   } catch {
     applyPreset("hv");
   }
-  await refreshStatus();
-  if (status.value.state === "running") startPolling();
-  if (status.value.state === "done" && status.value.jobId) {
+  // 恢复后台任务：layer.status 带 jobId（camelCase）→ running 续轮询 / done 拉结果
+  try {
+    status.value = (await props.api.call("layer.status")) as Status;
+  } catch (e) {
+    runError.value = `状态查询失败: ${e}`;
+    return;
+  }
+  if (status.value.state === "running") {
+    jobId.value = status.value.jobId ?? null;
+    activeTab.value = "run"; // 直接回到运行页看进度
+    logEvent(`[${Math.round(status.value.percent ?? 0)}%] ${status.value.message ?? status.value.stage}`);
+    startPolling();
+  } else if (status.value.state === "done" && status.value.jobId) {
     jobId.value = status.value.jobId;
+    activeTab.value = "result"; // 上次任务已完成，直接进结果页
     try {
       result.value = (await props.api.call("layer.result", { jobId: jobId.value })) as JobResult;
+      notifiedJobs.add(jobId.value); // 恢复态不重复弹完成通知
+      logEvent("分层完成（恢复上次结果）");
     } catch {
-      /* 结果已过期（重启进程后 jobs 丢失） */
+      runError.value = "读取上次结果失败（输出目录可能已移动）";
     }
+  } else if (status.value.state === "failed" || status.value.state === "cancelled") {
+    activeTab.value = "run";
+    runError.value = status.value.error ?? (status.value.state === "failed" ? "上次分层失败" : "上次分层已取消");
   }
 })();
 
+/* 输入/参数变化即持久化（防抖 600ms）：离开页面再回来表单不丢。
+ * 之前只在点「开始分层」时存一次 settings——填了一半切走页面就全没了。 */
+let persistTimer: number | null = null;
+watch(
+  () => [
+    inputPath.value, filterPath.value, outDir.value,
+    presetName.value, layers.value, width.value, clearance.value,
+    method.value, optimizer.value, resolveConflictRounds.value,
+    balanceLengthRounds.value, minimizeCrossingsPasses.value, saRestarts.value,
+    saInitialTemp.value, saCooling.value, saMaxSteps.value, saSwapRatio.value,
+    saBalanceSlack.value, congestionGridCell.value, congestionHardThreshold.value,
+    layerCapacity.value, capacityUtilization.value, viaAreaCost.value,
+    sectorAngleDeg.value,
+  ],
+  () => {
+    if (persistTimer !== null) window.clearTimeout(persistTimer);
+    persistTimer = window.setTimeout(() => {
+      void props.api.call("layer.config", {
+        action: "set",
+        patch: {
+          lastInput: inputPath.value.trim(),
+          lastFilter: filterPath.value.trim(),
+          lastOutDir: outDir.value.trim(),
+          ...collectParams(),
+        },
+      });
+    }, 600);
+  },
+);
+
 /* 轮询期间状态收敛（含 done/failed 分支，由 refreshStatus 内部调用） */
 onBeforeUnmount(() => {
+  if (persistTimer !== null) window.clearTimeout(persistTimer);
   stopPolling();
   offProgress();
   offDone();
