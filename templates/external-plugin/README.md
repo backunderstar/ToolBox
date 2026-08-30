@@ -53,5 +53,7 @@ npm run build          # → ui/index.js + style.css
 
 ## 参考
 
+- **[DEVELOPER.md](DEVELOPER.md) —— 宿主接口全量参考**：可调用的方法（桥 API / 核心 API /
+  事件）、plugin.json 字段全量、可复用 CSS 变量（tokens 全量）、推荐实现方式、协议速查、调试。
 - 协议与 API 全量说明：ToolBox 仓库 `docs/插件开发指南.md`（§3 process 插件 / §2.3 自带前端 / §3.8 界面）
 - 更多示例：ToolBox 仓库 `plugins/`（py-tools / py-jmes / csv-tool）与 `core-plugins/example`
