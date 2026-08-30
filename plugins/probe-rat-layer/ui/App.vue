@@ -46,14 +46,16 @@ const saCooling = ref(0.9995);
 const saMaxSteps = ref(0);
 const saSwapRatio = ref(0.7);
 const saBalanceSlack = ref(2.0);
-const congestionGridCell = ref(0.5);
-const congestionHardThreshold = ref(0.8);
+const congestionGridCell = ref(2.0);
+const congestionHardThreshold = ref(3.0);
 const layerCapacity = ref(1.0);
 const capacityUtilization = ref(0.6);
 const viaAreaCost = ref(0.1);
 const sectorAngleDeg = ref(45.0);
 
-const presetName = ref<"custom" | "hv" | "full">("custom");
+// 首启默认 HV 预设（cell 2.0 / threshold 3.0）——原项目文档明确"默认 0.8/0.5 对 HV 太严"，
+// 默认值若用 probe_layer 原默认会让真实数据大量进人工（实测 1800 线 manual 1758）。
+const presetName = ref<"custom" | "hv" | "full">("hv");
 
 const configOverrides = computed(() => {
   const o: Record<string, unknown> = {
@@ -78,6 +80,50 @@ const configOverrides = computed(() => {
   return o;
 });
 
+/** 收集全部参数（含基本输入，供持久化恢复） */
+function collectParams(): Record<string, unknown> {
+  return {
+    preset: presetName.value,
+    layers: layers.value,
+    width: width.value,
+    clearance: clearance.value,
+    ...configOverrides.value,
+  };
+}
+
+/** 把持久化的参数值写回表单（只认已知字段） */
+function applyParams(v: Record<string, unknown>): void {
+  const num = (k: string) => (typeof v[k] === "number" ? (v[k] as number) : undefined);
+  const str = (k: string) => (typeof v[k] === "string" ? (v[k] as string) : undefined);
+  if (typeof v.preset === "string") applyPreset(v.preset as "custom" | "hv" | "full");
+  if (num("layers") !== undefined) layers.value = num("layers")!;
+  if (num("width") !== undefined) width.value = num("width")!;
+  if (num("clearance") !== undefined) clearance.value = num("clearance")!;
+  if (str("method")) method.value = str("method")!;
+  if (str("optimizer")) optimizer.value = str("optimizer")!;
+  const map: Array<[keyof typeof configOverrides.value, (n: number) => void]> = [
+    ["resolve_conflict_rounds", (n) => (resolveConflictRounds.value = n)],
+    ["balance_length_rounds", (n) => (balanceLengthRounds.value = n)],
+    ["minimize_crossings_passes", (n) => (minimizeCrossingsPasses.value = n)],
+    ["sa_restarts", (n) => (saRestarts.value = n)],
+    ["sa_initial_temp", (n) => (saInitialTemp.value = n)],
+    ["sa_cooling", (n) => (saCooling.value = n)],
+    ["sa_max_steps", (n) => (saMaxSteps.value = n)],
+    ["sa_swap_ratio", (n) => (saSwapRatio.value = n)],
+    ["sa_balance_slack", (n) => (saBalanceSlack.value = n)],
+    ["congestion_grid_cell", (n) => (congestionGridCell.value = n)],
+    ["congestion_hard_threshold", (n) => (congestionHardThreshold.value = n)],
+    ["layer_capacity", (n) => (layerCapacity.value = n)],
+    ["capacity_utilization", (n) => (capacityUtilization.value = n)],
+    ["via_area_cost", (n) => (viaAreaCost.value = n)],
+    ["sector_angle_deg", (n) => (sectorAngleDeg.value = n)],
+  ];
+  for (const [k, set] of map) {
+    const n = num(k);
+    if (n !== undefined) set(n);
+  }
+}
+
 function applyPreset(p: "custom" | "hv" | "full"): void {
   presetName.value = p;
   if (p === "hv") {
@@ -100,6 +146,14 @@ function applyPreset(p: "custom" | "hv" | "full"): void {
     optimizer.value = "sa";
   }
 }
+
+/** 人工线占比过高提示（结果页）：超过 30% 大概率是拥塞阈值过严，建议 HV 预设 */
+const manualRatio = computed(() => {
+  if (!result.value) return 0;
+  const s = result.value.summary;
+  const total = s.wire_assigned_count + s.manual_route_net_count;
+  return total > 0 ? s.manual_route_net_count / total : 0;
+});
 
 /* ---------- 内置文件浏览器（layer.listDir；Python 直读任意目录） ---------- */
 const browserOpen = ref(false);
@@ -269,14 +323,14 @@ async function startRun(): Promise<void> {
     status.value = { state: "running", jobId: r.jobId, stage: "启动", percent: 0, message: "启动" };
     activeTab.value = "run";
     startPolling();
-    // 记住上次输入（插件设置，下次打开恢复）
+    // 记住上次输入与参数（插件设置，下次打开恢复）
     void props.api.call("layer.config", {
       action: "set",
       patch: {
         lastInput: inputPath.value.trim(),
         lastFilter: filterPath.value.trim(),
         lastOutDir: outDir.value.trim(),
-        lastLayers: layers.value,
+        ...collectParams(),
       },
     });
   } catch (e) {
@@ -395,7 +449,7 @@ const lstFiles = computed(() =>
   result.value?.files.filter((f) => f.endsWith(".lst") && f.startsWith("lst/")) ?? [],
 );
 
-/* ---------- 初始化：恢复上次输入 + 订阅状态变化 ---------- */
+/* ---------- 初始化：恢复上次输入/预设 + 订阅状态变化 ---------- */
 void (async () => {
   try {
     const r = (await props.api.call("layer.config", { action: "get" })) as {
@@ -405,9 +459,13 @@ void (async () => {
     if (typeof s.lastInput === "string" && s.lastInput) inputPath.value = s.lastInput;
     if (typeof s.lastFilter === "string" && s.lastFilter) filterPath.value = s.lastFilter;
     if (typeof s.lastOutDir === "string" && s.lastOutDir) outDir.value = s.lastOutDir;
-    if (typeof s.lastLayers === "number") layers.value = s.lastLayers;
+    if (s && typeof s === "object" && "preset" in s) {
+      applyParams(s); // 恢复上次预设与全部参数（含 layers/width/clearance）
+    } else {
+      applyPreset("hv"); // 首次使用：默认 HV 预设（默认 0.5/0.8 对 HV 太严）
+    }
   } catch {
-    /* 首次使用无设置，忽略 */
+    applyPreset("hv");
   }
   await refreshStatus();
   if (status.value.state === "running") startPolling();
@@ -634,6 +692,10 @@ onBeforeUnmount(() => {
           <template v-if="filterPath"> ｜ 筛选：{{ filterPath }}</template>
           <br />输出：{{ outDir || "（未指定）" }} ｜ 层数 {{ layers }} / 线宽 {{ width }} / 线距 {{ clearance }}
         </p>
+        <p v-if="presetName === 'custom' && congestionHardThreshold < 1.5" class="prl-warn prl-warn-inline">
+          ⚠️ 当前是自定义参数且拥塞阈值 {{ congestionHardThreshold }} 偏严（HV 推荐 3.0）——
+          真实数据可能大量进人工清单，建议先用「HV 预设」。
+        </p>
         <div class="prl-actions">
           <button class="prl-btn prl-btn-primary" :disabled="runBusy || isRunning" @click="startRun">
             {{ runBusy ? "启动中…" : isRunning ? "运行中…" : "开始分层" }}
@@ -681,6 +743,17 @@ onBeforeUnmount(() => {
           <p v-if="result.summary.warnings.length" class="prl-meta">
             警告：{{ result.summary.warnings.join("；") }}
           </p>
+        </div>
+
+        <!-- 人工线占比过高 → 大概率拥塞阈值过严，给出一键改 HV 预设 -->
+        <div v-if="manualRatio > 0.3" class="prl-warn" role="alert">
+          <div class="prl-warn-body">
+            <strong>{{ (manualRatio * 100).toFixed(0) }}% 的线进了人工 route 清单</strong>
+            <span>通常是拥塞参数太严（默认 threshold 0.8 / cell 0.5 对 HV 偏严，会把绝大多数线判为硬冲突）。</span>
+          </div>
+          <button class="prl-btn prl-btn-primary" @click="applyPreset('hv'); activeTab = 'run'">
+            应用 HV 预设并重跑
+          </button>
         </div>
 
         <div class="prl-card">
@@ -880,6 +953,35 @@ onBeforeUnmount(() => {
   font-size: var(--text-sm);
   color: var(--pastel-red-fg);
   word-break: break-word;
+}
+.prl-warn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--pastel-yellow-bg, #fff7d6);
+  border: 1px solid var(--pastel-yellow-fg, #d9a400);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--fg);
+}
+.prl-warn-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.prl-warn-body span {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  line-height: 1.6;
+}
+.prl-warn-inline {
+  justify-content: flex-start;
+  padding: 8px 12px;
+  font-size: var(--text-xs);
 }
 .prl-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .prl-actions-inline { gap: var(--space-1); }
