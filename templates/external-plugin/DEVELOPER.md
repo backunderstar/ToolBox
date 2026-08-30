@@ -303,6 +303,12 @@ plugin.json 声明 `"theme": {"base":"light|dark","tokens":{},"css":"theme.css"}
    按钮用捆绑 Python 的 pip 装到 vendor/；main.py 把 vendor 插进 sys.path）。
    依赖目录与构建产物**不入库**（分发源码，对方装完点「安装依赖」）。
 8. **跨插件**：`api.call(cmd, args, targetPluginId)` 调其他插件命令；同名命令不冲突。
+9. **挂载安全（状态恢复）**：宿主切页会 `unmount()` 你的界面再重挂载——**界面内存
+   状态全丢，但进程常驻、磁盘持久**。表单用 settings 命令防抖实时存、挂载时回填；
+   后台任务状态与结果落磁盘（`jobs/<id>/meta.json`），挂载时问状态命令按
+   `running/done/failed` 分支恢复；命令返回字段**统一 camelCase 且与前端类型逐字对齐**
+   （曾因 `job_id` vs `jobId` 对不上，结果页永远恢复不出来）。完整模式见仓库
+   `plugins/probe-rat-layer`（README 有架构说明）与《插件开发指南》§3.9。
 
 ### 10.1 桌面浮窗界面（manifest.float）
 

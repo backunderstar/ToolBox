@@ -77,6 +77,10 @@ npm run build          # → ui/index.js + style.css
 - **界面与进程通信**：界面 `api.call("hello")` → 宿主路由为 JSON-RPC 调 Python 的
   `hello` 命令；Python `notify("progress", {...})` → 界面 `api.on("progress")`。
 - **命令白名单**：`init` 握手声明的 `commands` 之外一律拒绝调用。
+- **挂载安全**：宿主切页会卸载界面再重挂载（内存状态全丢，进程常驻）——带界面的
+  插件要做状态恢复：表单防抖实时存 settings、任务状态/结果落磁盘、挂载时按
+  `layer.status` 恢复；命令返回字段统一 camelCase 与前端类型对齐。完整模式见
+  ToolBox 仓库 `plugins/probe-rat-layer`（架构说明在插件 README，规范见指南 §3.9）。
 - **样式**：只引用宿主设计令牌（tokens.css 变量：`--bg/--fg/--accent/--space-*/--radius-*`），
   随亮暗主题自适应；类名用自己插件的前缀，避免污染宿主。
 - **目录不入库**：`vendor/`、`env/`、`.venv/`、`ui/index.js`、`ui/style.css` 都是
