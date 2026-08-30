@@ -1,0 +1,19 @@
+{
+  "id": "my-plugin",
+  "name": "我的插件",
+  "version": "0.1.0",
+  "description": "外部插件模板：Python 进程（JSON-RPC）+ 自带前端界面（Vue 3）。改这里与代码后按 README 构建安装",
+  "runtime": "process",
+  "command": ["python", "main.py"],
+  "permissions": ["log"],
+  "ui": { "entry": "ui/index.js" },
+  "nav": [
+    {
+      "id": "my-plugin",
+      "label": "我的插件",
+      "icon": "puzzle",
+      "group": "插件"
+    }
+  ],
+  "config": {}
+}

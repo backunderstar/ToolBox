@@ -34,5 +34,9 @@ plugins/*/ui/index.js
 plugins/*/ui/style.css
 target/external-ui/
 
+# 插件模板构建产物（templates/external-plugin 的 npm run build 生成，同外部插件不入库）
+templates/*/ui/index.js
+templates/*/ui/style.css
+
 # 本地数据（vault 用户数据不入库）
 .data/
