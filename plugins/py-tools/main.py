@@ -107,7 +107,7 @@ def human_date(date_str, fmt):
 
 
 def event_demo(args):
-    """事件 demo：边处理边推送 progress 事件（照抄 csv-tool 的 eventTest）。"""
+    """事件 demo：边处理边推送 progress 事件（与模板 main.py 的 notifyDemo 同构）。"""
     percent = int(args.get("percent", 42))
     for step in range(1, 4):
         notify("progress", {"percent": int(percent * step / 3), "message": "处理中 %s/3" % step})

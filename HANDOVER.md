@@ -186,6 +186,22 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
 - 验证：cargo 60（59+1 新：deps tail_lines）/ lint 0 / build ✓ / test 40（24+16 新）
   / 清理 src-tauri 根 26 个 + target 94 个残留日志
 
+### 1.10 增量（2026-09：插件示例精简，用户决策"每种只留典型、主题全保留"）
+
+- **仓库 `plugins/` 从 9 个 → 4 个**：删除 csv-tool / py-env / py-files / py-jmes / py-venv
+  （5 个 process 变体）；保留 hello-tb（webview 唯一示例）、py-tools（process 唯一示例，
+  覆盖协议 + 事件 + 搜索 + 核心 API + 自带前端 + 依赖安装）、theme-maple / theme-midnight
+  （主题插件全保留）；native 示例 = core-plugins/example 不动
+- **运行时同步**：D:\ToolBoxData\plugins 同名 5 个目录已删 + plugins.json enabled 列表已更新
+  （现为 hello-tb / py-tools / theme-maple / theme-midnight / my-plugin）
+- **文档同步**：插件开发指南（开头示例清单 / §3.1 协议示例 pluginId=py-tools、命令 pytext.* /
+  §3.2 最小 main.py 改指模板 / 示例清单 / §3.3 核心 API 示例）、操作手册（目录树 / §3.5 示例 /
+  装插件说明 / 学习路径）、模板 README、PLAN §2.1 设计示例 id；协议最小骨架角色移交模板
+  templates/external-plugin/main.py
+- **依赖方案教学**：方案 A 有仓库实体（py-tools）；B/C/D 做法保留在指南 §3.5，无仓库示例
+  （曾对应 py-env/py-venv，已删）。§6.1 相关坑记录照旧有效（排障经验）
+- 验证：cargo 60 / lint 0 / build ✓ / test 40 / sync:plugins 无异常
+
 ---
 
 ## 2. 项目一句话
@@ -440,27 +456,28 @@ cargo test --workspace                 # Rust 测试（当前 60）
 > 曾踩：旧构建器产物残留 `process.env` 导致插件 UI 报 `process is not defined`
 > （已用 plugin-ui-build.mjs 重建；该产物 gitignored，勿手改）。
 
-## 10. Python 插件示例（2026-08-29 新增，仓库 `plugins/`）
+## 10. 插件示例（仓库 `plugins/`；2026-09 精简：每种运行时只留一个典型，主题全保留）
 
-| 插件 | 形式 | 演示点 | 依赖安装 |
+| 插件 | 运行时 | 演示点 | 依赖安装 |
 |---|---|---|---|
-| `py-jmes` | 方案 A vendored | jmespath 查询 + 事件推送（progress） | 按钮/vendor |
-| `py-files` | — | 核心 API 权限（fs.readText/writeText/listDir + log）+ UTF-8 中文 | 无 |
-| `py-env` | 方案 B env/ | 二进制 wheel（regex cp314）ABI 匹配 | `pip install --target env` |
-| `py-venv` | 方案 C .venv/ | command 用 `.venv/Scripts/python.exe` | venv 创建 + pip |
-| `csv-tool` | 最小骨架 | 协议最小实现 | 无 |
-| `py-tools` | 方案 A vendored | 事件 + 搜索提供者 + 核心 API + **自带前端界面**（§3.8：侧边栏「文本工具」进入，api.call 调命令 / api.on 收事件） | 按钮/vendor |
+| `hello-tb` | webview | 命令注册式最小示例（指南 §1 五分钟跑通的仓库实体） | 无 |
+| `py-tools` | process | 协议 + 事件推送 + 搜索提供者 + 核心 API（call_core fs.listDir）+ **自带前端界面**（指南 §3.8：侧边栏「文本工具」，api.call 调命令 / api.on 收事件） | 按钮/vendor（方案 A） |
+| `theme-maple` | 皮肤插件 | 主题包示例（指南 §6） | 无 |
+| `theme-midnight` | 皮肤插件 | 主题包示例（指南 §6） | 无 |
 
-要点：源码（plugin.json/main.py/requirements.txt）入库；**依赖目录不入库**
-（`.gitignore` 已加 `plugins/*/vendor|env|.venv`），靠按钮/命令安装——
-例外：**py-tools/vendor 是 8/16 就入库的老文件**（当时无按钮只能提交依赖），保持现状，
-如想统一为"不入库"可另行 git rm -r --cached。
-「安装依赖」按钮只装 `vendor/`（有 requirements.txt 才显示），故 **py-env/py-venv
-不声明 requirements.txt**（依赖目标分别是 env/ 与 .venv，声明了按钮会装错位置）；
-py-jmes 是按钮的正确验收对象。
-已实测（8/29）：4 个新插件协议冒烟全过（init/call/事件/中文），dev 冒烟 5 个 process
-插件全部使用捆绑解释器（`%APPDATA%\...\python\python.exe` 部署目录优先解析生效）。
-方案 D（插件自带整个 python.exe，+15~25MB）无法入库，做法见插件开发指南 §3.5 与示例清单。
+要点：
+
+- **已删除的示例（2026-09，用户决策"每种只留典型"）**：csv-tool / py-env / py-files /
+  py-jmes / py-venv（仓库 git 删除 + 运行时目录 D:\ToolBoxData\plugins 已清 + plugins.json
+  enabled 列表已更新）。协议最小骨架 = 模板 `templates/external-plugin/main.py`（原 csv-tool
+  角色）；依赖方案 B/C/D 无仓库实体，做法见插件开发指南 §3.5。
+- **§6.1 的坑记录照旧有效**（py-jmes PermissionError、py-env 目录不可读、py-venv 相对路径
+  spawn、vendor/env/.venv 锁）——排障经验与插件是否在仓库无关。
+- 源码（plugin.json/main.py/requirements.txt）入库；**依赖目录不入库**（`.gitignore` 已加
+  `plugins/*/vendor|env|.venv`）——例外：**py-tools/vendor 是 8/16 就入库的老文件**（当时无
+  按钮只能提交依赖），保持现状；如想统一为"不入库"可另行 `git rm -r --cached plugins/py-tools/vendor`。
+- 「安装依赖」按钮只装 `vendor/`（有 requirements.txt 才显示）：py-tools 是正确验收对象；
+  方案 B/C 插件不要声明 requirements.txt（按钮会装错位置），见指南 §3.5。
 
 ## 11. 教学基线（2026-08-29，用户决策）
 

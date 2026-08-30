@@ -75,4 +75,4 @@ npm run build          # → ui/index.js + style.css
   事件）、plugin.json 字段全量、可复用 CSS 变量（tokens 全量）+ 宿主全局 class、推荐实现方式、
   协议速查、调试。
 - 协议与 API 全量说明：ToolBox 仓库 `docs/插件开发指南.md`（§3 process 插件 / §2.3 自带前端 / §3.8 界面）
-- 更多示例：ToolBox 仓库 `plugins/`（py-tools / py-jmes / csv-tool）与 `core-plugins/example`
+- 更多示例：ToolBox 仓库 `plugins/`（py-tools / hello-tb / theme-maple）与 `core-plugins/example`

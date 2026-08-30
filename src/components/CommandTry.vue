@@ -10,8 +10,8 @@ import Icon from "./Icon.vue";
 /** 常用示例命令的默认测试参数 */
 const EXAMPLE_ARGS: Record<string, string> = {
   "core-example:example.echo": JSON.stringify({ name: "小明" }, null, 2),
-  "csv-tool:csv.convert": JSON.stringify(
-    { csv: "名称,数量\n苹果,3\n香蕉,5", format: "json" },
+  "py-tools:pytext.stats": JSON.stringify(
+    { text: "你好，世界！hello world" },
     null,
     2,
   ),

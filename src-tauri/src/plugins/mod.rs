@@ -62,7 +62,7 @@ mod tests {
     /// 插件 id 白名单（S1a 第一道闸）：合法 id 通过，穿越/绝对路径/非法字符拒绝。
     #[test]
     fn safe_plugin_id_validation() {
-        for ok in ["core-example", "a", "a1", "py-jmes", "theme-maple", "x-y2"] {
+        for ok in ["core-example", "a", "a1", "py-tools", "theme-maple", "x-y2"] {
             assert!(is_safe_plugin_id(ok), "{ok} 应合法");
         }
         for bad in [
@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn manifest_validation() {
         let ok: PluginManifest = serde_json::from_value(json!({
-            "id": "csv-tool", "name": "CSV 工具", "version": "0.1.0",
+            "id": "py-tools", "name": "Python 文本工具", "version": "0.1.0",
             "runtime": "process", "command": ["python", "main.py"]
         }))
         .unwrap();
@@ -417,11 +417,11 @@ mod tests {
         }
     }
 
-    /// 桥接回环：用仓库里的 csv-tool（真实 Python 进程）走完整 JSON-RPC。
+    /// 桥接回环：用仓库里的 py-tools（真实 Python 进程）走完整 JSON-RPC。
     #[test]
     fn bridge_roundtrip_with_python() {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let plugin_dir = base.join("plugins").join("csv-tool");
+        let plugin_dir = base.join("plugins").join("py-tools");
         let manifest_raw =
             std::fs::read_to_string(plugin_dir.join("plugin.json")).expect("示例插件应存在");
         let m: PluginManifest = serde_json::from_str(&manifest_raw).unwrap();
@@ -440,38 +440,39 @@ mod tests {
         .expect("应能启动 python 进程");
         let commands = p.init(Duration::from_secs(15)).unwrap();
         assert!(
-            commands.contains(&"csv.convert".to_string()),
-            "init 应返回 csv.convert"
+            commands.contains(&"pytext.stats".to_string()),
+            "init 应返回 pytext.stats"
         );
 
         let res = p
             .call(
-                "csv.convert",
-                json!({ "csv": "a,b\n1,2\n3,4", "format": "json" }),
+                "pytext.stats",
+                json!({ "text": "hello world" }),
                 Duration::from_secs(15),
             )
             .unwrap();
-        let text = res["text"].as_str().expect("结果应有 text");
-        assert!(text.contains("\"a\": \"1\""), "JSON 转换结果: {text}");
+        assert_eq!(res["chars"], 11, "文本统计: {res}");
+        assert_eq!(res["words"], 2, "文本统计: {res}");
 
+        // vendored 第三方库（python-dateutil）在插件进程内真实可用
         let res2 = p
             .call(
-                "csv.convert",
-                json!({ "csv": "a,b\n1,2", "format": "tsv" }),
+                "pytext.humanDate",
+                json!({ "date": "2024-03-05", "fmt": "%Y" }),
                 Duration::from_secs(15),
             )
             .unwrap();
-        assert!(res2["text"].as_str().unwrap().contains("a\tb"));
+        assert_eq!(res2["formatted"], "2024", "dateutil 解析结果: {res2}");
         p.shutdown();
     }
 
-    /// 事件桥：csv-tool 的 csv.eventTest 发 Notification → 事件总线收到
+    /// 事件桥：py-tools 的 pytext.eventDemo 发 Notification → 事件总线收到
     /// （ProcessPlugin 只持 mpsc SyncSender，不接触 tauri 类型——规避历史加载崩溃）。
     #[test]
     fn bridge_event_forward() {
         use crate::plugins::events::PluginEvent;
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let plugin_dir = base.join("plugins").join("csv-tool");
+        let plugin_dir = base.join("plugins").join("py-tools");
         let manifest_raw =
             std::fs::read_to_string(plugin_dir.join("plugin.json")).expect("示例插件应存在");
         let m: PluginManifest = serde_json::from_str(&manifest_raw).unwrap();
@@ -491,7 +492,7 @@ mod tests {
         p.init(Duration::from_secs(15)).unwrap();
         let res = p
             .call(
-                "csv.eventTest",
+                "pytext.eventDemo",
                 json!({ "percent": 60 }),
                 Duration::from_secs(15),
             )
@@ -502,7 +503,7 @@ mod tests {
         );
         // 应收到 3 个 progress 事件（调用期间实时转发）
         let ev = event_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        assert_eq!(ev.plugin_id, "csv-tool");
+        assert_eq!(ev.plugin_id, "py-tools");
         assert_eq!(ev.event, "progress");
         assert_eq!(ev.data["percent"], 20);
         assert_eq!(
@@ -517,7 +518,7 @@ mod tests {
     #[test]
     fn bridge_error_path() {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let plugin_dir = base.join("plugins").join("csv-tool");
+        let plugin_dir = base.join("plugins").join("py-tools");
         let manifest_raw =
             std::fs::read_to_string(plugin_dir.join("plugin.json")).expect("示例插件应存在");
         let m: PluginManifest = serde_json::from_str(&manifest_raw).unwrap();
@@ -537,7 +538,7 @@ mod tests {
         p.init(Duration::from_secs(15)).unwrap();
         let err = p
             .call(
-                "csv.no-such-command",
+                "pytext.no-such-command",
                 json!({}),
                 Duration::from_secs(15),
             )

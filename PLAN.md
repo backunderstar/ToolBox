@@ -65,8 +65,8 @@
 ```
 plugin.json（每个插件一个）
 {
-  "id": "csv-tools",
-  "name": "CSV 工具集",
+  "id": "text-tools",
+  "name": "文本工具集",
   "version": "0.1.0",
   "runtime": "process",              // process = 子进程 | webview = 界面内 JS
   "command": ["python3", "main.py"], // runtime=process 时生效

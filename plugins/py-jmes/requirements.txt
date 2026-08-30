@@ -1,5 +1,0 @@
-# py-jmes 依赖（方案 A vendored，见 docs/插件开发指南.md §3.5）
-# 安装方式：
-#   - 插件页「安装依赖」按钮（用捆绑 Python 的 pip，装到 <插件>/vendor/）
-#   - 构建机手动：pip install --target vendor -r requirements.txt
-jmespath>=1.0

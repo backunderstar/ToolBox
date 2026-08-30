@@ -6,7 +6,7 @@
 //
 // 用法：pnpm sync:plugins
 // 注意：
-// - process 插件（py-tools / csv-tool）的 Python/JS 进程常驻：同步后需在
+// - process 插件（py-tools 等）的 Python 进程常驻：同步后需在
 //   插件页点「重新加载」或重启应用才生效。
 // - webview 插件的 ui 产物由 scripts/build-external-ui.mjs 生成
 //   （ui/index.js），本脚本会一并同步；改了 ui/index.ts 需先跑
