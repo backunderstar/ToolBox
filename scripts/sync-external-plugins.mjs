@@ -12,7 +12,6 @@
 //   （ui/index.js），本脚本会一并同步；改了 ui/index.ts 需先跑
 //   pnpm build-external-ui plugins/<插件>。
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pluginsDir } from "./platform.mjs";
@@ -61,6 +60,12 @@ if (plugins.length === 0) {
 }
 
 mkdirSync(dstRoot, { recursive: true });
+// 清理上次异常退出遗留的同步临时目录（无 plugin.json，应用扫描会忽略；不清理会累积）
+for (const n of readdirSync(dstRoot)) {
+  if (n.startsWith(".__sync-stash-")) {
+    rmSync(path.join(dstRoot, n), { recursive: true, force: true });
+  }
+}
 let totalFiles = 0;
 let totalBytes = 0;
 let failures = 0;
@@ -69,12 +74,15 @@ for (const name of plugins) {
   const src = path.join(srcRoot, name);
   const dst = path.join(dstRoot, name);
 
-  // 1. 保留本地生成目录（依赖，不入库）：先移到同卷临时区，重建后移回
+  // 1. 保留本地生成目录（依赖，不入库）：先移到同卷临时区，重建后移回。
+  //    临时区必须与插件目录**同卷**（放 dstRoot 下）——os.tmpdir() 可能在
+  //    其他盘（如自定义插件目录在 D 盘），renameSync 跨卷会 EXDEV 失败，
+  //    依赖目录随全量重建被删（8/30 实测踩过）。
   const stash = [];
   for (const d of LOCAL_DIRS) {
     const p = path.join(dst, d);
     if (existsSync(p)) {
-      const tmp = path.join(os.tmpdir(), `tb-sync-${name}-${d}-${process.pid}`);
+      const tmp = path.join(dstRoot, `.__sync-stash-${name}-${d}-${process.pid}`);
       rmSync(tmp, { recursive: true, force: true });
       try {
         renameSync(p, tmp);

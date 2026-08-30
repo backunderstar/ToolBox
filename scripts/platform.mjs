@@ -3,7 +3,7 @@
 // 用途：脚本层（构建/同步/E2E）不再硬编码 Windows 路径与命令；
 // 应用配置目录与 Rust 侧 tauri path API 语义保持一致。
 import { execFileSync } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
@@ -31,9 +31,24 @@ export function appDataDir() {
   return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), APP_ID);
 }
 
-/** 应用全局插件目录（外部插件 + _core 核心插件） */
+/**
+ * 应用全局插件目录（外部插件 + _core 核心插件）。
+ * 尊重用户自定义（plugins.json 顶层 `plugins_dir` 键，与 Rust 侧
+ * manager::global_plugins_dir 同一规则）；缺省回落 %APPDATA%/…/plugins。
+ * 注意：config 键本身存在 %APPDATA% 的 plugins.json（appDataDir 固定），
+ * 不受自定义目标影响。
+ */
 export function pluginsDir() {
-  return path.join(appDataDir(), "plugins");
+  const base = appDataDir();
+  try {
+    const cfg = JSON.parse(readFileSync(path.join(base, "plugins.json"), "utf8"));
+    if (typeof cfg?.plugins_dir === "string" && cfg.plugins_dir.trim()) {
+      return cfg.plugins_dir.trim();
+    }
+  } catch {
+    /* 无配置/损坏：回落默认 */
+  }
+  return path.join(base, "plugins");
 }
 
 /** 核心插件（cdylib）部署目录 */

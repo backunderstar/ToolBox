@@ -225,6 +225,17 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
     ① 保留本地依赖目录（vendor/env/.venv/node_modules，全量重建会误删「安装依赖」
     装的依赖）；② 单插件失败仅告警继续、不崩全量；③ ui 目录只同步构建产物
     （index.js/style.css），源码留仓库。
+13. **自定义插件目录（8/30，本机已迁到 `D:\ToolBoxData\plugins`）**：
+    - 改法：插件页「插件目录 → 更改…」（自动迁移 + 旧目录进回收站），或
+      `%APPDATA%/com.toolbox.desktop/plugins.json` 顶层加 `"plugins_dir": "D:\\..."`
+      （手改**不迁移**，需自行搬目录；JSON 用 write 工具写避免 BOM）。
+    - **scripts 必须跟随**：`platform.mjs` 的 `pluginsDir()` 已改为读 plugins.json 的
+      `plugins_dir` 键（与 Rust `manager::global_plugins_dir` 同规则）——sync:plugins /
+      build:core 才不致同步到 %APPDATA% 旧位置。**改 plugins_dir 前先确认此联动**。
+    - **别放 Program Files**（只读，装依赖/卸载失败）；迁移用 robocopy /MOVE 跨卷
+      复制+删除，先退出应用。
+    - **sync 的依赖保留 stash 必须与插件目录同卷**（放 dstRoot 下）：放 os.tmpdir()
+      会因跨卷 rename EXDEV 失败 → 依赖随全量重建被删（8/30 实测踩过）。
 
 ### 6.2 终端 / Git（Windows）
 
