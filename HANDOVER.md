@@ -150,6 +150,11 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   清单 + §10.1 浮窗界面
 - **CSS 变量契约正式化**：tokens.css 标注「插件 UI 变量契约（公开稳定）」，宿主承诺
   只增不删不改
+- **日志管理完善（P0+P1+P2 + 保留 7 天）**：core/log.rs 加级别（debug/info/warn/error，
+  运行时切换持久化 app.json logLevel；低于阈值不落盘）+ 自动清理（保留 7 天，init 与
+  跨天首写时 prune，days-from-civil 按日比较）；新命令 logs_path/logs_tail/logs_clear/
+  log_level_set；设置页「日志」卡片（级别下拉 + 目录打开 + 应用内查看器：当天尾部 400 行、
+  级别过滤、刷新、清空）；manager.rs 补插件安装/卸载/启停/恢复日志
 - 验证：cargo 59（+float 声明编译）/ lint 0 / build ✓ / build:core ✓（float.js 已部署）
 
 ---

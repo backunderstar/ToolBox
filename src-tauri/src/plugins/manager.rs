@@ -808,6 +808,11 @@ impl PluginManager {
             self.records[idx].error = None;
         }
         save_state(app, &self.enabled, &self.disabled)?;
+        crate::core::log::info(&format!(
+            "[plugins] 已{}插件 {}",
+            if enabled { "启用" } else { "禁用" },
+            id
+        ));
         Ok(())
     }
 
@@ -843,6 +848,7 @@ impl PluginManager {
         } else {
             trash::delete(&dir).map_err(|e| format!("删除插件目录失败: {e}"))?;
         }
+        crate::core::log::info(&format!("[plugins] 已卸载插件 {id}"));
         Ok(())
     }
 
@@ -997,6 +1003,7 @@ impl PluginManager {
                 })?;
             }
         }
+        crate::core::log::info(&format!("[plugins] 已安装插件 {id}（来源: {kind}）"));
         Ok(id)
     }
 
@@ -1031,6 +1038,7 @@ impl PluginManager {
                 })?;
             }
         }
+        crate::core::log::info(&format!("[plugins] 已恢复核心插件 {id}"));
         Ok(())
     }
 

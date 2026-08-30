@@ -147,6 +147,65 @@ fn tray_enabled(app: &tauri::AppHandle) -> bool {
         .unwrap_or(true)
 }
 
+/* ---- 日志管理（查看/清空/级别；落盘见 core/log.rs） ---- */
+
+/// 日志目录路径（设置页显示 + 在资源管理器中打开）。
+#[tauri::command]
+fn logs_path(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?;
+    Ok(dir.join("logs").to_string_lossy().to_string())
+}
+
+/// 读取当天日志尾部（应用内日志查看器；max_lines 取最近 N 行，级别过滤由前端按行做）。
+#[tauri::command]
+fn logs_tail(app: tauri::AppHandle, max_lines: usize) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?
+        .join("logs");
+    let today = &tb_sdk::now_iso()[..10];
+    let path = dir.join(format!("toolbox-{today}.log"));
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("读取日志失败: {e}"))?;
+    let lines: Vec<&str> = raw.lines().collect();
+    let start = lines.len().saturating_sub(max_lines.max(1));
+    Ok(lines[start..].join("\n"))
+}
+
+/// 清空日志：删除 logs/ 下全部 .log（今天的也删，下一条日志自动重建）。
+#[tauri::command]
+fn logs_clear(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?
+        .join("logs");
+    let Ok(read) = std::fs::read_dir(&dir) else {
+        return Ok(()); // 目录不存在 = 无日志可清
+    };
+    let mut removed = 0usize;
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.ends_with(".log") && std::fs::remove_file(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    crate::core::log::info(&format!("[log] 已清空日志（删除 {removed} 个文件）"));
+    Ok(())
+}
+
+/// 设置日志级别（"debug"|"info"|"warn"|"error"）并持久化到 app.json。
+#[tauri::command]
+fn log_level_set(app: tauri::AppHandle, level: String) -> Result<(), String> {
+    crate::core::log::set_level(&level);
+    write_app_setting(&app, "logLevel", serde_json::json!(level))?;
+    crate::core::log::info(&format!("[log] 日志级别已设为 {level}"));
+    Ok(())
+}
+
 /// 设置托盘图标开关：运行时显示/隐藏托盘（设置页开关调用）。
 #[tauri::command]
 fn tray_set_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
@@ -401,6 +460,10 @@ pub fn run() {
             app_settings_get,
             app_settings_set,
             tray_set_enabled,
+            logs_path,
+            logs_tail,
+            logs_clear,
+            log_level_set,
             float_toggle,
             float_set_locked,
             set_window_caption_color,
@@ -409,6 +472,13 @@ pub fn run() {
             // 运行日志目录（%APPDATA%/com.toolbox.desktop/logs/）；失败则日志仅终端
             if let Ok(dir) = app_config_dir(app.handle()) {
                 core::log::init(&dir);
+                // 应用持久化的日志级别（app.json logLevel；缺省 info）
+                if let Some(lv) = load_app_settings(app.handle())
+                    .get("logLevel")
+                    .and_then(|v| v.as_str())
+                {
+                    core::log::set_level(lv);
+                }
             }
             // 打包版：把安装包资源里的核心插件部署到 %APPDATA%（dev 由 build:core 管理）。
             // 首次启动/升级时递归复制 DLL 是重 IO，放后台线程避免阻塞窗口创建与首帧

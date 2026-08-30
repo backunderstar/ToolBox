@@ -17,6 +17,7 @@ import {
 import ThemeEditor from "./ThemeEditor.vue";
 import BackupSettings from "./BackupSettings.vue";
 import NavSettings from "./NavSettings.vue";
+import LogSettings from "./LogSettings.vue";
 import ThemeIoPanel from "./ThemeIoPanel.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import Icon from "./Icon.vue";
@@ -427,6 +428,9 @@ function removeCustom(id: string): void {
 
       <!-- ---- 备份 ---- -->
       <BackupSettings />
+
+      <!-- ---- 日志（级别/目录/查看/清空；保留 7 天自动清理） ---- -->
+      <LogSettings />
 
       <!-- ---- 导航栏 ---- -->
       <NavSettings :config="navConfig" :defs="defs" :on-change="onNavChange" />

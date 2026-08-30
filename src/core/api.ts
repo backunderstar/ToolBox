@@ -114,6 +114,13 @@ export const appSettingsSet = (key: string, value: unknown) =>
 /** 托盘图标开关（运行时创建/移除托盘；关闭后点 X 直接退出应用） */
 export const traySetEnabled = (enabled: boolean) => invoke<void>("tray_set_enabled", { enabled });
 
+/* ---- 日志管理 ---- */
+
+export const logsPath = () => invoke<string>("logs_path");
+export const logsTail = (maxLines: number) => invoke<string>("logs_tail", { maxLines });
+export const logsClear = () => invoke<void>("logs_clear");
+export const logLevelSet = (level: string) => invoke<void>("log_level_set", { level });
+
 /* ---- 宿主文件服务（vault 内文件列表/读写/增删改；系统级框架能力，
    插件 webview 桥 fs.readText/writeText 与宿主数据层共用同一封装） ---- */
 

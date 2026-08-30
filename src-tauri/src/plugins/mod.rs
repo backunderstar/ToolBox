@@ -96,6 +96,7 @@ mod tests {
                 theme: None,
                 actions: Vec::new(),
                 settings: None,
+                float: None,
             },
             // 目录在插件根之外（父目录不是 _core）
             dir: PathBuf::from("C:/outside/plugins/evil"),
@@ -149,6 +150,7 @@ mod tests {
                 theme: None,
                 actions: Vec::new(),
                 settings: None,
+                float: None,
             },
             dir: core_dir,
             commands: Vec::new(),
