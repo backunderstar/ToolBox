@@ -514,11 +514,17 @@ cargo test --workspace                 # Rust 测试（当前 60）
   备用通道：① SSH key + 远程改 `ssh://git@ssh.github.com:443/backunderstar/ToolBox.git`；
   ② 开代理后 `git config --global http.proxy http://127.0.0.1:<port>`。
   推送会触发 ci.yml（已修好 resources/python 占位校验）。
-- **首次 release 打包（2026-09-01 进行中）**：`pnpm tauri build`（nsis + updater 产物，
-  资源含 `resources/_core` + `resources/python`）。完成后在 GitHub Releases 建首个
-  release（v0.1.0 起）并上传安装包 + updater 签名产物。打包前注意：示例插件默认关闭
-  （plugins.json 只启用 probe-rat-layer，core-example 进 disabled）、参数小字解释与
-  文档已收尾（§1.12）。
+- **首次 release 打包（2026-09-01 进行中，用户叫停待续）**：`pnpm tauri build` 本地已产出
+  完整产物（`target/release/bundle/nsis/ToolBox_0.1.0_x64-setup.exe` 20.6MB + `.sig` +
+  `latest.json`，签名密钥 `%USERPROFILE%\.tauri\toolbox-updater.key` 密码 `tb-updater-key`）。
+  已推送 GitHub（main + v0.1.0 tag），CI secrets（TAURI_SIGNING_PRIVATE_KEY /
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD）已由用户配置。**卡点**：GitHub Actions 的
+  `cargo test --workspace` 步骤在 CI 失败而本地全过（60 passed）——疑似 CI 环境差异
+  （windows-latest 上某测试依赖本地路径/Python）。下次续：查 CI 测试失败日志
+  （Actions 日志 API 需认证，403；可用浏览器打开 run 页看），修好后重推 tag 触发
+  build-release.yml 自动发布；若急用可手动上传本地产物建 release（软props/gh 无，
+  用 API 或浏览器）。另注意：示例插件已默认关闭（plugins.json 只启用 probe-rat-layer，
+  core-example 进 disabled，见 §10 旁注）。
 - **插件页"安装依赖"按钮**：✅ 已做（2026-08-29，见 §1.2/§1.4）；8/30 补「先停插件进程
   再 pip」修复并发 PermissionError（§6.1 坑 11）。剩余：目标机/真实场景交互验收
   （点击按钮装依赖 → 重载生效），py-jmes 已带 requirements.txt 可当验收对象
