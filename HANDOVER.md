@@ -211,6 +211,20 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
     只出现在插件 stderr）。**修复**：`install_deps` 先停插件进程再 pip，装完由前端
     reload 重启（manager.rs）。另：相对路径解释器（方案 C .venv）缺失时 spawn 失败
     os error 3 不可读——start_process 现附"解释器文件不存在 + 需初始化"提示。
+12. **🔴 插件目录出现"不可访问"子目录（8/30 实测，本次 PermissionError 的真根因）**：
+    应用启动时 py-jmes/py-env 同时报 `PermissionError: [Errno 13] ...\vendor\jmespath\
+    __init__.py` / `...\env\regex\__init__.py`——**不是并发锁，是这两个目录本体异常**
+    （读写、icacls、Get-Acl、takeown 全部被拒，连 admin 都打不开，但父目录正常）。
+    排查要点：① `cipher /s <目录>` 的 `U` = **未加密**（Unencrypted），不要误判成 EFS；
+    目录/文件 attrib 无 `E` 属性即未加密；② 无进程占用、无 Defender 拦截（实时保护
+    关闭）时仍打不开 → 目录 ACL/状态损坏。**处置**：同卷**重命名父目录可绕过**
+    （如 `vendor → vendor.bad`，rename 不遍历内容）→ 用捆绑 python 重建依赖目录
+    （`pip install --target vendor -r requirements.txt` / `--target env <pkg>`）→ 把
+    坏目录移到插件根外（%TEMP%）待管理员清理。根因未明（怀疑历史提权写入/文件系统
+    异常），若再出现先照此处置。另：**sync:plugins 曾因单个坏目录全量崩溃**——已加固：
+    ① 保留本地依赖目录（vendor/env/.venv/node_modules，全量重建会误删「安装依赖」
+    装的依赖）；② 单插件失败仅告警继续、不崩全量；③ ui 目录只同步构建产物
+    （index.js/style.css），源码留仓库。
 
 ### 6.2 终端 / Git（Windows）
 
@@ -276,9 +290,8 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 
 ## 8. 待办（除 §1 进行中的工作外）
 
-- **🔴 未推送的本地提交（截至 2026-08-30，17 个）**：最新为 `22041a2`（插件页体验修复：
-  安装依赖并发锁/启动错误可读化 + py-tools 自带前端示例），其下 16 个（`61854e4`…`0f4fbee`）
-  为 8/29 教学基线收敛以来的累积提交，完整清单见 `git log origin/main..HEAD`。
+- **🔴 未推送的本地提交（2026-08-29 教学基线收敛起累积，勿推送）**：完整清单见
+  `git log origin/main..HEAD`；最新为 8/30 的插件页体验修复 + sync 脚本加固（§6.1 坑 12）。
   网络情况：本机 **github.com:443 HTTPS 直连被墙**（重试多次 `Connection reset`；
   解析到 20.205.243.166 不通），但 **`ssh.github.com:443` 实测可连**（GitHub 官方
   SSH-over-443 通道）。推送选项：① 生成 SSH key 加 GitHub → 远程改
