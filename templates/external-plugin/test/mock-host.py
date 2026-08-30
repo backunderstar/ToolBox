@@ -7,6 +7,8 @@
     python test/mock-host.py . --call hello --args '{"name":"张三"}'
     python test/mock-host.py . --call eventDemo --expect-events 3
     python test/mock-host.py . --call fileList --vault D:\\docs   # 核心 API 用真实目录
+    python test/mock-host.py . --call layer.run --args '{"input":"D:/x/in.xlsx","outDir":"D:/x/out"}' \
+        --wait-done                                  # 异步插件：call 返回后继续收事件直到完成
 
 做什么：
 1. 读 plugin.json → 按 command spawn（默认 python main.py）
@@ -14,7 +16,10 @@
 3. 逐命令 call：插件若发核心 API 请求（fs.* / notify / log 等）按需模拟响应
    （fs.listDir 列 --vault 目录或临时 mock vault；其余返回 {"ok": true}）
 4. 收集 Notification（事件）；--expect-events N 校验数量
-5. shutdown → 断言进程干净退出
+5. 异步插件（后台任务，call 秒回 jobId 再推事件——宿主 30s 调用超时下长任务
+   必须异步）：`--wait N` / `--wait-done` 让 mock-host 在 call 返回后继续读
+   通知直到收满 N 个或出现终态事件（done/failed/cancelled），并校验成功退出
+6. shutdown → 断言进程干净退出
 
 不做（宿主才有的能力）：权限门控、事件桥到前端、CSP/Blob 注入、托盘/顶栏动作。
 真实宿主行为见 ToolBox src-tauri/src/plugins/process.rs；本脚本只验证"协议对"。
@@ -40,6 +45,12 @@ def parse_args():
     ap.add_argument("--call", default=None, metavar="CMD", help="只测指定命令；缺省 = 白名单全部命令冒烟")
     ap.add_argument("--args", default="{}", help="--call 的参数 JSON；PowerShell 下双引号要转义（见 README）")
     ap.add_argument("--expect-events", type=int, default=None, help="--call 期望推送的事件数（缺省不校验）")
+    ap.add_argument("--wait", type=int, default=None, metavar="N",
+                    help="异步插件：call 返回后继续读通知直到收满 N 个（配合 --call 用）")
+    ap.add_argument("--wait-done", action="store_true",
+                    help="异步插件：call 返回后继续读通知直到出现终态事件（done/failed/cancelled）")
+    ap.add_argument("--wait-timeout", type=float, default=60.0,
+                    help="--wait/--wait-done 的最长等待秒数（缺省 60）")
     return ap.parse_args()
 
 
@@ -190,6 +201,41 @@ class MockHost:
                 continue
             sys.exit(f"FAIL 意外消息: {msg}")
 
+    def wait_async(self, min_events=None, want_done=False, timeout=60.0):
+        """异步插件：call 已返回，继续读通知直到收满 min_events 个或出现终态事件。
+
+        终态事件 = method 为 done/failed/cancelled（可带前缀，如 layer.done）或
+        params.state 为 done/failed/cancelled。超时按 FAIL 处理（任务可能挂死）。
+        返回 (事件列表, 终态方法 or None)。"""
+        deadline = time.monotonic() + timeout
+        events = []
+        terminal = None
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                sys.exit(
+                    f"FAIL 等待异步任务 {timeout}s 超时——任务可能挂死；已收事件 {len(events)} 个"
+                )
+            msg = self.recv(timeout=remaining)
+            if "id" in msg and "method" in msg:
+                self.respond_core(msg)
+                continue
+            if "method" in msg:
+                events.append(msg)
+                m = msg["method"]
+                if (m.endswith(".done") or m.endswith(".failed") or m.endswith(".cancelled")
+                        or m in ("done", "failed", "cancelled")):
+                    terminal = m
+                state = (msg.get("params") or {}).get("state")
+                if state in ("done", "failed", "cancelled"):
+                    terminal = m
+                if terminal is not None or (min_events is not None and len(events) >= min_events):
+                    return events, terminal
+                continue
+            if "id" in msg:
+                continue  # 不匹配的响应（不应出现），忽略
+            sys.exit(f"FAIL 意外消息: {msg}")
+
     def shutdown(self):
         self.send({"method": "shutdown"})
         try:
@@ -238,6 +284,22 @@ def main():
             print(f"      事件 ×{len(events)}: {names}")
         if args.expect_events is not None and len(events) != args.expect_events:
             sys.exit(f"FAIL {cmd} 应推送 {args.expect_events} 个事件，实际 {len(events)}")
+        # 异步插件：call 已返回，继续等后台任务事件（宿主 30s 超时下长任务必须异步）
+        if args.wait is not None or args.wait_done:
+            tail_events, terminal = host.wait_async(
+                min_events=args.wait,
+                want_done=args.wait_done,
+                timeout=args.wait_timeout,
+            )
+            names = ", ".join(f"{e['method']}" for e in tail_events)
+            print(f"      异步事件 ×{len(tail_events)}（call 返回后）: {names}")
+            if args.wait is not None and len(tail_events) < args.wait:
+                sys.exit(f"FAIL {cmd} 异步事件应 ≥{args.wait} 个，实际 {len(tail_events)}")
+            if args.wait_done:
+                if terminal is None:
+                    sys.exit(f"FAIL {cmd} 未出现终态事件（done/failed/cancelled）")
+                if terminal.endswith((".failed", ".cancelled")) or terminal in ("failed", "cancelled"):
+                    sys.exit(f"FAIL {cmd} 异步任务终态为失败/取消: {terminal}")
 
     # 3. shutdown 干净退出
     host.shutdown()

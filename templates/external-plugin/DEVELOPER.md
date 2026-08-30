@@ -353,7 +353,19 @@ python test/mock-host.py . --call eventDemo --expect-events 3
 
 # 核心 API 用真实目录（fileList 递归列真实 vault）
 python test/mock-host.py . --call fileList --vault D:\my-vault
+
+# 异步插件（长任务必须异步：宿主单次 call 硬超时 30s，call 应秒回 jobId，
+# 后台线程跑完再推事件）。--wait-done 等终态事件（done/failed/cancelled）：
+python test/mock-host.py . --call layer.run `
+    --args '{\"input\":\"D:/in.xlsx\",\"outDir\":\"D:/out\",\"layers\":4}' `
+    --wait-done --wait-timeout 90
+# --wait N：call 返回后继续收 N 个通知（进度事件等）；--wait-timeout 设上限（缺省 60s）
 ```
+
+> ⚠️ 事件到达时机：宿主 read_loop 持续解析 stdout，但**事件只在 call 在途时**转发到前端
+> （process.rs `call_raw` 循环内），空闲期事件在通道积压。异步插件不要依赖事件实时到达——
+> 前端以**轮询 `layer.status` 类命令**驱动进度，`progress` 通知当实时补充。仓库实例：
+> `plugins/probe-rat-layer`（探针卡分层，后台线程跑 ~25s 分层，UI 轮询 status）。
 
 ### 12.2 自带前端：`npm test`（vitest + jsdom）
 

@@ -218,6 +218,45 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
 - 验证：模板 mock-host 实测（冒烟/单命令/事件数/失败分支）+ npm test 7/7；宿主
   cargo 60 / lint 0 / build ✓ / test 40（模板新 .ts/.vue 进宿主 oxlint 无告警）
 
+### 1.12 增量（2026-09：探针卡分层插件 `probe-rat-layer`，真实算法工具插件化）
+
+- **来源**：同级项目 `D:\WORKSPACE\Rat-layer`（probe_layer，圆形探针卡 DC 飞线分层：
+  扇区轮询 → 贪心交叉 → 模拟退火 → 人工兜底）。做成 ToolBox process 插件 + 自带 Vue
+  界面，用户拍板：id `probe-rat-layer`（原选 probe_rat_layer 含下划线，被宿主 id 校验
+  `is_valid_plugin_id` 拒绝——仅小写字母/数字/连字符，已改）、matplotlib 保真按需渲染、
+  输出目录强制指定、不带内置样本、冲突只做各层汇总 + report.json 原文预览。
+- **关键架构发现（写进指南 §3.4 与模板 §12）**：宿主对 process 插件单次 call 硬超时
+  30s（manager.rs `API_TIMEOUT`），而 HV 真实数据分层 ~25s、全量更长 → 长任务必须
+  **异步**：`layer.run` 秒回 jobId，后台线程跑，前端**轮询 `layer.status`** 驱动进度。
+  ⚠️ 宿主 `read_loop` 只把 stdout 解析进通道，**事件仅在 call 在途时转发**（process.rs
+  `call_raw` 循环内）——后台线程推的 progress 通知不会实时到达，轮询期间顺带转发。
+- **插件结构** `plugins/probe-rat-layer/`：`plugin.json`（process + permissions
+  log/notify/shell + ui/nav）、`main.py`（JSON-RPC 壳 + 后台任务引擎，11 命令：
+  listDir/config/run/status/cancel/result/report/readOut/render/openOut/notifyDone）、
+  `probe_layer/`（**从 Rat-layer 拷贝的副本** + `cancel.py` + 三处可选钩子
+  pipeline/layer_packing/optimizer 的 `on_progress/cancel_event`，默认 None 行为不变）、
+  `requirements.txt`（shapely/numpy/matplotlib/openpyxl/xlrd，vendor 方案 A）、
+  `ui/`（Vue3 四页签：输入设置[内置文件浏览器]/分层参数/运行[进度+取消]/结果[按需
+  SVG+report 预览]）、`test/protocol_test.py`（自生成合成输入全链路）、README.md。
+- **进度/取消钩子**：进度按 §5.8 阶段映射（读入 3→拥塞 12→冲突 22→pack 32-50→贪心
+  52→SA 55-88→导出 94→100）；取消 = threading.Event，SA 每 2% 步数检查，干净抛
+  `LayeringCancelled`。
+- **渲染按需**：`layer.run` 只分层+导出（不触 30s 线），几何/结果精简数据落
+  `jobs/<jobId>/`；点图才 `layer.render`（matplotlib 懒加载，SVG 文本回传 UI 内联，
+  冲突标记 v1 不入图——明细在 report.json）。
+- **mock-host.py 扩展异步模式**：`--wait N` / `--wait-done` / `--wait-timeout`（call
+  返回后继续收通知直到收满或出现终态事件，对未来异步插件通用）；模板 README 与
+  DEVELOPER.md §12.1 补用法与"事件只在 call 在途时转发"的约束说明。
+- **验证**：vendored pytest 31 passed（dev venv）；protocol_test 12 项全过（含
+  init/listDir/run 秒回/status 轮询到 done/result/readOut/render/report/越界拒绝/
+  shutdown）——用**宿主捆绑 Python 3.14 + vendor**（目标机场景）与 dev venv 各跑一遍；
+  真实数据 `in/1.xlsx + hv_all.lst`（1800 线）经安装副本：run 0.00s 返回、25.3s 完成
+  （1782 线 / 4 层 / 硬 272 / 软 23818 / manual 18，与 CLI 一致）、取消 0.6s 生效；
+  宿主 `pnpm tauri dev` 冒烟：probe-rat-layer 用全局捆绑解释器、进程常驻无报错；
+  lint 0 警告；UI 已 build + sync 到 D:\ToolBoxData\plugins（vendor 98MB）。
+- **副本同步规则**：Rat-layer 改动后重拷 probe_layer + tests → 重加钩子 → rebuild UI →
+  重跑 §1.12 测试；保持 `pipeline.run(data, cfg)` 等接口不动（见插件 README §7）。
+
 ---
 
 ## 2. 项目一句话
@@ -444,8 +483,9 @@ cargo test --workspace                 # Rust 测试（当前 60）
 - **🔴 未推送的本地提交（2026-08-29 教学基线收敛起累积，勿推送）**：完整清单见
   `git log origin/main..HEAD`；最新为 9/ 结构完善轮 `ba1df14`（views 分层 / lib.rs 拆模块 /
   deps 抽取 / .editorconfig / CHANGELOG / package-plugin CLI / api+plugins 补测）、
-  示例精简 `1928bc9`（plugins/ 9→4，每种运行时留一典型，主题全保留，见 §1.10）与
-  独立测试 `2a60108`（模板 mock-host + npm test，见 §1.11）。
+  示例精简 `1928bc9`（plugins/ 9→4，每种运行时留一典型，主题全保留，见 §1.10）、
+  独立测试 `2a60108`（模板 mock-host + npm test，见 §1.11）与探针卡插件轮（`probe-rat-layer`，
+  见 §1.12，未推送提交累计 45 个）。
   网络情况：本机 **github.com:443 HTTPS 直连被墙**（重试多次 `Connection reset`；
   解析到 20.205.243.166 不通），但 **`ssh.github.com:443` 实测可连**（GitHub 官方
   SSH-over-443 通道）。推送选项：① 生成 SSH key 加 GitHub → 远程改
@@ -480,6 +520,7 @@ cargo test --workspace                 # Rust 测试（当前 60）
 |---|---|---|---|
 | `hello-tb` | webview | 命令注册式最小示例（指南 §1 五分钟跑通的仓库实体） | 无 |
 | `py-tools` | process | 协议 + 事件推送 + 搜索提供者 + 核心 API（call_core fs.listDir）+ **自带前端界面**（指南 §3.8：侧边栏「文本工具」，api.call 调命令 / api.on 收事件） | 按钮/vendor（方案 A） |
+| `probe-rat-layer` | process | **异步任务实例**（30s 超时规避）：后台线程分层 + `layer.status` 轮询进度 + 按需渲染 SVG + 内置文件浏览器；真实算法工具（探针卡飞线分层，vendored probe_layer 副本 + 进度/取消钩子），见 §1.12 与插件 README | 按钮/vendor（方案 A） |
 | `theme-maple` | 皮肤插件 | 主题包示例（指南 §6） | 无 |
 | `theme-midnight` | 皮肤插件 | 主题包示例（指南 §6） | 无 |
 

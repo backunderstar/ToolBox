@@ -38,6 +38,9 @@ python test/mock-host.py . --call hello --args '{"name":"张三"}'
 # 事件推送数量校验
 python test/mock-host.py . --call eventDemo --expect-events 3
 
+# 异步插件（长任务必须异步，宿主单次 call 硬超时 30s）：--wait-done 等终态事件
+python test/mock-host.py . --call layer.run --args '{"input":"D:/in.xlsx","outDir":"D:/out"}' --wait-done
+
 # 自带前端：入口契约 + 界面行为（vitest + jsdom，api 全 mock）
 npm test
 ```

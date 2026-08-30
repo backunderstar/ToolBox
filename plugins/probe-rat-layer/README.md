@@ -1,0 +1,132 @@
+# 探针卡分层插件 `probe-rat-layer`
+
+把原项目 [Rat-layer](https://github.com/backunderstar/Rat-layer)（`probe_layer`，探针卡飞线分层工具）
+包装为 ToolBox process 插件：**Python 进程（JSON-RPC over stdio）+ 自带 Vue 界面**，
+侧边栏「探针卡分层」进入，图形化完成「选文件 → 配参数 → 分层 → 看结果图」，全程不启动原 CLI。
+
+- 分层算法 = 原项目原样（扇区轮询 → 贪心交叉最小化 → 模拟退火精修 → 人工兜底），
+  仅加了**进度回调 + 取消钩子**（可选参数，不改变原行为）。
+- 输出与 CLI 完全一致：`out_*/` 下 `lst/`（Allegro 导入）、`csv/`、`json/`、`img/`。
+
+---
+
+## 1. 安装 / 构建
+
+插件目录 = 插件 id（`probe-rat-layer`）。仓库内开发 + 应用内部署：
+
+```powershell
+# 1. 装 Python 依赖到 vendor/（方案 A vendored，不入库；等同插件页「安装依赖」按钮）
+#    用宿主捆绑 Python（与目标机一致，cp314 wheel）：
+& "$env:APPDATA\com.toolbox.desktop\python\python.exe" -m pip install --target vendor -r requirements.txt
+
+# 2. 构建前端（ui/index.ts → ui/index.js + style.css，gitignored，不入库）
+pnpm build-external-ui plugins/probe-rat-layer
+
+# 3. 同步到应用插件目录（保留 vendor；应用运行时目录被锁会 EPERM，先关应用或跳过）
+pnpm sync:plugins
+```
+
+应用内「插件」页确认 `probe-rat-layer` 已启用；process 插件进程常驻，改 `main.py` 后点「重新加载」。
+
+依赖（`requirements.txt`）：`shapely numpy matplotlib openpyxl xlrd`。目标机无需装 Python：
+宿主三级解析解释器（插件自带 python.exe → 全局捆绑 `%APPDATA%\com.toolbox.desktop\python\` → 系统 PATH）。
+
+---
+
+## 2. 界面（四个页签）
+
+| 页签 | 内容 |
+|---|---|
+| **输入设置** | 输入 1：Allegro pin 表（.xls/.xlsx，兼容旧 JSON）；输入 2：筛选文件（可选，.lst/.txt 一行一个 net，兼容 .xls/.xlsx 第一列）；**输出目录（必填，强制指定）**；预设（HV / 全量 / 自定义）；层数/线宽/线距。内置文件浏览器（盘符→目录→文件） |
+| **分层参数** | 方法（packing/dsatur）、优化器（sa/greedy/none）、迭代①-④轮数、SA 参数、拥塞参数；未列字段用 `probe_layer` 默认值 |
+| **运行** | 「开始分层」秒回（后台线程），进度条 + 阶段文案 + 事件流，可取消 |
+| **结果** | 摘要卡（层数/线数/硬软冲突/人工清单/耗时）、各层统计表（点击行→**按需渲染 SVG 图**，另有总览图/玫瑰图）、「查看 report.json」、.lst/CSV 查看与复制、「打开输出目录」 |
+
+---
+
+## 3. 命令白名单（init 握手声明）
+
+| 命令 | 参数 → 返回 | 说明 |
+|---|---|---|
+| `layer.listDir` | `{path?}` → `[{name,isDir,size}]` | 内置文件浏览器；path 空 = 盘符列表 |
+| `layer.config` | `get` / `set {patch}` | 插件设置，存 `<插件>/settings.json`（恢复上次输入） |
+| `layer.run` | `{input, filter?, outDir, layers?, width?, clearance?, config?, resolve_conflict_rounds?...}` → `{jobId}` | **秒回**；后台线程跑分层+导出 |
+| `layer.status` | → `{state, jobId?, stage?, percent?, message?, error?}` | idle/running/done/failed/cancelled；UI 轮询驱动进度 |
+| `layer.cancel` | → `{ok}` | 置取消事件，SA/打包循环内检查，干净退出 |
+| `layer.result` | `{jobId}` → `{summary, layers, outDir, files}` | 摘要几 KB（不进 30s 超时） |
+| `layer.report` | `{jobId}` → `{text}` | report.json 原文预览（冲突明细截断到每级前 300 条） |
+| `layer.readOut` | `{jobId, rel}` → 文本 | 输出目录内相对路径读取（限 4MB，防穿越） |
+| `layer.render` | `{jobId, kind}` → SVG 文本 | 按需渲染 `layer_<i>` / `overview` / `rose`（matplotlib 懒加载 + 缓存） |
+| `layer.openOut` | `{outDir}` → `{ok}` | 资源管理器打开输出目录（核心 API `shell.exec`） |
+| `layer.notifyDone` | `{title, body}` → `{ok}` | 完成横幅（核心 API `notify`；后台线程不能调核心 API，故由 UI 触发） |
+
+事件（Notification）：`layer.progress {jobId, stage, percent, message}`、`layer.done`、`layer.failed`、`layer.cancelled`。
+
+### 异步任务模型（为什么这么设计，勿改）
+
+宿主对 process 插件单次 call 有 **30s 硬超时**（`manager.rs API_TIMEOUT`），而 HV 真实数据分层
+~25s、全量数据更长 → 分层必须在**后台线程**跑，`layer.run` 立即返回，进度靠**轮询 `layer.status`**。
+宿主读线程（`process.rs read_loop`）持续解析 stdout，但**事件只在 call 在途时**转发到前端
+（`call_raw` 循环内），空闲期事件在通道积压 → 所以 `layer.progress` 通知照发（轮询期间顺带到达），
+但 UI 进度条以 `layer.status` 轮询为准，不依赖事件到达时机。
+
+后台线程**不能调用核心 API**（宿主只在 call 期间响应核心请求）→ 本插件写输出文件一律用
+Python 直接 `open()`（插件是真实 OS 进程，任意路径可读写），不需要 `fs:*` 权限。
+
+---
+
+## 4. 输出文件（与 CLI 一致）
+
+```
+out_<outDir>/
+├── lst/layer_1.lst ~ layer_N.lst   # ★ Allegro 导入：每层一行一个 net
+├── lst/manual_route.lst            # 自动分不开、需人工 route 的 net
+├── csv/net_layer_assignment.csv    # net → 层 对照表
+├── csv/layer_statistics.csv        # 每层 net 数/线数/软冲突/占用率
+├── json/report.json                # 完整结果（含冲突明细，可能 >4MB）
+├── json/layer_nets.json            # 层 → net 清单
+└── img/                            # 由 layer.render 按需生成到 <插件>/jobs/<jobId>/img/
+```
+
+运行元数据（几何/结果精简数据、渲染缓存）存 `<插件>/jobs/<jobId>/`（不入库、可删）。
+
+---
+
+## 5. 独立测试（不启动 ToolBox）
+
+```powershell
+# A. vendored 包单元测试（需 pytest，开发环境装）：
+#    PYTHONPATH 指到 vendor 后 pytest test/probe_tests（31 passed）
+
+# B. 协议全链路测试（生成合成 pin 表，不依赖真实数据）：
+python test/protocol_test.py --python <含依赖的解释器>
+
+# C. 用模板 mock-host 的异步模式（--wait-done 验证后台任务事件）：
+python <ToolBox>/templates/external-plugin/test/mock-host.py . `
+    --python <解释器> --call layer.run `
+    --args '{\"input\":\"D:/in.xlsx\",\"filter\":\"D:/filter.lst\",\"outDir\":\"D:/out\",\"layers\":4}' `
+    --wait-done --wait-timeout 90
+```
+
+宿主内最终验证：`pnpm build-external-ui` + `pnpm sync:plugins` + 插件页「重新加载」→
+真实数据 `in/1.xlsx + in/hv_all.lst` 跑一遍（实测 1800 线 ~25s，soft 23818 / manual 18）。
+
+---
+
+## 6. 安全与边界说明
+
+- **任意路径读写**：本插件处理任意 CAD 文件，Python 直接读/写绝对路径（绕过宿主核心 API 的
+  vault 限制——权限模型只拦核心 API 通道，拦不住插件自身行为，见插件开发指南 §0.4）。
+  首方插件 + 本说明明示；`layer.readOut` 有防穿越校验（只读输出目录内）。
+- 权限仅声明 `log / notify / shell`（`shell` 用于 explorer 打开输出目录）。
+- **已知限制**：渲染图不含冲突标记（v1 只做各层汇总 + report.json 原文）；取消在
+  SA/打包循环边界生效（最迟 ≤2% 步数）；`jobs/` 在插件进程重启后丢失（UI 自动回 idle）。
+
+## 7. 与原项目同步（副本维护）
+
+`probe_layer/` 是从 Rat-layer 仓库**拷贝**的副本（+ `cancel.py` + 三处可选钩子参数）。
+原项目改动后按此同步：重拷 `probe_layer/` 与 `test/probe_tests/` → 重新加钩子
+（`pipeline.run_once/run` 的 `on_progress/cancel_event`、`layer_packing` 的
+`on_progress/cancel_event`、`optimizer.optimize_layering` 的 `on_progress/cancel_event`）
+→ `pnpm build-external-ui` → 重跑 §5 测试。**保持 `pipeline.run(data, cfg)` 等接口不动**，
+插件壳只面向这三个面。
