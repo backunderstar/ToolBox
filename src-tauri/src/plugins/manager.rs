@@ -486,6 +486,18 @@ fn paths_equal(a: &Path, b: &Path) -> bool {
     a == b
 }
 
+/// Windows：相对解释器路径解析为插件目录下的绝对路径（见 start_process 注释的
+/// CreateProcess 坑）。文件不存在时保持原样（spawn 失败由调用方给可读提示）。
+fn resolve_relative_program(dir: &Path, program: &str) -> String {
+    if Path::new(program).is_relative() {
+        let abs = dir.join(program);
+        if abs.is_file() {
+            return abs.to_string_lossy().to_string();
+        }
+    }
+    program.to_string()
+}
+
 impl PluginManager {
     /// 列表前的"确保已刷新"：vault 或全局插件目录快照变化时重新发现/启动插件。
     /// 命令层各命令与 lib.rs 启动预热共用——预热提前执行首次 refresh，避免用户
@@ -1278,7 +1290,7 @@ impl PluginManager {
         // 解释器解析（三级）：插件目录自带 python.exe → 全局捆绑 → 系统 PATH。
         // 捆绑目录是 refresh 时缓存的纯路径（不持有 AppHandle，见 struct 注释）。
         // 解析失败不阻断：保留原命令（系统 python），spawn 失败时给可读提示。
-        let (program, resolved) = match super::pyruntime::resolve_interpreter(
+        let (mut program, resolved) = match super::pyruntime::resolve_interpreter(
             self.bundled_python.as_deref(),
             &dir,
             &cmd[0],
@@ -1286,6 +1298,13 @@ impl PluginManager {
             Ok(p) => (p.to_string_lossy().to_string(), true),
             Err(_) => (cmd[0].clone(), false),
         };
+        // 🔴 Windows 坑（8/30 实测）：`std::process` 的相对路径可执行文件用**宿主进程
+        // 的 cwd** 解析（CreateProcess 搜索路径不含 lpCurrentDirectory）——方案 C 的
+        // command 是相对路径（.venv/Scripts/python.exe）时，即使文件存在也会报
+        // "系统找不到指定的路径 (os error 3)"（与 Node/exec 行为不同，它们会拼 cwd）。
+        // 统一在 spawn 前解析为插件目录下的绝对路径；文件不存在则保持原样，
+        // spawn 失败时由下方"解释器文件不存在"分支给可读提示。
+        program = resolve_relative_program(&dir, &program);
         // 冒烟验证辅助日志：记录 process 插件实际用的解释器来源（三级解析命中哪一级：
         // 插件自带 python.exe / 全局捆绑 / 系统 PATH 回落），排查优先级问题用。
         if super::pyruntime::is_python_command(&cmd[0]) {
@@ -1472,6 +1491,27 @@ pub fn is_safe_plugin_id(id: &str) -> bool {
 #[cfg(test)]
 mod export_tests {
     use super::*;
+
+    /// 相对解释器路径解析（Windows CreateProcess 坑的防护逻辑）：
+    /// 存在 → 插件目录下绝对路径；不存在/绝对路径 → 原样。
+    #[test]
+    fn relative_program_resolves_against_plugin_dir() {
+        let base = std::env::temp_dir().join(format!("tb-relprog-{}", std::process::id()));
+        let dir = base.join("plugins/my-py");
+        std::fs::create_dir_all(dir.join(".venv/Scripts")).unwrap();
+        std::fs::write(dir.join(".venv/Scripts/python.exe"), b"x").unwrap();
+        // 相对路径且文件存在 → 插件目录下绝对路径
+        let abs = resolve_relative_program(&dir, ".venv/Scripts/python.exe");
+        assert_eq!(abs, dir.join(".venv/Scripts/python.exe").to_string_lossy());
+        // 相对路径但文件不存在 → 保持原样（spawn 失败提示路径）
+        assert_eq!(
+            resolve_relative_program(&dir, ".venv/Scripts/nope.exe"),
+            ".venv/Scripts/nope.exe"
+        );
+        // 绝对路径 → 原样
+        assert_eq!(resolve_relative_program(&dir, "C:\\x.exe"), "C:\\x.exe");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     /// 导出 zip 往返：构造插件目录 → export_zip → 解压验证内容完整（含子目录）。
     #[test]

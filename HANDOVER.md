@@ -237,6 +237,14 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
       复制+删除，先退出应用。
     - **sync 的依赖保留 stash 必须与插件目录同卷**（放 dstRoot 下）：放 os.tmpdir()
       会因跨卷 rename EXDEV 失败 → 依赖随全量重建被删（8/30 实测踩过）。
+14. **🔴 相对路径解释器 + current_dir 的 CreateProcess 坑（8/30 实测）**：方案 C 插件
+    command 用相对路径（`.venv/Scripts/python.exe`）时，`std::process::Command::new(相对路径)
+    .current_dir(插件目录)` 在 Windows 上**仍报 os error 3**（"系统找不到指定的路径"）——
+    CreateProcess 搜索可执行文件用的是**宿主进程自己的 cwd**，不搜索 lpCurrentDirectory
+    （与 Node/exec 不同，它们会把 cwd 拼进路径）。**修复**：start_process 在 spawn 前把
+    相对解释器解析为插件目录下绝对路径（`resolve_relative_program`，有单测）；文件不存在
+    保持原样（走"解释器文件不存在"提示）。经验：Windows 上凡"相对路径 exe + current_dir"
+    都要先绝对化，别假设 std 会拼 cwd。
 
 ### 6.2 终端 / Git（Windows）
 
