@@ -47,7 +47,7 @@ cargo test --workspace                  # Rust 测试（含核心插件与进程
 
 - **框架（已完成）**：应用外壳（顶栏/侧栏/状态栏）、设计令牌与亮暗主题（含原生标题栏同步）、系统托盘常驻、桌面半透明浮窗（插件 UI 多窗口复用 + 全局快捷键 Alt+Q）、自动备份、宿主文件服务（vault 内文件列表/读写/增删改，插件核心 API 共用）、全文搜索（SQLite FTS5 + 拼音首字母/全拼 + 搜索提供者聚合）、导航栏全配置化（分组/排序/标签/图标/隐藏均可配）、自动更新（Tauri updater + GitHub Releases）。
 - **核心插件教学示例（core-example）**：cdylib DLL + 自带前端（Vue 3），覆盖全部实现要点——命令 CRUD（vault 文件真源/原子写/损坏隔离）、事件推送、宿主能力（log/open_path）、搜索提供者、manifest 配置、导航声明、crate 单测。教程见 [docs/核心插件示例教程.md](docs/核心插件示例教程.md)。
-- 插件系统：统一 api 桥（call / on / context / nav / host.search），原生 DLL（FFI）+ 进程（JSON-RPC）+ webview（JS）三类运行时；核心插件可卸载（物理删除 + 标记防复活）、可界面安装（.zip / 目录）；Python 插件自带捆绑运行时（目标机无需 Python）+ 插件页「安装依赖」按钮。
+- 插件系统：统一 api 桥（call / on / context / nav / host.search），原生 DLL（FFI）+ 进程（JSON-RPC）+ webview（JS）三类运行时；**任何运行时插件都可声明自带前端界面**（`ui` + `nav` 侧边栏子页，Python 插件示例见 plugins/py-tools、机制见插件开发指南 §3.8）；核心插件可卸载（物理删除 + 标记防复活）、可界面安装（.zip / 目录）；Python 插件自带捆绑运行时（目标机无需 Python）+ 插件页「安装依赖」按钮。
 - **已移除**：数据工具页、记录功能、Git 版本历史（用户决策，不恢复）；**2026-08 起 6 个业务核心插件（笔记/待办/清单/项目/博客/AI）按教学基线决策移除**，只保留 core-example。
 
 ## 发布与自动更新

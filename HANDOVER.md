@@ -76,6 +76,22 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
 | `plugins/py-tools/requirements.txt`（新） | ⭐ vendored 依赖声明示例（python-dateutil；构建机/按钮通用） |
 | `docs/插件开发指南.md`、`docs/操作手册.md`、`README.md`、`PLAN.md` | ⭐ §3.5/§6.1/README/§5.1 补安装依赖按钮与验证结果 |
 
+### 1.5 增量（2026-08-30：插件页体验修复 + Python 插件界面示例）
+
+- **修 py-jmes 安装依赖 PermissionError 并发锁**：`install_deps` 先停掉该插件进程再跑
+  pip（Windows 上 pip 替换 vendor 文件与新进程 import 并发读 → `PermissionError:
+  [Errno 13] ...\vendor\jmespath\__init__.py`，只出现在插件 stderr），装完前端自动
+  reload 重启，生效路径不变（manager.rs）
+- **修 py-venv 启动失败可读性**：`start_process` 对相对路径解释器（.venv/Scripts/python.exe）
+  不存在时附"解释器文件不存在 + 需先初始化 .venv（方案 C）"提示，不再裸 os error 3
+- **修错误挤占插件页**：操作错误/依赖结果横幅从 `empty-state` 大块改为紧凑 `action-bar`
+  提示条（错误红底可换行、结果内可滚动），不挤压插件卡片列表（PluginsView.vue + plugins.css）
+- **Python 插件界面示例（回答"process 插件如何加界面/子页"）**：py-tools 加自带前端
+  （ui/index.ts + App.vue + bridge.ts + style.css，`pnpm build-external-ui` 构建产物
+  gitignored），plugin.json 声明 `ui.entry` + `nav`（侧边栏「文本工具」进入；界面经
+  api.call 调 Python 命令 / api.on 收 progress 事件）；机制文档见插件开发指南 §3.8
+- 验证：cargo 60（55+3+2）/ lint 0 / build ✓ / test 24 / build-external-ui ✓（index.js 94KB / gzip 37KB）
+
 ---
 
 ## 2. 项目一句话
@@ -188,6 +204,13 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
     教训：新增会引入 WinRT/本地绑定的 crate 前，先 `cargo test -p toolbox --lib -- --list`
     验证测试二进制能加载（依赖树用 `cargo tree -p <crate>` 看有没有
     winrt/webview2/openssl 类原生绑定）。
+11. **pip install 与插件进程并发读写 vendor = PermissionError（8/30 实测）**：
+    「安装依赖」运行时若插件进程还在跑，pip 替换 vendor 文件（如 jmespath/__init__.py）
+    与新进程 import 并发，Windows 文件锁会让读被拒
+    （`PermissionError: [Errno 13] Permission denied: ...\vendor\jmespath\__init__.py`，
+    只出现在插件 stderr）。**修复**：`install_deps` 先停插件进程再 pip，装完由前端
+    reload 重启（manager.rs）。另：相对路径解释器（方案 C .venv）缺失时 spawn 失败
+    os error 3 不可读——start_process 现附"解释器文件不存在 + 需初始化"提示。
 
 ### 6.2 终端 / Git（Windows）
 
@@ -266,7 +289,8 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
   `ssh://git@ssh.github.com:443/backunderstar/ToolBox.git`；② 开代理后
   `git config --global http.proxy http://127.0.0.1:<port>` 再 `git push origin main`。
   推送会触发 ci.yml（已修好 resources/python 占位校验）。
-- **插件页"安装依赖"按钮**：✅ 已做（2026-08-29，见 §1.2/§1.4）。剩余：目标机/真实场景交互验收
+- **插件页"安装依赖"按钮**：✅ 已做（2026-08-29，见 §1.2/§1.4）；8/30 补「先停插件进程
+  再 pip」修复并发 PermissionError（§6.1 坑 11）。剩余：目标机/真实场景交互验收
   （点击按钮装依赖 → 重载生效），py-jmes 已带 requirements.txt 可当验收对象
 - **插件沙箱**（PLAN.md §5.2）：P0 CSP 收紧 + 命令面最小化 + ShadowRealm，未排期
 - **按教学基线写新核心插件**：`docs/核心插件示例教程.md` 的"照猫画虎"清单已给步骤；
@@ -296,7 +320,7 @@ cargo test --workspace                 # Rust 测试（78 + 3 新 = 81）
 | `py-env` | 方案 B env/ | 二进制 wheel（regex cp314）ABI 匹配 | `pip install --target env` |
 | `py-venv` | 方案 C .venv/ | command 用 `.venv/Scripts/python.exe` | venv 创建 + pip |
 | `csv-tool` | 最小骨架 | 协议最小实现 | 无 |
-| `py-tools` | 方案 A vendored | 事件 + 搜索提供者 + 核心 API | 按钮/vendor |
+| `py-tools` | 方案 A vendored | 事件 + 搜索提供者 + 核心 API + **自带前端界面**（§3.8：侧边栏「文本工具」进入，api.call 调命令 / api.on 收事件） | 按钮/vendor |
 
 要点：源码（plugin.json/main.py/requirements.txt）入库；**依赖目录不入库**
 （`.gitignore` 已加 `plugins/*/vendor|env|.venv`），靠按钮/命令安装——

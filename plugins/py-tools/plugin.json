@@ -2,10 +2,19 @@
   "id": "py-tools",
   "name": "Python 文本工具",
   "version": "0.1.0",
-  "description": "文本统计 / 日期人性化（第三方库 vendored demo）/ 进度事件 / 搜索提供者示例",
+  "description": "文本统计 / 日期人性化（vendored demo）/ 进度事件 / 搜索提供者示例；带自带前端界面（侧边栏「文本工具」进入，界面经 api.call 调 Python 命令）",
   "runtime": "process",
   "command": ["python", "main.py"],
   "permissions": ["fs:read:vault", "log"],
   "searchProvider": true,
+  "ui": { "entry": "ui/index.js" },
+  "nav": [
+    {
+      "id": "py-tools",
+      "label": "文本工具",
+      "icon": "file-text",
+      "group": "插件"
+    }
+  ],
   "config": {}
 }

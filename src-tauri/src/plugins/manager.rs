@@ -1037,15 +1037,23 @@ impl PluginManager {
     /// 目标机没有 Python 也能自助补依赖（捆绑运行时 full 变体带 pip；需有网）。
     /// 返回 pip 输出尾部（stdout + stderr 合并，各最近若干行）；成功后前端应重载插件生效。
     pub fn install_deps(&mut self, app: &tauri::AppHandle, id: &str) -> Result<String, String> {
-        let dir = self
+        let idx = self
             .records
             .iter()
-            .find(|r| r.manifest.id == id)
-            .map(|r| r.dir.clone())
+            .position(|r| r.manifest.id == id)
             .ok_or("插件不存在")?;
+        let dir = self.records[idx].dir.clone();
         let req = dir.join("requirements.txt");
         if !req.is_file() {
             return Err(format!("插件 {id} 没有 requirements.txt（无依赖需要安装）"));
+        }
+        // 停掉该插件进程再跑 pip：Windows 上正在运行的插件进程可能持有
+        // vendor 目录下文件的句柄/与 pip 并发读写同一批文件——pip 正在替换
+        // 旧 .py 时新进程 import（读）会被文件锁拒绝（PermissionError，8/30
+        // py-jmes 实测）。装完后由前端「重新加载」重启进程，生效路径不变。
+        if self.records[idx].process.is_some() {
+            self.stop_record(idx);
+            self.records[idx].error = None;
         }
         // 捆绑解释器：refresh 时缓存的纯路径优先；当前会话未刷新时用 AppHandle 现解析
         let python = self
@@ -1304,7 +1312,24 @@ impl PluginManager {
                          或使用随应用分发的捆绑运行时（构建期 pnpm fetch:python）。"
                     )
                 } else {
-                    e
+                    // 相对路径解释器（如方案 C 的 .venv/Scripts/python.exe）在插件
+                    // 目录下不存在：os error 3 对用户不可读，附初始化提示。
+                    let missing = {
+                        let prog = Path::new(&program);
+                        if prog.is_relative() && !dir.join(&program).is_file() {
+                            Some(program.clone())
+                        } else {
+                            None
+                        }
+                    };
+                    match missing {
+                        Some(p) => format!(
+                            "{e}\n提示：解释器文件不存在: {p}。该插件需要在目标机完成初始化\
+                             ——如方案 C venv 插件需先创建 .venv（见插件开发指南 §3.5），\
+                             或检查插件文件是否完整后重新加载。"
+                        ),
+                        None => e,
+                    }
                 };
                 return Err(hint);
             }

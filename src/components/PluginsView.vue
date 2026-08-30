@@ -291,19 +291,26 @@ function confirmMessage(id: string): string {
       </span>
     </div>
 
-    <div v-if="actionError" class="empty-state" style="margin-bottom: 12px">
-      <p style="color: var(--color-danger, #c0392b)">{{ actionError }}</p>
-      <button class="btn btn-sm" @click="actionError = null">关闭</button>
+    <!-- 操作错误（重载/启停/安装依赖失败）：紧凑提示条，不挤占卡片列表 -->
+    <div v-if="actionError" class="action-bar action-bar-error">
+      <span class="action-bar-text">{{ actionError }}</span>
+      <button class="icon-btn sm" aria-label="关闭" @click="actionError = null">
+        <Icon name="trash" :size="12" />
+      </button>
     </div>
 
     <!-- 依赖安装结果：pip 输出尾部（成功或部分输出），可关闭 -->
-    <div v-if="depsResult" class="empty-state" style="margin-bottom: 12px">
-      <p>
-        <strong>「{{ depsResult.id }}」依赖安装完成</strong>（装到
-        <code>vendor/</code>，插件已重新加载）。pip 输出：
-      </p>
-      <pre class="deps-output">{{ depsResult.output || "（无输出）" }}</pre>
-      <button class="btn btn-sm" @click="depsResult = null">关闭</button>
+    <div v-if="depsResult" class="action-bar">
+      <div class="action-bar-body">
+        <p class="action-bar-title">
+          <strong>「{{ depsResult.id }}」依赖安装完成</strong>（装到
+          <code>vendor/</code>，插件已重新加载）。pip 输出：
+        </p>
+        <pre class="deps-output">{{ depsResult.output || "（无输出）" }}</pre>
+      </div>
+      <button class="icon-btn sm" aria-label="关闭" @click="depsResult = null">
+        <Icon name="trash" :size="12" />
+      </button>
     </div>
 
     <template v-if="!vault.state.path">

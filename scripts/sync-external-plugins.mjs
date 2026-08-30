@@ -67,8 +67,16 @@ for (const name of plugins) {
     recursive: true,
     filter: (p) => {
       const rel = path.relative(src, p);
-      const first = rel.split(/[\\/]/)[0];
-      return !SKIP.has(first) && !first.startsWith(".");
+      const parts = rel.split(/[\\/]/);
+      const first = parts[0];
+      if (SKIP.has(first) || first.startsWith(".")) return false;
+      // ui 目录只同步构建产物（index.js / style.css）：源码（index.ts / App.vue 等）
+      // 留在仓库，由 pnpm build-external-ui 构建；与应用目录部署模式一致（产物不入库）
+      if (first === "ui") {
+        if (parts.length === 1) return true; // ui 目录本身（保留结构）
+        return parts[parts.length - 1] === "index.js" || parts[parts.length - 1] === "style.css";
+      }
+      return true;
     },
   });
   const m = measure(dst);
