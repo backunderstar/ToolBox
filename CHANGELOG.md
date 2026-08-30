@@ -3,9 +3,12 @@
 ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-> 详细的开发记录（含未推送提交清单）见 [HANDOVER.md](HANDOVER.md)；里程碑规划见 [PLAN.md](PLAN.md)。
+> 详细的开发记录见 [HANDOVER.md](HANDOVER.md)；里程碑规划见 [PLAN.md](PLAN.md)。
 
-## [Unreleased]
+## [0.1.0] — 2026-09-01
+
+首个可分发版本（NSIS 安装包 + 自动更新）。教学基线：宿主框架 + 一个原生示例插件
+（core-example）+ 探针卡分层插件（probe-rat-layer，真实算法工具）。
 
 ### 结构整理（2026-09）
 
@@ -27,11 +30,6 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 - 清理 `src-tauri/` 根目录 26 个会话残留日志文件与 `target/` 下 94 个构建日志
 
-## [0.1.0] — 2026-08
-
-首个可分发版本（NSIS 安装包 + 自动更新）。教学基线：宿主框架 + 一个原生示例插件
-（core-example）+ 5 个 process 示例插件。
-
 ### 新增
 
 - **插件系统（三种运行时）**：webview（JS，Blob 注入）、process（Python，JSON-RPC over
@@ -50,6 +48,10 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
   zip-slip + zip 炸弹防护）、导出为 .zip、已卸载核心插件一键恢复、自定义插件目录（自动迁移）
 - **配置迁移**：一键导出/导入配置包（localStorage + 宿主配置，不含 API Key）
 - **外部插件模板**：`templates/external-plugin/`（独立 npm 工程 + DEVELOPER.md 全量参考）
+- **探针卡分层插件（probe-rat-layer）**：真实算法工具插件化（vendored probe_layer），
+  异步任务模型（后台线程分层 + 轮询进度 + 取消）、按需渲染 PNG（matplotlib 懒加载 +
+  磁盘缓存）、进程重启后结果恢复、输入/参数/预设持久化，见 `plugins/probe-rat-layer/README.md`
+- **设置页卡片铺满**：去掉设置页 `max-width: 760px` 限宽，与插件页面一致
 
 ### 修复
 
