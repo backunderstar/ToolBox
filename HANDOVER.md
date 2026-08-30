@@ -93,6 +93,20 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   api.call 调 Python 命令 / api.on 收 progress 事件）；机制文档见插件开发指南 §3.8
 - 验证：cargo 60（55+3+2）/ lint 0 / build ✓ / test 24 / build-external-ui ✓（index.js 94KB / gzip 37KB）
 
+### 1.6 增量（2026-08-30 下午：退出/设置页体验）
+
+- **修退出 Error 1412**（`Failed to unregister class Chrome_WidgetWin_0. Error = 1412`）：
+  托盘「退出」原用 `app.exit(0)` 强制销毁 WebView 环境 → Chromium window_impl 析构时
+  注销窗口类失败（无害噪音）。改为**优雅退出**：EXITING 置位后 close main/float 窗口，
+  WebView2 随窗口正常清理，run 循环自然退出（lib.rs handle_tray_event）
+- **关闭主窗口行为选项**（设置页「常规」）：`app.json` 的 `closeBehavior`（"tray" 默认
+  最小化到托盘 / "quit" 退出应用）。新增 `app_settings_get/set` 通用键值命令
+  （%APPDATA%/com.toolbox.desktop/app.json，原子写）；on_window_event 按配置分流，
+  quit 模式关主窗口时顺带关闭浮窗（否则浮窗在、应用不退出）
+- **插件设置手风琴**：设置页「插件设置」段从平铺改为折叠（同时只展开一个，展开才挂载
+  PluginUiView；插件多时页面不臃肿）——SettingsView.vue + settings.css
+- 验证：cargo 61 / lint 0 / build ✓；1412 修复需退出应用实测确认
+
 ---
 
 ## 2. 项目一句话

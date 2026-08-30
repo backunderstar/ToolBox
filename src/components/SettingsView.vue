@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { isCoreConnected, type PingInfo } from "../core/ipc";
 import type { NavConfig, NavItemDef } from "../core/navPrefs";
 import { useVault } from "../core/vault";
-import { openInExplorer, configExport, configImport } from "../core/api";
+import { openInExplorer, configExport, configImport, appSettingsGet, appSettingsSet } from "../core/api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   listThemes,
@@ -54,6 +54,23 @@ const pluginsCtx = usePlugins();
 const settingsPlugins = computed(() =>
   pluginsCtx.state.plugins.filter((p) => p.enabled && p.settings),
 );
+/* 关闭主窗口的行为："tray" 最小化到托盘（默认）/ "quit" 退出应用（app.json closeBehavior） */
+const closeBehavior = ref<"tray" | "quit">("tray");
+onMounted(() => {
+  appSettingsGet()
+    .then((s) => {
+      if (s.closeBehavior === "quit") closeBehavior.value = "quit";
+    })
+    .catch(() => undefined);
+});
+function persistCloseBehavior(): void {
+  void appSettingsSet("closeBehavior", closeBehavior.value).catch(() => undefined);
+}
+/* 插件设置手风琴：当前展开的插件 id（null = 全收起；同时只展开一个，插件多时页面不臃肿） */
+const expandedPluginSettings = ref<string | null>(null);
+function togglePluginSettings(id: string): void {
+  expandedPluginSettings.value = expandedPluginSettings.value === id ? null : id;
+}
 const opening = ref(false);
 const editing = ref<ThemeDef | null>(null);
 const themeIo = ref(false);
@@ -226,6 +243,40 @@ function removeCustom(id: string): void {
         </div>
       </section>
 
+      <!-- ---- 常规 ---- -->
+      <section class="settings-card">
+        <h2 class="settings-title">常规</h2>
+        <div class="settings-row">
+          <span class="settings-label">关闭主窗口</span>
+          <div class="settings-choices" role="radiogroup" aria-label="关闭主窗口时">
+            <label class="settings-choice" :class="{ on: closeBehavior === 'tray' }">
+              <input
+                v-model="closeBehavior"
+                type="radio"
+                value="tray"
+                @change="persistCloseBehavior"
+              />
+              <span class="settings-choice-body">
+                <span class="settings-choice-name">最小化到托盘（后台常驻）</span>
+                <span class="settings-choice-desc">点关闭按钮时隐藏到系统托盘，托盘「退出 ToolBox」才真正退出</span>
+              </span>
+            </label>
+            <label class="settings-choice" :class="{ on: closeBehavior === 'quit' }">
+              <input
+                v-model="closeBehavior"
+                type="radio"
+                value="quit"
+                @change="persistCloseBehavior"
+              />
+              <span class="settings-choice-body">
+                <span class="settings-choice-name">退出应用</span>
+                <span class="settings-choice-desc">点关闭按钮时结束全部窗口与进程，不再驻留托盘</span>
+              </span>
+            </label>
+          </div>
+        </div>
+      </section>
+
       <!-- ---- 外观 / 主题 ---- -->
       <section class="settings-card">
         <h2 class="settings-title">主题</h2>
@@ -334,15 +385,31 @@ function removeCustom(id: string): void {
       <!-- ---- 导航栏 ---- -->
       <NavSettings :config="navConfig" :defs="defs" :on-change="onNavChange" />
 
-      <!-- ---- 插件设置（manifest settings.entry 声明的插件自定义面板） ---- -->
+      <!-- ---- 插件设置（manifest settings.entry 声明的插件自定义面板；手风琴，展开查看） ---- -->
       <section v-if="settingsPlugins.length > 0" class="settings-card">
         <h2 class="settings-title">插件设置</h2>
+        <div class="settings-row">
+          <span class="settings-hint">
+            {{ settingsPlugins.length }} 个插件提供设置面板，点击展开（同时只展开一个）
+          </span>
+        </div>
         <div v-for="p in settingsPlugins" :key="p.id" class="plugin-settings-block">
-          <div class="settings-row">
-            <span class="settings-label">{{ p.name }}</span>
-            <span class="settings-hint">由插件提供的设置面板（manifest settings.entry）</span>
-          </div>
-          <div class="plugin-settings-pane">
+          <button
+            class="plugin-settings-head"
+            :class="{ open: expandedPluginSettings === p.id }"
+            :aria-expanded="expandedPluginSettings === p.id"
+            @click="togglePluginSettings(p.id)"
+          >
+            <span class="plugin-settings-name">{{ p.name }}</span>
+            <span class="plugin-settings-meta">{{ p.settings }}</span>
+            <Icon
+              name="chevron-down"
+              :size="14"
+              class="plugin-settings-caret"
+              :class="{ open: expandedPluginSettings === p.id }"
+            />
+          </button>
+          <div v-if="expandedPluginSettings === p.id" class="plugin-settings-pane">
             <PluginUiView
               :plugin-id="p.id"
               :entry="p.settings ?? 'ui/settings.js'"

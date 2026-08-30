@@ -104,6 +104,12 @@ export const RUNTIME_LABEL: Record<string, string> = {
 export const vaultGet = () => invoke<VaultSettings>("vault_get");
 export const vaultSet = (path: string) => invoke<void>("vault_set", { path });
 
+/* ---- 应用设置（%APPDATA%/com.toolbox.desktop/app.json 通用键值） ---- */
+
+export const appSettingsGet = () => invoke<Record<string, unknown>>("app_settings_get");
+export const appSettingsSet = (key: string, value: unknown) =>
+  invoke<void>("app_settings_set", { key, value });
+
 /* ---- 宿主文件服务（vault 内文件列表/读写/增删改；系统级框架能力，
    插件 webview 桥 fs.readText/writeText 与宿主数据层共用同一封装） ---- */
 

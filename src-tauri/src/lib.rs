@@ -77,6 +77,60 @@ fn app_config_dir(app: &tauri::AppHandle) -> Result<String, String> {
     Ok(dir.to_string_lossy().to_string())
 }
 
+/* ---- 应用设置（%APPDATA%/com.toolbox.desktop/app.json，通用键值） ---- */
+
+fn app_settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("定位配置目录失败: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建配置目录失败: {e}"))?;
+    Ok(dir.join("app.json"))
+}
+
+fn load_app_settings(app: &tauri::AppHandle) -> serde_json::Map<String, serde_json::Value> {
+    let Ok(p) = app_settings_path(app) else {
+        return serde_json::Map::new();
+    };
+    std::fs::read_to_string(&p)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+}
+
+/// 关闭主窗口的行为："tray"（默认）= 最小化到托盘常驻；"quit" = 退出应用。
+fn close_behavior(app: &tauri::AppHandle) -> String {
+    load_app_settings(app)
+        .get("closeBehavior")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tray")
+        .to_string()
+}
+
+/// 读取应用设置（整个 map，前端设置页用）。
+#[tauri::command]
+fn app_settings_get(app: tauri::AppHandle) -> serde_json::Value {
+    serde_json::Value::Object(load_app_settings(&app))
+}
+
+/// 写入单个设置键（原子写，与 plugins.json 同风格防损坏）。
+#[tauri::command]
+fn app_settings_set(
+    app: tauri::AppHandle,
+    key: String,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let mut map = load_app_settings(&app);
+    map.insert(key, value);
+    let p = app_settings_path(&app)?;
+    let raw =
+        serde_json::to_string_pretty(&serde_json::Value::Object(map)).map_err(|e| e.to_string())?;
+    let tmp = p.with_extension("json.tmp");
+    std::fs::write(&tmp, &raw).map_err(|e| format!("保存设置失败: {e}"))?;
+    std::fs::rename(&tmp, &p).map_err(|e| format!("保存设置失败: {e}"))
+}
+
 /* ---- 自动备份（宿主内嵌 core::backup；原 core-backup 插件命令） ---- */
 
 /// 设置窗口标题栏近似色（主题联动，M5 增强）：
@@ -250,11 +304,19 @@ pub fn run() {
         // 插件命令签名要求 Mutex<PluginManager>（见 plugins/mod.rs 的 State 参数）
         .manage(Mutex::new(PluginManager::default()))
         .on_window_event(|window, event| {
-            // 关窗最小化到托盘：主窗口关闭请求 → 阻止并隐藏（托盘"退出"时放行）
+            // 主窗口关闭：按设置决定「最小化到托盘常驻」还是「退出应用」
+            // （托盘「退出」置 EXITING 后放行真正退出）
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" && !EXITING.load(Ordering::SeqCst) {
-                    api.prevent_close();
-                    let _ = window.hide();
+                    if close_behavior(window.app_handle()) == "tray" {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    } else {
+                        // 「退出应用」模式：顺带关闭浮窗（否则主窗口关闭后浮窗还在，应用不退出）
+                        if let Some(f) = window.app_handle().get_webview_window(FLOAT_WINDOW) {
+                            let _ = f.close();
+                        }
+                    }
                 }
             }
         })
@@ -295,6 +357,8 @@ pub fn run() {
             backup_restore,
             config_export,
             config_import,
+            app_settings_get,
+            app_settings_set,
             float_toggle,
             float_set_locked,
             set_window_caption_color,
@@ -471,7 +535,15 @@ fn handle_tray_event(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
         }
         "tray-quit" => {
             EXITING.store(true, Ordering::SeqCst);
-            app.exit(0);
+            // 优雅退出（修 8/30 的 Error 1412）：不强制 `app.exit`——先让窗口真正
+            // 关闭，WebView2 随窗口正常清理，run 循环在全部窗口关闭后自然退出。
+            // `app.exit` 会强制销毁 WebView 环境，窗口析构时注销窗口类失败
+            // （Chromium "Failed to unregister class Chrome_WidgetWin_0. Error = 1412"）。
+            for label in ["main", FLOAT_WINDOW] {
+                if let Some(w) = app.get_webview_window(label) {
+                    let _ = w.close();
+                }
+            }
         }
         _ => {
             // 插件托盘动作：与前端 triggerPluginAction 同构（事件通道 + 命令通道）
