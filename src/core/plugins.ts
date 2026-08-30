@@ -222,6 +222,7 @@ const MOCK_PLUGINS: PluginInfo[] = [
       { id: "open", label: "打开示例界面", icon: "file-text", topbar: false, tray: true },
     ],
     settings: "ui/settings.js",
+    float: "ui/float.js",
   },
 ];
 

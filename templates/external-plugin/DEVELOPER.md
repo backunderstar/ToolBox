@@ -34,6 +34,11 @@
                                   // 可选：宿主外壳动作（顶栏图标按钮 / 托盘菜单项，见 §8）
   "settings": { "entry": "ui/settings.js" },
                                   // 可选：设置页「插件设置」段的自定义面板入口
+  "float": { "entry": "ui/float.js" },
+                                  // 可选：桌面浮窗界面（Alt+Q 的独立小窗）。启用且声明后，
+                                  // 浮窗显示本插件界面（注册 key = 插件 id；多个声明时页签
+                                  // 切换；不声明则浮窗空态）。浮窗窗口能力（创建/置底/快捷键/
+                                  // 锁定）属宿主框架，插件只提供内容，见 §10.1
   "theme": { "base": "light", "tokens": {}, "css": "theme.css" }
                                   // 可选：皮肤插件（主题包，纯数据，见 §9）
 }
@@ -264,6 +269,20 @@ plugin.json 声明 `"theme": {"base":"light|dark","tokens":{},"css":"theme.css"}
    按钮用捆绑 Python 的 pip 装到 vendor/；main.py 把 vendor 插进 sys.path）。
    依赖目录与构建产物**不入库**（分发源码，对方装完点「安装依赖」）。
 8. **跨插件**：`api.call(cmd, args, targetPluginId)` 调其他插件命令；同名命令不冲突。
+
+### 10.1 桌面浮窗界面（manifest.float）
+
+插件启用且声明 `"float": { "entry": "ui/float.js" }` 后，**桌面半透明浮窗（全局快捷键
+Alt+Q）显示该插件界面**——类似自带前端的另一个窗口形态：
+
+- **窗口能力属宿主**：浮窗创建、置底（桌面层）、Alt+Q 显隐、位置锁定/解锁都由宿主完成，
+  插件只提供内容（入口 JS + 样式）。
+- **注册 key = 插件 id**（与主界面同机制；浮窗是独立窗口，`window` 对象独立，注册不冲突）。
+- **多个插件声明**时浮窗底部页签切换；都不声明则浮窗显示空态。
+- **入口独立于 `ui`**：浮窗通常做精简版（小窗口 280px），core-example 示例见
+  `core-plugins/example/ui/float.ts` + `FloatPanel.vue`（构建脚本自动支持 `ui/float.ts` →
+  `float.js`；仓库外开发在 build.mjs 里加第二个入口，或用同一个 `ui/index.js`）。
+- 浮窗里插件照常用 `api.call` / `api.on` / `api.context.vault`（与主界面同桥）。
 
 ---
 

@@ -134,6 +134,24 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   SSG/双向链接/CDP 等旧小节删除或标注已移除、架构图/名词表更新）
 - 验证：cargo 59（54+3+2，search 删 2 旧测试）/ lint 0 / build ✓ / test 24
 
+### 1.8 增量（2026-08-30 晚：浮窗插件化 + 权限修复 + 动画 + 模板深化）
+
+- **桌面浮窗插件化**：manifest 新增 `float: { entry: "ui/float.js" }`（FloatDecl）——插件启用且
+  声明后，浮窗（Alt+Q）显示该插件界面（注册 key = 插件 id；多个声明页签切换；不声明空态）。
+  浮窗窗口能力（创建/置底/快捷键/锁定）仍属宿主（lib.rs + FloatApp 外壳），FloatApp 改为动态
+  加载 float 插件（独立窗口各自 pluginsList）；build-core 支持 ui/float.ts → float.js 多入口；
+  core-example 新增精简浮窗（ui/float.ts + FloatPanel.vue）
+- **修主窗口窗口权限**：App.vue 关闭询问流程报 `window.destroy not allowed`（default.json 缺
+  窗口操作权限；浮窗 float.json 反而齐全）——补 core:window:allow-close/destroy/hide/show
+- **全应用过渡动画**：视图切换（view out-in）/ 侧边栏折叠 / 模态（confirm）/ 面板（fade-slide）/
+  主题切换渐变 / 插件列表 TransitionGroup（base.css 统一动画类，只动 opacity/transform）
+- **模板深化**：main.py 补 call_core + fileList（fs.listDir）/notifyDemo（notify）；App.vue 四张
+  演示卡片（命令/文件/搜索/事件）；DEVELOPER.md 补核心 API 端到端示例 + §6.1 宿主全局 class
+  清单 + §10.1 浮窗界面
+- **CSS 变量契约正式化**：tokens.css 标注「插件 UI 变量契约（公开稳定）」，宿主承诺
+  只增不删不改
+- 验证：cargo 59（+float 声明编译）/ lint 0 / build ✓ / build:core ✓（float.js 已部署）
+
 ---
 
 ## 2. 项目一句话

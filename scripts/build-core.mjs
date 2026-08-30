@@ -35,6 +35,8 @@ const PLUGINS = [
     ],
     // 设置页插件段：构建 ui/settings.ts → ui/settings.js，设置页「插件设置」段挂载
     settings: { entry: "ui/settings.js" },
+    // 桌面浮窗界面：构建 ui/float.ts → ui/float.js，启用后浮窗（Alt+Q）显示本界面
+    float: { entry: "ui/float.js" },
     // 教学点：manifest config 会注入 tb_create 的 cfg（示例读取 author 回显）
     config: { author: "ToolBox 教程" },
   },
@@ -70,6 +72,13 @@ async function buildCorePluginUi(p) {
     const out = path.join(outDir, "settings");
     await buildPluginUi({ root, entry: settingsTs, outDir: out, env });
     built.push({ outDir: out, jsName: "settings" });
+  }
+  // 可选桌面浮窗入口 ui/float.ts（manifest float.entry = ui/float.js）
+  const floatTs = path.join(uiDir, "float.ts");
+  if (await exists(floatTs)) {
+    const out = path.join(outDir, "float");
+    await buildPluginUi({ root, entry: floatTs, outDir: out, env });
+    built.push({ outDir: out, jsName: "float" });
   }
   if (built.length === 0 && p.ui) {
     // 声明了 ui 却缺源文件：静默跳过会部署"声明 ui 但无产物"的坏清单，
@@ -170,6 +179,8 @@ await Promise.all(
       actions: p.actions ?? [],
       // 设置页插件段（ui/settings.js 产物；插件自定义设置面板）
       settings: p.settings ?? null,
+      // 桌面浮窗界面（ui/float.js 产物；启用后浮窗显示本插件界面）
+      float: p.float ?? null,
       // 教学点：manifest config 注入 tb_create 的 cfg（插件读取；宿主会合并 vault 等运行期键）
       config: p.config ?? {},
       // 随包插件标记：dev 构建清理时据此识别"可清理的旧随包插件"，

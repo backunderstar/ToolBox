@@ -90,6 +90,8 @@ export interface PluginInfo {
   actions: PluginAction[];
   /** 设置页插件段入口（相对插件目录；null = 无自定义设置面板） */
   settings: string | null;
+  /** 桌面浮窗界面入口（相对插件目录；null = 不参与浮窗。启用且声明后浮窗显示本插件界面） */
+  float: string | null;
 }
 
 /** 插件运行时 → 界面标签（插件页 / 概览页共用，避免各组件重复定义） */

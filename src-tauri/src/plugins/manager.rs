@@ -77,6 +77,8 @@ pub struct PluginInfo {
     pub actions: Vec<ActionDecl>,
     /// 设置页插件段入口 JS（相对插件目录；有则设置页渲染本插件自定义面板）
     pub settings: Option<String>,
+    /// 桌面浮窗界面入口 JS（相对插件目录；有则启用后浮窗显示本插件界面）
+    pub float: Option<String>,
 }
 
 #[derive(Default)]
@@ -651,6 +653,7 @@ impl PluginManager {
                         theme: None,
                         actions: vec![],
                         settings: None,
+                        float: None,
                     },
                     dir: dir.to_path_buf(),
                     commands: vec![],
@@ -752,6 +755,8 @@ impl PluginManager {
                 // 整个 SettingsDecl 对象，前端按 string 用 → plugins_read_file 的 rel
                 // 收到 map 报错，8/30 实测）
                 settings: r.manifest.settings.as_ref().map(|s| s.entry.clone()),
+                // 浮窗入口：同款透传 entry 字符串
+                float: r.manifest.float.as_ref().map(|f| f.entry.clone()),
             })
             .collect()
     }
@@ -1552,6 +1557,7 @@ mod export_tests {
                 theme: None,
                 actions: vec![],
                 settings: None,
+                float: None,
             },
             dir: plugin_dir.clone(),
             commands: vec![],

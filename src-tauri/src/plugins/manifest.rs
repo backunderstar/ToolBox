@@ -99,6 +99,18 @@ pub struct SettingsDecl {
     pub entry: String,
 }
 
+/// 桌面浮窗界面声明（可选）：插件启用且声明 `float` 时，桌面半透明浮窗（Alt+Q）
+/// 显示该插件界面（相对插件目录，如 "ui/float.js"，自包含 IIFE，注册 key =
+/// pluginId，与主界面同机制）。不声明 float 的插件不影响浮窗——浮窗显示
+/// "无浮窗插件"空态。多个插件声明时浮窗底部页签切换。
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FloatDecl {
+    /// 入口 JS（相对插件目录）
+    #[serde(default)]
+    pub entry: String,
+}
+
 /// 插件清单。v1 字段：
 /// - runtime = "webview"：entry 为 JS 文件相对路径，运行于界面内
 /// - runtime = "process"：command 为启动命令（argv），如 ["python", "main.py"]
@@ -144,6 +156,9 @@ pub struct PluginManifest {
     /// 设置页插件段入口（有则设置页渲染本插件自定义面板）。
     #[serde(default)]
     pub settings: Option<SettingsDecl>,
+    /// 桌面浮窗界面入口（有则启用后浮窗显示本插件界面，见 FloatDecl）。
+    #[serde(default)]
+    pub float: Option<FloatDecl>,
 }
 
 /// v1 认识的权限（未知权限记录 warning，不阻止加载）。

@@ -1,28 +1,23 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { pluginsReadFile, vaultGet, floatSetLocked } from "../core/api";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { pluginsList, pluginsReadFile, vaultGet, floatSetLocked, type PluginInfo } from "../core/api";
 import { buildBridgeApi, injectPluginScript, type PluginBridgeApi } from "../core/pluginRuntime";
 import { useTauriListen } from "../core/useTauriListen";
 import "./float.css";
 
 /**
- * 桌面半透明浮窗（快速工具）—— 插件自带前端加载器：
+ * 桌面半透明浮窗（快速工具）—— 插件浮窗界面加载器：
  * - 独立窗口（transparent + 无边框 + 桌面层不置顶），加载同一前端入口，按窗口 label 分流到这里
- * - **宿主统一外壳**：标题栏（拖拽区 + 位置锁定）+ 底部页签，
- *   插件只渲染内容区（core-example 自带前端，与主窗口 PluginUiView
- *   同一注入机制——同一插件 UI 可同时服务于主窗与浮窗）；锁定时禁用拖拽与调整大小
+ * - **宿主统一外壳**：标题栏（拖拽区 + 快捷键 + 位置锁定）+ 底部页签；
+ *   内容 = **启用了且声明 `float` 的插件**（manifest.float.entry，与主界面同一注入
+ *   机制，注册 key = pluginId）；多个声明时页签切换；无声明时显示空态
  * - 插件不可用时显示错误兜底
  */
-const TABS = [
-  { id: "core-example", label: "示例" },
-] as const;
-
-type TabId = (typeof TABS)[number]["id"];
-
 const containerRef = ref<HTMLDivElement | null>(null);
 const vaultPath = ref<string | null>(null);
 const error = ref<string | null>(null);
-const tab = ref<TabId>("core-example");
+const tab = ref<string>("");
+const floatPlugins = ref<PluginInfo[]>([]);
 /* 位置锁定状态（localStorage 持久化；try/catch 兜底浏览器异常环境） */
 let initialLocked = false;
 try {
@@ -63,37 +58,73 @@ useTauriListen("vault-changed", () => {
     });
 });
 
+/** 启用且声明 float 的插件 → 浮窗页签 */
+const tabs = computed(() =>
+  floatPlugins.value.map((p) => ({
+    id: p.id,
+    label: p.name,
+    entry: p.float ?? "ui/index.js",
+  })),
+);
+
+/* 工作区变化时拉取插件列表（浮窗是独立窗口，各自拉取；插件启停变化由重开浮窗/切工作区反映） */
+watch(
+  vaultPath,
+  async (v) => {
+    if (!v) {
+      floatPlugins.value = [];
+      return;
+    }
+    try {
+      const list = await pluginsList(v);
+      floatPlugins.value = list.filter((p) => p.enabled && p.float);
+      // 当前页签失效（插件被禁用/卸载）→ 回退到第一个
+      if (!floatPlugins.value.some((p) => p.id === tab.value)) {
+        tab.value = floatPlugins.value[0]?.id ?? "";
+      }
+    } catch {
+      floatPlugins.value = [];
+    }
+  },
+  { immediate: true },
+);
+
 interface UiRegistry {
   mount: (el: HTMLElement, api: PluginBridgeApi) => void;
   unmount?: () => void;
 }
 
-/* 加载当前页签插件自带前端并挂载（统一桥） */
+/* 加载当前页签插件浮窗前端并挂载（统一桥） */
 let disposeCurrent: (() => void) | null = null;
 
 async function load(): Promise<void> {
   disposeCurrent?.();
   disposeCurrent = null;
   let disposed = false;
-  const currentTab = tab.value;
+  const current = tabs.value.find((t) => t.id === tab.value);
+  if (!current) {
+    error.value = null;
+    return;
+  }
   const w = window as unknown as Record<string, unknown>;
   let scriptUn: (() => void) | null = null;
   let styleEl: HTMLStyleElement | null = null;
 
   // 统一桥（call → plugin_call / on → plugin-event）
-  const api: PluginBridgeApi = buildBridgeApi(currentTab, () => vaultPath.value);
+  const api: PluginBridgeApi = buildBridgeApi(current.id, () => vaultPath.value);
 
   disposeCurrent = () => {
     disposed = true;
-    (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[currentTab]?.unmount?.();
+    (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[current.id]?.unmount?.();
     scriptUn?.();
     styleEl?.remove();
   };
 
   try {
-    // 1. 样式注入（Vite 提取的 style.css；无则跳过）
+    // 1. 样式注入（入口同目录的 style.css；无则跳过）
     try {
-      const css = await pluginsReadFile(currentTab, "ui/style.css");
+      const cssDir = current.entry.slice(0, current.entry.lastIndexOf("/"));
+      const css = await pluginsReadFile(current.id, `${cssDir}/style.css`);
       if (disposed) return;
       styleEl = document.createElement("style");
       styleEl.textContent = css;
@@ -102,14 +133,14 @@ async function load(): Promise<void> {
       /* 无样式文件 */
     }
     // 2. 注入入口 JS（Blob URL script，顶层副作用注册 UI）
-    const code = await pluginsReadFile(currentTab, "ui/index.js");
+    const code = await pluginsReadFile(current.id, current.entry);
     if (disposed) return;
     scriptUn = await injectPluginScript(code);
     if (disposed) return;
-    // 3. 取注册表并挂载
-    const reg = (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[currentTab];
+    // 3. 取注册表并挂载（注册 key = 插件 id，与主界面同机制）
+    const reg = (w.__TB_PLUGIN_UI__ as Record<string, UiRegistry> | undefined)?.[current.id];
     if (!reg?.mount || !containerRef.value) {
-      throw new Error("插件未注册界面（ui/index.js 缺少 __TB_PLUGIN_UI__ 注册）");
+      throw new Error(`插件未注册浮窗界面（${current.entry} 缺少 __TB_PLUGIN_UI__["${current.id}"] 注册）`);
     }
     reg.mount(containerRef.value, api);
     error.value = null;
@@ -118,8 +149,8 @@ async function load(): Promise<void> {
   }
 }
 
-/* 页签/工作区变化时重建桥并重新挂载 */
-watch([tab, vaultPath], () => void load(), { immediate: true });
+/* 页签/工作区/插件列表变化时重建桥并重新挂载 */
+watch([tab, vaultPath, floatPlugins], () => void load(), { immediate: true });
 
 onBeforeUnmount(() => disposeCurrent?.());
 
@@ -141,7 +172,7 @@ function toggleLock(): void {
          锁定后禁用拖拽：不给标题栏加 data-tauri-drag-region（锁按钮除外，需可点击） -->
     <div class="float-titlebar" :data-tauri-drag-region="locked ? undefined : true">
       <span class="float-title" :data-tauri-drag-region="locked ? undefined : true">
-        {{ TABS.find((t) => t.id === tab)?.label }}
+        {{ tabs.find((t) => t.id === tab)?.label ?? "ToolBox 浮窗" }}
       </span>
       <span class="float-hotkey" title="全局快捷键 Alt+Q：显示/隐藏浮窗">Alt+Q</span>
       <button
@@ -169,7 +200,13 @@ function toggleLock(): void {
     </div>
 
     <!-- 插件内容区 -->
-    <div v-if="error" class="float-empty">
+    <div v-if="floatPlugins.length === 0" class="float-empty">
+      <p class="float-empty-title">没有浮窗插件</p>
+      <p class="float-empty-sub">
+        插件在 manifest 声明 <code>float</code> 且启用后，会显示在这里
+      </p>
+    </div>
+    <div v-else-if="error" class="float-empty">
       插件界面加载失败
       <div style="font-size: 11px; margin-top: 4px">{{ error }}</div>
     </div>
@@ -179,10 +216,10 @@ function toggleLock(): void {
       style="display: flex; flex-direction: column; flex: 1; min-height: 0"
     />
 
-    <!-- 底部页签：待办 / 清单 -->
-    <div class="float-tabs">
+    <!-- 底部页签：声明 float 的已启用插件 -->
+    <div v-if="tabs.length > 1" class="float-tabs">
       <button
-        v-for="t in TABS"
+        v-for="t in tabs"
         :key="t.id"
         class="float-tab"
         :class="{ on: tab === t.id }"
