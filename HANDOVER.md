@@ -507,18 +507,18 @@ cargo test --workspace                 # Rust 测试（当前 60）
 
 ## 8. 待办（除 §1 进行中的工作外）
 
-- **🔴 未推送的本地提交（2026-08-29 教学基线收敛起累积，勿推送）**：完整清单见
-  `git log origin/main..HEAD`；最新为 9/ 结构完善轮 `ba1df14`（views 分层 / lib.rs 拆模块 /
-  deps 抽取 / .editorconfig / CHANGELOG / package-plugin CLI / api+plugins 补测）、
-  示例精简 `1928bc9`（plugins/ 9→4，每种运行时留一典型，主题全保留，见 §1.10）、
-  独立测试 `2a60108`（模板 mock-host + npm test，见 §1.11）与探针卡插件轮（`probe-rat-layer`，
-  见 §1.12，未推送提交累计 56 个）。
-  网络情况：本机 **github.com:443 HTTPS 直连被墙**（重试多次 `Connection reset`；
-  解析到 20.205.243.166 不通），但 **`ssh.github.com:443` 实测可连**（GitHub 官方
-  SSH-over-443 通道）。推送选项：① 生成 SSH key 加 GitHub → 远程改
-  `ssh://git@ssh.github.com:443/backunderstar/ToolBox.git`；② 开代理后
-  `git config --global http.proxy http://127.0.0.1:<port>` 再 `git push origin main`。
+- **✅ 已推送（2026-09-01 首次发布）**：全部本地提交（含教学基线收敛以来 62 个）已 push
+  `origin/main`，远程 HEAD = 本地 HEAD（0f1073b）。此前"未推送累积 56 个"已清零。
+  网络情况：本机 **github.com:443 HTTPS 直连恢复可连**（此前被墙 `Connection reset`；
+  本次 `Test-NetConnection` 通过 + `git ls-remote` 成功 + push 成功）。若再次被墙，
+  备用通道：① SSH key + 远程改 `ssh://git@ssh.github.com:443/backunderstar/ToolBox.git`；
+  ② 开代理后 `git config --global http.proxy http://127.0.0.1:<port>`。
   推送会触发 ci.yml（已修好 resources/python 占位校验）。
+- **首次 release 打包（2026-09-01 进行中）**：`pnpm tauri build`（nsis + updater 产物，
+  资源含 `resources/_core` + `resources/python`）。完成后在 GitHub Releases 建首个
+  release（v0.1.0 起）并上传安装包 + updater 签名产物。打包前注意：示例插件默认关闭
+  （plugins.json 只启用 probe-rat-layer，core-example 进 disabled）、参数小字解释与
+  文档已收尾（§1.12）。
 - **插件页"安装依赖"按钮**：✅ 已做（2026-08-29，见 §1.2/§1.4）；8/30 补「先停插件进程
   再 pip」修复并发 PermissionError（§6.1 坑 11）。剩余：目标机/真实场景交互验收
   （点击按钮装依赖 → 重载生效），py-jmes 已带 requirements.txt 可当验收对象
