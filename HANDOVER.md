@@ -409,7 +409,10 @@ py-jmes 是按钮的正确验收对象。
 2. **托盘菜单**（`actions[].tray`）：托盘渲染「插件名：动作」项，插件启停自动重建
    （宿主监听前端 `plugins-changed` 事件 → `rebuild_tray`；预热后首建）
 3. **设置页插件段**（`settings.entry`）：设置页「插件设置」段挂载插件自定义面板
-   （注册 key 约定 `settings:<pluginId>`；PluginUiView 支持 entry/regKey）
+   （注册 key 约定 `settings:<pluginId>`；PluginUiView 支持 entry/regKey）。
+   ⚠️ `PluginInfo.settings` 透传 **entry 字符串**（与 ui 字段同款）——曾误透传整个
+   SettingsDecl 对象，前端按 string 用导致 `plugins_read_file` 报 `rel: invalid type:
+   map`（8/30 实测修复，manager.rs list()）。
 
 统一交互契约：外壳动作点击 → 宿主发 `plugin-event` 事件 `action`（插件 UI
 `api.on("action")` 订阅）+ 非 webview 插件调约定命令 `plugin.action {action, source}`

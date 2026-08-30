@@ -6,7 +6,7 @@
 //! 被命令层与测试跨模块访问的私有项标 `pub(crate)`。
 
 use super::events;
-use super::manifest::{is_valid_plugin_id, ActionDecl, NavDecl, PluginManifest, PluginRuntime, SettingsDecl, ThemeDecl};
+use super::manifest::{is_valid_plugin_id, ActionDecl, NavDecl, PluginManifest, PluginRuntime, ThemeDecl};
 use super::native::NativePlugin;
 use super::process::ProcessPlugin;
 use serde::Serialize;
@@ -75,8 +75,8 @@ pub struct PluginInfo {
     pub has_deps: bool,
     /// 宿主外壳动作（顶栏图标按钮 / 托盘菜单项）
     pub actions: Vec<ActionDecl>,
-    /// 设置页插件段入口（有则设置页渲染本插件自定义面板）
-    pub settings: Option<SettingsDecl>,
+    /// 设置页插件段入口 JS（相对插件目录；有则设置页渲染本插件自定义面板）
+    pub settings: Option<String>,
 }
 
 #[derive(Default)]
@@ -748,7 +748,10 @@ impl PluginManager {
                 theme: r.manifest.theme.clone(),
                 has_deps: r.dir.join("requirements.txt").is_file(),
                 actions: r.manifest.actions.clone(),
-                settings: r.manifest.settings.clone(),
+                // 设置面板入口：与 ui 字段同款透传 entry 字符串（历史不一致——曾透传
+                // 整个 SettingsDecl 对象，前端按 string 用 → plugins_read_file 的 rel
+                // 收到 map 报错，8/30 实测）
+                settings: r.manifest.settings.as_ref().map(|s| s.entry.clone()),
             })
             .collect()
     }
