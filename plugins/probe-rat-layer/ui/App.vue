@@ -11,7 +11,7 @@ import type {
  * - layer.run 秒回 {jobId}，分层在后台线程跑（宿主单次 call 有 30s 硬超时，
  *   必须异步；进度以轮询 layer.status 为准，layer.progress 事件为实时补充）；
  * - 输出目录强制用户指定（拍板决定）；
- * - 图片用 layer.render 按需渲染（matplotlib 懒加载），返回 SVG 文本内联显示。
+ * - 图片用 layer.render 按需渲染（matplotlib 懒加载），返回 PNG data URL 直显。
  * 样式只引用宿主设计令牌（tokens.css 变量），类名前缀 prl- 避免污染宿主。
  */
 const props = defineProps<{ api: PluginBridgeApi }>();
@@ -368,44 +368,36 @@ const offDone = props.api.on("layer.done", (data) => {
 /* ---------- 结果页 ---------- */
 const layersDetail = computed(() => result.value?.layers ?? []);
 const selectedLayer = ref<number | null>(null);
-const svgText = ref<string | null>(null);
-const svgKind = ref("");
-const svgBusy = ref(false);
-const svgError = ref<string | null>(null);
 const viewerText = ref<string | null>(null);
 const viewerTitle = ref("");
 
-/** SVG 文本 → Blob URL（<img> 展示；宿主 CSP img-src 允许 blob:）。
- * 不用 v-html 内联（matplotlib SVG 带 <?xml?>/<!DOCTYPE> 前缀，WebView2 解析不可靠）；
- * 不用 base64（大 SVG 编码开销大），Blob URL 零复制。切换时 revoke 旧 URL 防泄漏。 */
-let svgUrlValue = "";
-function svgToUrl(svg: string): string {
-  if (svgUrlValue) URL.revokeObjectURL(svgUrlValue);
-  svgUrlValue = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
-  return svgUrlValue;
-}
-
-const svgUrl = computed(() => (svgText.value ? svgToUrl(svgText.value) : ""));
+/** PNG data URL（后端 matplotlib 光栅化，浏览器只解码位图）。
+ * 不用 SVG：几千条 <path> 的 SVG DOM 交给 WebView2 光栅化是"点开等很久"的
+ * 隐藏瓶颈；PNG 直接 <img src> 直显，data: 在宿主 CSP img-src 白名单内。 */
+const imgText = ref<string | null>(null);
+const imgKind = ref("");
+const imgBusy = ref(false);
+const imgError = ref<string | null>(null);
 
 /** 已渲染过的图按 jobId+kind 缓存（点过的图秒显，不再调后端） */
-const svgCache = new Map<string, string>();
+const imgCache = new Map<string, string>();
 
 async function renderImage(kind: string): Promise<void> {
   if (!jobId.value) return;
   const cacheKey = `${jobId.value}:${kind}`;
-  svgBusy.value = true;
-  svgText.value = null;
-  svgError.value = null;
-  const cached = svgCache.get(cacheKey);
+  imgBusy.value = true;
+  imgText.value = null;
+  imgError.value = null;
+  const cached = imgCache.get(cacheKey);
   if (cached !== undefined) {
-    svgText.value = cached;
-    svgKind.value = kind;
-    svgBusy.value = false;
+    imgText.value = cached;
+    imgKind.value = kind;
+    imgBusy.value = false;
     return;
   }
   try {
     // 后端异步渲染：未命中返回 {"pending": true}（后台线程渲染，宿主 30s 超时不杀进程），
-    // 前端轮询直到拿到 SVG 字符串（后端缓存命中后秒回）。
+    // 前端轮询直到拿到 PNG data URL（后端缓存命中后秒回）。
     let text: string | null = null;
     for (let i = 0; i < 400; i++) {
       const r = (await props.api.call("layer.render", {
@@ -422,15 +414,15 @@ async function renderImage(kind: string): Promise<void> {
     if (text === null) {
       throw new Error("渲染超时（后台线程长时间无输出）");
     }
-    svgCache.set(cacheKey, text);
-    svgText.value = text;
-    svgKind.value = kind;
+    imgCache.set(cacheKey, text);
+    imgText.value = text;
+    imgKind.value = kind;
   } catch (e) {
-    svgText.value = null;
-    svgError.value = `渲染失败: ${e}`;
-    logEvent(svgError.value);
+    imgText.value = null;
+    imgError.value = `渲染失败: ${e}`;
+    logEvent(imgError.value);
   } finally {
-    svgBusy.value = false;
+    imgBusy.value = false;
   }
 }
 
@@ -862,7 +854,7 @@ onBeforeUnmount(() => {
 
         <div class="prl-card">
           <div class="prl-card-head">
-            <h3>各层统计（点击层查看 SVG 图）</h3>
+            <h3>各层统计（点击层查看图）</h3>
             <div class="prl-actions prl-actions-inline">
               <button class="prl-btn" @click="showOverview">总览图</button>
               <button class="prl-btn" @click="showRose">玫瑰图</button>
@@ -901,13 +893,13 @@ onBeforeUnmount(() => {
           <p v-if="!layersDetail.length" class="prl-meta">（无信号层数据）</p>
         </div>
 
-        <div v-if="svgText || svgBusy || svgError" class="prl-card">
+        <div v-if="imgText || imgBusy || imgError" class="prl-card">
           <div class="prl-card-head">
-            <h3>{{ svgKind }}（SVG，按需渲染）</h3>
-            <span v-if="svgBusy" class="prl-meta">渲染中…（首次约 1.5s）</span>
+            <h3>{{ imgKind }}（PNG，按需渲染）</h3>
+            <span v-if="imgBusy" class="prl-meta">渲染中…（首次约 1.5s）</span>
           </div>
-          <div v-if="svgError" class="prl-error" role="alert">{{ svgError }}</div>
-          <div v-if="svgText" class="prl-svg"><img :src="svgUrl" alt="分层图" /></div>
+          <div v-if="imgError" class="prl-error" role="alert">{{ imgError }}</div>
+          <div v-if="imgText" class="prl-svg"><img :src="imgText" alt="分层图" /></div>
         </div>
 
         <div class="prl-card">

@@ -40,7 +40,7 @@ pnpm sync:plugins
 | **输入设置** | 输入 1：Allegro pin 表（.xls/.xlsx，兼容旧 JSON）；输入 2：筛选文件（可选，.lst/.txt 一行一个 net，兼容 .xls/.xlsx 第一列）；**输出目录（必填，强制指定）**；预设（**默认 DC 信号** / 全量 / 自定义）；层数/线宽/线距。内置文件浏览器（盘符→目录→文件） |
 | **分层参数** | 方法（packing/dsatur）、优化器（sa/greedy/none）、迭代①-④轮数、SA 参数、拥塞参数；未列字段用 `probe_layer` 默认值 |
 | **运行** | 「开始分层」秒回（后台线程），进度条 + 阶段文案 + 事件流，可取消；自定义参数且阈值 <1.5 时提示 DC 信号预设 |
-| **结果** | 摘要卡（层数/线数/硬软冲突/人工清单/耗时）、各层统计表（点击行→**按需渲染 SVG 图**，另有总览图/玫瑰图）、「查看 report.json」、.lst/CSV 查看与复制、「打开输出目录」；**人工线占比 >30% 时醒目提示并一键应用 DC 信号预设** |
+| **结果** | 摘要卡（层数/线数/硬软冲突/人工清单/耗时）、各层统计表（点击行→**按需渲染 PNG 图**，另有总览图/玫瑰图）、「查看 report.json」、.lst/CSV 查看与复制、「打开输出目录」；**人工线占比 >30% 时醒目提示并一键应用 DC 信号预设** |
 
 > ⚠️ **默认预设 = DC 信号（cell 2.0 / threshold 3.0）**：原项目文档明确默认 0.8/0.5 对 DC/HV 信号太严
 > （实测 1800 线 DC 信号全量用默认参数会 manual 1758 条；DC 信号预设 manual 仅 18 条）。
@@ -60,7 +60,7 @@ pnpm sync:plugins
 | `layer.result` | `{jobId}` → `{summary, layers, outDir, files}` | 摘要几 KB（不进 30s 超时） |
 | `layer.report` | `{jobId}` → `{text}` | report.json 原文预览（冲突明细截断到每级前 300 条） |
 | `layer.readOut` | `{jobId, rel}` → 文本 | 输出目录内相对路径读取（限 4MB，防穿越） |
-| `layer.render` | `{jobId, kind}` → SVG 文本 | 按需渲染 `layer_<i>` / `overview` / `rose`（matplotlib 懒加载 + 缓存） |
+| `layer.render` | `{jobId, kind}` → PNG base64 data URL（未命中 `{"pending":true}`） | 按需渲染 `layer_<i>` / `overview` / `rose` / `manual`（matplotlib 懒加载 + 后台线程 + 磁盘缓存） |
 | `layer.openOut` | `{outDir}` → `{ok}` | 资源管理器打开输出目录（核心 API `shell.exec`） |
 | `layer.notifyDone` | `{title, body}` → `{ok}` | 完成横幅（核心 API `notify`；后台线程不能调核心 API，故由 UI 触发） |
 

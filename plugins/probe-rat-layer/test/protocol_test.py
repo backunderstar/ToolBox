@@ -207,7 +207,7 @@ def main():
             fail("layer_1.lst 为空")
         print(f"PASS layer.readOut lst/layer_1.lst（{len(lst_text.splitlines())} 行）")
 
-        # 7. 按需渲染 SVG（异步：未命中返回 {"pending":true}，轮询直到拿到字符串）
+        # 7. 按需渲染 PNG（异步：未命中返回 {"pending":true}，轮询直到拿到 data URL）
         svg = c.call("layer.render", {"jobId": job_id, "kind": "layer_1"})
         t_render = time.monotonic()
         while isinstance(svg, dict) and svg.get("pending"):
@@ -215,11 +215,12 @@ def main():
             svg = c.call("layer.render", {"jobId": job_id, "kind": "layer_1"})
             if time.monotonic() - t_render > 120:
                 fail("layer.render 轮询 120s 未完成（后台渲染卡住？）")
-        if not isinstance(svg, str) or "<svg" not in svg:
-            fail(f"layer.render 未返回合法 SVG（实际: {type(svg).__name__} len={len(svg) if isinstance(svg,str) else '?'} {str(svg)[:200]!r}）")
-        print(f"PASS layer.render layer_1（SVG {len(svg)} 字节，"
+        if not isinstance(svg, str) or not svg.startswith("data:image/png;base64,"):
+            fail(f"layer.render 未返回 PNG data URL（实际: {type(svg).__name__} "
+                 f"len={len(svg) if isinstance(svg,str) else '?'} {str(svg)[:120]!r}）")
+        print(f"PASS layer.render layer_1（PNG data URL，{len(svg)} 字节，"
               f"{time.monotonic() - t_render:.1f}s）")
-        # 二次调用应缓存命中（字符串秒回）
+        # 二次调用应缓存命中（data URL 秒回）
         t2 = time.monotonic()
         svg2 = c.call("layer.render", {"jobId": job_id, "kind": "layer_1"})
         if not isinstance(svg2, str) or svg2 != svg:

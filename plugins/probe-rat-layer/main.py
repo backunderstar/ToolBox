@@ -18,7 +18,7 @@
 - layer.cancel     取消当前任务（threading.Event，干净退出）
 - layer.result     任务摘要 + 输出文件清单（几 KB，不进 30s 超时）
 - layer.readOut    读输出目录内文本（.lst / csv / report 摘要，限 4MB）
-- layer.render     按需渲染图（matplotlib 懒加载）→ 返回 SVG 文本
+- layer.render     按需渲染图（matplotlib 懒加载）→ 返回 PNG base64 data URL
 - layer.openOut    资源管理器打开输出目录（核心 API shell.exec，权限 shell）
 - layer.notifyDone 完成横幅（核心 API notify，权限 notify；后台线程不能调核心 API，
                    故由 UI 收到 done 后调用本命令触发）
@@ -34,6 +34,7 @@
 """
 from __future__ import annotations
 
+import base64
 import dataclasses
 import datetime
 import json
@@ -135,7 +136,7 @@ def _restore_jobs() -> None:
     进程插件由宿主随应用启动/崩溃重启自动拉起；_JOBS 是内存字典，重启即空。
     分层成功时在 job 目录写 meta.json（摘要 + 输出目录 + 文件清单），
     这里扫描恢复进 _JOBS，并把 _ACTIVE 置为最新的 done 任务——前端挂载时
-    layer.status 即可拿到 jobId，结果页/图片缓存照常工作（SVG 文件本来就在
+    layer.status 即可拿到 jobId，结果页/图片缓存照常工作（PNG 文件本来就在
     jobs/<id>/img/ 磁盘上）。job_id 是 %Y%m%d_%H%M%S，字典序即时间序。
     """
     if not os.path.isdir(_JOBS_DIR):
@@ -328,7 +329,7 @@ def _run_job(job_id: str, args: dict) -> None:
             _ACTIVE.update(state="done", stage="完成", percent=100.0,
                            message="完成", error=None)
         # 结果持久化：进程重启（宿主崩溃重启/插件重载）后 layer.status/layer.result
-        # 仍能恢复本任务（_restore_jobs 扫描恢复）。SVG 文件缓存本就在磁盘上。
+        # 仍能恢复本任务（_restore_jobs 扫描恢复）。PNG 文件缓存本就在磁盘上。
         try:
             with open(os.path.join(jdir, "meta.json"), "w", encoding="utf-8") as f:
                 json.dump({"summary": summary, "layers_detail": layers_detail,
@@ -549,33 +550,40 @@ def _render_manual(wires: list, zones: tuple, out_dir: str) -> str:
     ax.grid(alpha=0.2)
     base = os.path.join(out_dir, "manual")
     fig.tight_layout()
-    fig.savefig(base + ".svg")
+    fig.savefig(base + ".png", dpi=120)
     plt.close(fig)
     return base
 
 
-def _svg_ready(path: str) -> bool:
-    """SVG 文件是否完整：末尾（去空白后）以 </svg> 结尾。
-
-    matplotlib 先建文件后写内容，轮询可能撞上"已创建未写完"的半成品；
-    且输出带 CRLF（...\r\n</svg>\r\n），不能精确比对最后 6 字节。
-    文件不存在或未写完 → False（前端继续 pending 轮询）。"""
+def _png_ready(path: str) -> bool:
+    """PNG 文件是否完整：末尾带 IEND 块（matplotlib 先建文件后写内容，
+    轮询可能撞上"已创建未写完"的半成品）。PNG 规范：IEND 块固定
+    b"\x00\x00\x00\x00IEND\xaeB\x60\x82" 结尾。不存在或未写完 → False。"""
     try:
         with open(path, "rb") as f:
-            f.seek(max(0, os.path.getsize(path) - 64))
+            f.seek(max(0, os.path.getsize(path) - 32))
             tail = f.read()
-        return tail.rstrip().endswith(b"</svg>")
+        return tail.endswith(b"\x00\x00\x00\x00IEND\xaeB\x60\x82")
     except OSError:
         return False
+
+
+def _png_data_url(path: str) -> str:
+    """读 PNG 文件 → base64 data URL（前端 <img> 直显，无需再转 Blob）。"""
+    with open(path, "rb") as f:
+        return "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
 
 
 def cmd_render(job_id: str, kind: str):
     """按需渲染指定图（layer_<i> / overview / rose / manual）。
 
     返回协议：
-    - 缓存命中且文件完整（</svg> 结尾）：SVG 文本（字符串）；
+    - 缓存命中且文件完整（PNG IEND 结尾）：**base64 data URL 字符串**（前端
+      `<img src>` 直显——PNG 由 matplotlib 光栅化，浏览器只解码位图，比把几千条
+      `<path>` 的 SVG DOM 丢给 WebView2 光栅化快得多，实测这是"点开图还是等很久"
+      的隐藏瓶颈）；
     - 未命中：启动后台渲染线程（幂等，同一 job+kind 只启一次），立即返回
-      {"pending": true}——前端轮询本命令直到拿到 SVG 字符串；
+      {"pending": true}——前端轮询本命令直到拿到 data URL 字符串；
     - 渲染失败（已写 .failed 标记）：抛错，前端显示明确错误。
 
     ⚠️ 为什么异步：宿主对 process 插件单次 call 有 30s 硬超时，超时即杀进程并
@@ -583,19 +591,18 @@ def cmd_render(job_id: str, kind: str):
     构建在某些环境可能逼近或超过 30s。渲染放后台线程后，本命令永远秒回，
     宿主永不超时；渲染进度由前端轮询获得。
     """
-    svg_path = None
-    name = _kind_svg_name(kind)
+    png_path = None
+    name = _kind_png_name(kind)
     if name:
-        svg_path = os.path.join(_job_dir(job_id), "img", name)
-        failed_path = svg_path + ".failed"
+        png_path = os.path.join(_job_dir(job_id), "img", name)
+        failed_path = png_path + ".failed"
         # 渲染失败标记：明确报错，避免前端无限 pending
         if os.path.isfile(failed_path):
             with open(failed_path, encoding="utf-8", errors="replace") as f:
                 raise ValueError(f"渲染失败: {f.read().strip()}")
     # 命中缓存且文件完整：直接读，不解析 geometry/result、不调 matplotlib
-    if svg_path and _svg_ready(svg_path):
-        with open(svg_path, encoding="utf-8", errors="replace") as f:
-            return f.read()
+    if png_path and _png_ready(png_path):
+        return _png_data_url(png_path)
 
     key = (job_id, kind)
     with _RENDER_IN_FLIGHT_LOCK:
@@ -609,20 +616,20 @@ def cmd_render(job_id: str, kind: str):
 def _render_async(key: tuple[str, str]) -> None:
     """后台渲染单张图（cmd_render 未命中时启动）。
 
-    成功：SVG 写入 jobs/<jobId>/img/（完整后前端轮询命中）；
-    失败：写 <kind>.svg.failed 标记（前端读到明确错误）。
+    成功：PNG 写入 jobs/<jobId>/img/（完整后前端轮询命中）；
+    失败：写 <kind>.png.failed 标记（前端读到明确错误）。
     """
     job_id, kind = key
     failed_path = None
-    name = _kind_svg_name(kind)
+    name = _kind_png_name(kind)
     if name:
         failed_path = os.path.join(_job_dir(job_id), "img", name + ".failed")
     try:
         _viz()  # matplotlib 预热放锁外（首次导入不阻塞其他渲染）
         with _RENDER_LOCK:
-            base = _render_one(job_id, kind, with_png=False)
-        svg_path = base + ".svg"
-        if not os.path.isfile(svg_path) or not _svg_ready(svg_path):
+            base = _render_one(job_id, kind)
+        png_path = base + ".png"
+        if not os.path.isfile(png_path) or not _png_ready(png_path):
             raise ValueError("渲染无完整输出")
     except Exception as e:  # noqa: BLE001
         sys.stderr.write("[rat-layer] 渲染失败 %s/%s: %s\n" % (job_id, kind, e))
@@ -638,10 +645,10 @@ def _render_async(key: tuple[str, str]) -> None:
             _RENDER_IN_FLIGHT.discard(key)
 
 
-def _kind_svg_name(kind: str) -> str | None:
+def _kind_png_name(kind: str) -> str | None:
     """kind → img 下缓存文件名（与渲染输出一致）；非法 kind 返回 None。"""
-    cache_map = {"overview": "overview.svg", "rose": "rose.svg",
-                 "manual": "manual.svg"}
+    cache_map = {"overview": "overview.png", "rose": "rose.png",
+                 "manual": "manual.png"}
     if kind in cache_map:
         return cache_map[kind]
     if kind.startswith("layer_"):
@@ -649,11 +656,11 @@ def _kind_svg_name(kind: str) -> str | None:
             idx = int(kind[len("layer_"):])
         except ValueError:
             return None
-        return f"layer_{idx:02d}.svg"
+        return f"layer_{idx:02d}.png"
     return None
 
 
-def _render_one(job_id: str, kind: str, with_png: bool = False) -> str:
+def _render_one(job_id: str, kind: str) -> str:
     """渲染单张图（调用方必须已持有 _RENDER_LOCK）。返回 base（含扩展名前的路径）。"""
     geo, res = _load_job_render_data(job_id)
     wires = [Wire(w["wire_id"], w["net_id"], Point(*w["start"]), Point(*w["end"]),
@@ -690,12 +697,15 @@ def _render_one(job_id: str, kind: str, with_png: bool = False) -> str:
     os.makedirs(img_dir, exist_ok=True)
 
     # 注意：viz 各渲染函数内部自带 out_dir/img 拼接（Rat-layer 新输出结构），
-    # 这里传 job 根目录，输出落到 <job>/img/；_render_manual 自己写，直接传 img_dir
+    # 这里传 job 根目录，输出落到 <job>/img/；_render_manual 自己写，直接传 img_dir。
+    # 插件只要 PNG（svg=False）：浏览器解码位图快，SVG 大图 DOM 光栅化是性能坑。
     job_root = _job_dir(job_id)
     if kind == "overview":
-        return _viz().render_overview(lite, wire_by_id, zones, job_root, with_png=with_png)
+        return _viz().render_overview(lite, wire_by_id, zones, job_root,
+                                      with_png=True, svg=False)
     if kind == "rose":
-        return _viz().render_rose(lite, wire_by_id, job_root, cfg)
+        return _viz().render_rose(lite, wire_by_id, job_root, cfg,
+                                  with_png=True, svg=False)
     if kind == "manual":
         # 需人工 route 的线：按 manual_route_nets（net 名）从几何里过滤
         manual_nets = set(res.get("manual_route_nets", []))
@@ -709,7 +719,7 @@ def _render_one(job_id: str, kind: str, with_png: bool = False) -> str:
         if li is None:
             raise ValueError(f"层不存在: {kind}")
         return _viz().render_layer(li, wire_by_id, zones, conflicts, job_root,
-                                   with_png=with_png)
+                                   with_png=True, svg=False)
     raise ValueError(f"未知渲染类型: {kind}")
 
 # ---------- 核心 API（仅在处理 call 期间可用） ----------

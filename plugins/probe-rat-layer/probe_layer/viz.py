@@ -1,8 +1,11 @@
 """可视化（matplotlib，输出 PNG + SVG）。
 
-⚠️ 插件本地优化（2026-09）：render_layer/render_overview 逐条 `ax.plot` 改为
-`LineCollection` 批量画线（大线数时提速数倍~一个数量级）；新增 `with_png`
-参数供插件按需跳过 PNG（只用 SVG）。CLI 默认行为不变（with_png=True）。
+⚠️ 插件本地优化（2026-09）：
+1. render_layer/render_overview 逐条 `ax.plot` 改为 `LineCollection` 批量画线
+   （大线数时提速数倍~一个数量级）；
+2. 新增 `with_png` 参数供插件按需跳过 PNG（只用 SVG）；新增 `svg` 参数按需跳过
+   SVG（只用 PNG）——CLI 默认行为不变（with_png=True, svg=True 双格式输出）。
+   插件用 PNG（浏览器解码快；SVG 几千条 path 的 DOM 光栅化在 WebView2 很慢）。
 """
 from __future__ import annotations
 
@@ -61,17 +64,18 @@ def _draw_keepouts(ax, zones: tuple[KeepoutZone, ...]) -> None:
                 facecolor="0.85", edgecolor="red", hatch="///", alpha=0.6))
 
 
-def _save(fig, base: str, with_png: bool = True) -> None:
+def _save(fig, base: str, with_png: bool = True, svg: bool = True) -> None:
     fig.tight_layout()
     if with_png:
         fig.savefig(base + ".png", dpi=120)
-    fig.savefig(base + ".svg")
+    if svg:
+        fig.savefig(base + ".svg")
     plt.close(fig)
 
 
 def render_layer(layer: LayerInfo, wire_by_id: dict[str, Wire],
                  zones: tuple[KeepoutZone, ...], conflicts: tuple[Conflict, ...],
-                 out_dir: str, with_png: bool = True) -> str:
+                 out_dir: str, with_png: bool = True, svg: bool = True) -> str:
     fig, ax = plt.subplots(figsize=(10, 8))
     _draw_keepouts(ax, zones)
 
@@ -105,13 +109,13 @@ def render_layer(layer: LayerInfo, wire_by_id: dict[str, Wire],
     img_dir = os.path.join(out_dir, "img")
     os.makedirs(img_dir, exist_ok=True)
     base = os.path.join(img_dir, f"layer_{layer.layer_index:02d}")
-    _save(fig, base, with_png=with_png)
+    _save(fig, base, with_png=with_png, svg=svg)
     return base
 
 
 def render_overview(result: LayeringResult, wire_by_id: dict[str, Wire],
                     zones: tuple[KeepoutZone, ...], out_dir: str,
-                    with_png: bool = True) -> str:
+                    with_png: bool = True, svg: bool = True) -> str:
     fig, ax = plt.subplots(figsize=(10, 8))
     _draw_keepouts(ax, zones)
     cmap = plt.get_cmap("tab10")
@@ -136,7 +140,7 @@ def render_overview(result: LayeringResult, wire_by_id: dict[str, Wire],
     img_dir = os.path.join(out_dir, "img")
     os.makedirs(img_dir, exist_ok=True)
     base = os.path.join(img_dir, "overview")
-    _save(fig, base, with_png=with_png)
+    _save(fig, base, with_png=with_png, svg=svg)
     return base
 
 
@@ -156,7 +160,8 @@ def render_congestion(cmap: congestion.CongestionMap, out_dir: str, layer: int) 
 
 
 def render_rose(result: LayeringResult, wire_by_id: dict[str, Wire],
-                out_dir: str, cfg: LayeringConfig) -> str:
+                out_dir: str, cfg: LayeringConfig,
+                with_png: bool = True, svg: bool = True) -> str:
     """每层的方向玫瑰图：按外 pin 极角扇区统计线数（极坐标柱状图）。
 
     圆形针卡径向走线，这张图直接显示每层覆盖了哪些扇区、覆盖是否均匀。
@@ -183,7 +188,7 @@ def render_rose(result: LayeringResult, wire_by_id: dict[str, Wire],
     img_dir = os.path.join(out_dir, "img")
     os.makedirs(img_dir, exist_ok=True)
     base = os.path.join(img_dir, "rose")
-    _save(fig, base)
+    _save(fig, base, with_png=with_png, svg=svg)
     return base
 
 

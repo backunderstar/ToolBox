@@ -262,15 +262,22 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
     写内容，轮询会撞上"已创建未写完"的半成品 → 读空串"加载不出来"的根因）+ `.failed`
     标记（前端拿到明确错误）。matplotlib 非线程安全 → 全渲染持 `_RENDER_LOCK`；字体
     缓存 `MPLCONFIGDIR` 隔离到 `<插件>/cache/mpl`（缓存损坏会让 import 卡 30s+ 崩溃循环）。
-  - 前端状态恢复（本次）：**`layer.status` 原返回 snake_case `job_id`，前端读 camelCase
+  - 前端状态恢复（2026-09）：**`layer.status` 原返回 snake_case `job_id`，前端读 camelCase
     `jobId` 永远是 undefined → 离开页面再回来结果恢复不出来，"又得重头开始"的根因**。
     修复：status 同时返回 `jobId`；前端挂载时恢复 running（续轮询+回运行页）/done
     （拉结果+回结果页）/failed/cancelled（报错回运行页）；每个 jobId 只弹一次完成通知
     （恢复态不重复弹）；输入/参数表单改防抖 600ms 实时持久化（原来只在点开始时存一次，
     填一半切走就丢）；分层成功写 `jobs/<id>/meta.json`，进程重启（宿主崩溃重启/插件
-    重载）后 `_restore_jobs` 扫描恢复上次 done 任务 → 结果页和 SVG 文件缓存照常可用。
+    重载）后 `_restore_jobs` 扫描恢复上次 done 任务 → 结果页和 PNG 文件缓存照常可用。
     验证：protocol_test 13 项全过（新增 camelCase jobId 断言 + **新起进程恢复断言**），
     vendored pytest 31、lint 0。
+  - 渲染改 PNG（2026-09）：**SVG 大图在 WebView2 光栅化慢（几千条 path 的 DOM 解析）
+    是"点开图还是等很久"的隐藏瓶颈**——后端磁盘缓存早就秒回，慢的是浏览器端。
+    `layer.render` 改返回 **PNG base64 data URL**（matplotlib 光栅化、浏览器只解码位图，
+    `<img src="data:...">` 直显，`data:` 在 CSP img-src 白名单内）；viz.py `_save` 加
+    `svg` 开关（插件用 PNG-only，CLI 默认双格式不变）；完整性校验 `_png_ready`（PNG
+    IEND 块结尾）；旧 `.svg`/`.svg.failed` 缓存已清理。协议测试同步改 PNG data URL
+    断言（13 项全过）。此经验已写进指南 §3.9（"给前端的图用 PNG"）。
 
 ---
 
