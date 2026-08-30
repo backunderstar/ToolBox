@@ -383,13 +383,26 @@ function svgToDataUrl(svg: string): string {
 
 const svgUrl = computed(() => (svgText.value ? svgToDataUrl(svgText.value) : ""));
 
+/** 已渲染过的图按 jobId+kind 缓存（点过的图秒显，不再调后端） */
+const svgCache = new Map<string, string>();
+
 async function renderImage(kind: string): Promise<void> {
   if (!jobId.value) return;
+  const cacheKey = `${jobId.value}:${kind}`;
   svgBusy.value = true;
   svgText.value = null;
   svgError.value = null;
+  const cached = svgCache.get(cacheKey);
+  if (cached !== undefined) {
+    svgText.value = cached;
+    svgKind.value = kind;
+    svgBusy.value = false;
+    return;
+  }
   try {
-    svgText.value = (await props.api.call("layer.render", { jobId: jobId.value, kind })) as string;
+    const text = (await props.api.call("layer.render", { jobId: jobId.value, kind })) as string;
+    svgCache.set(cacheKey, text);
+    svgText.value = text;
     svgKind.value = kind;
   } catch (e) {
     svgText.value = null;

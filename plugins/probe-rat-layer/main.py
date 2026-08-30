@@ -476,8 +476,27 @@ def _render_manual(wires: list, zones: tuple, out_dir: str) -> str:
 def cmd_render(job_id: str, kind: str) -> str:
     """按需渲染指定图（layer_<i> / overview / rose / manual）→ SVG 文本。
 
-    matplotlib 懒加载（首次约 1.5s）；结果缓存到 jobs/<jobId>/img/。
+    matplotlib 懒加载（首次约 1.5s）；结果缓存到 jobs/<jobId>/img/，
+    已生成过的图直接读文件返回（不重渲染、不重解析几何数据）。
     """
+    # kind → 缓存文件名（与 viz/_render_manual 的输出一致）
+    cache_map = {"overview": "overview.svg", "rose": "rose.svg",
+                 "manual": "manual.svg"}
+    svg_path = None
+    if kind in cache_map:
+        svg_path = os.path.join(_job_dir(job_id), "img", cache_map[kind])
+    elif kind.startswith("layer_"):
+        try:
+            idx = int(kind[len("layer_"):])
+        except ValueError:
+            idx = None
+        if idx is not None:
+            svg_path = os.path.join(_job_dir(job_id), "img", f"layer_{idx:02d}.svg")
+    # 命中缓存：直接读，不解析 geometry/result、不调 matplotlib
+    if svg_path and os.path.isfile(svg_path):
+        with open(svg_path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+
     geo, res = _load_job_render_data(job_id)
     wires = [Wire(w["wire_id"], w["net_id"], Point(*w["start"]), Point(*w["end"]),
                   w["width"], w["clearance"]) for w in geo["wires"]]
@@ -512,10 +531,13 @@ def cmd_render(job_id: str, kind: str) -> str:
     img_dir = os.path.join(_job_dir(job_id), "img")
     os.makedirs(img_dir, exist_ok=True)
 
+    # 注意：viz 各渲染函数内部自带 out_dir/img 拼接（Rat-layer 新输出结构），
+    # 这里传 job 根目录，输出落到 <job>/img/；_render_manual 自己写，直接传 img_dir
+    job_root = _job_dir(job_id)
     if kind == "overview":
-        base = viz.render_overview(lite, wire_by_id, zones, img_dir)
+        base = viz.render_overview(lite, wire_by_id, zones, job_root)
     elif kind == "rose":
-        base = viz.render_rose(lite, wire_by_id, img_dir, cfg)
+        base = viz.render_rose(lite, wire_by_id, job_root, cfg)
     elif kind == "manual":
         # 需人工 route 的线：按 manual_route_nets（net 名）从几何里过滤
         manual_nets = set(res.get("manual_route_nets", []))
@@ -528,7 +550,7 @@ def cmd_render(job_id: str, kind: str) -> str:
         li = next((l for l in layers if str(l.layer_index) == idx), None)
         if li is None:
             raise ValueError(f"层不存在: {kind}")
-        base = viz.render_layer(li, wire_by_id, zones, conflicts, img_dir)
+        base = viz.render_layer(li, wire_by_id, zones, conflicts, job_root)
     else:
         raise ValueError(f"未知渲染类型: {kind}")
 
@@ -537,7 +559,6 @@ def cmd_render(job_id: str, kind: str) -> str:
         raise ValueError(f"渲染失败（无 SVG 输出）: {kind}")
     with open(svg_path, encoding="utf-8", errors="replace") as f:
         return f.read()
-
 
 # ---------- 核心 API（仅在处理 call 期间可用） ----------
 
