@@ -1,26 +1,17 @@
 import { reactive, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
-import { searchAll, vaultGet, vaultSet, workspaceGet, workspaceSetRoot, workspaceSwitch } from "./api";
+import { searchAll, workspaceGet, workspaceSetRoot, workspaceSwitch } from "./api";
 import type { SearchHit, WorkspaceItem } from "./api";
 
 /**
- * 工作区（Vault）状态中心（M1，宿主侧唯一数据源）——Vue 3 模块级单例 store。
+ * 工作区（数据根模型，2026-09 用户重定义）状态中心——Vue 3 模块级单例 store。
  *
- * - 职责：工作区路径 / 当前上下文快照（activePath+content，供插件 bridge
- *   context.vault 读取）/ 全局全文搜索（顶栏搜索）/ 操作反馈状态条（status）。
- * - 多工作区（2026-09）：state.root 为工作区根目录，state.items 为根下项目
- *   文件夹列表；state.path = 当前生效工作区绝对路径（root/current 或回退
- *   vault.json 的单工作区模式）。
- * - 文件列表/读写/增删改是**宿主框架能力**（core::files 命令，api.fs*），
- *   业务插件经自身命令读写自己的数据文件；宿主不再持有全局文件树
- *   （笔记等业务视图均为插件自带前端，各自管理自己的数据）。
- * - 插件写文件后经 `tb:vault-active` 事件同步"当前上下文"回本层
- *   （context.activePath/activeContent 快照，供 AI 预设等跨插件读取）。
- *
- * 与 React 版的对应关系（迁移要点）：
- * - `stateRef`/`useCallback` 闭包过期问题在 Vue 中不复存在：`reactive` 代理
- *   对象在任何闭包里读取的都是最新值，直接读 `state` 即可。
- * - `useEffect` → `watch` / 模块级初始化；`useMemo` → `computed`。
+ * - **数据根目录**（state.root）：所有数据的家（自选，如 D:\ToolBoxData）。
+ *   根下按约定组织：Project/（工作区）、Plugin/、Config/；宿主只管理 Project/。
+ * - **工作区** = 数据根/Project/<名称>（state.items）；state.path = 当前生效
+ *   工作区绝对路径。日常选定工作区后，搜索/备份/文件/插件都作用于当前工作区。
+ * - 未配置数据根（首启）→ state.configured=false → App 显示引导页。
+ * - 插件写文件后经 `tb:vault-active` 事件同步"当前上下文"回本层。
  */
 
 const SEARCH_DELAY = 300;
@@ -30,10 +21,13 @@ const isMock = () => new URLSearchParams(window.location.search).has("mock");
 
 /** 状态（对外经 useVault() 暴露；写操作走下方函数，组件不应直接改字段） */
 const state = reactive({
-  path: null as string | null,
-  /** 工作区根目录（多工作区模式；null = 单工作区，回退 vault） */
+  /** 数据根目录（null = 未配置，显示引导页） */
   root: null as string | null,
-  /** 根目录下的工作区（项目文件夹）列表 */
+  /** 当前工作区名（数据根/Project/ 下） */
+  current: null as string | null,
+  /** 当前生效工作区绝对路径 */
+  path: null as string | null,
+  /** 数据根 Project/ 下的工作区（项目文件夹）列表 */
   items: [] as WorkspaceItem[],
   /** 当前上下文快照（插件 UI 经 tb:vault-active 同步；供插件 bridge context 读取） */
   activePath: null as string | null,
@@ -44,6 +38,9 @@ const state = reactive({
   status: "就绪",
 });
 
+/** 数据根是否已配置（引导页判断） */
+const configured = () => !!state.root;
+
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 let searchSeq = 0;
 
@@ -52,8 +49,14 @@ const flash = (msg: string) => {
 };
 
 /** 应用 Rust 侧返回的工作区信息到本地状态（path 变化会触发搜索 watch 重查） */
-function applyWorkspace(r: { vault: string | null; root: string | null; items: WorkspaceItem[] }): void {
+function applyWorkspace(r: {
+  root: string | null;
+  current: string | null;
+  vault: string | null;
+  items: WorkspaceItem[];
+}): void {
   state.root = r.root;
+  state.current = r.current;
   state.items = r.items ?? [];
   if (r.vault !== state.path) {
     state.path = r.vault;
@@ -64,7 +67,7 @@ function applyWorkspace(r: { vault: string | null; root: string | null; items: W
   }
 }
 
-/** 切换当前工作区（多工作区模式；name 为根目录下的子目录名） */
+/** 切换当前工作区（name 为 数据根/Project/ 下的子目录名） */
 async function switchWorkspace(name: string): Promise<void> {
   try {
     applyWorkspace(await workspaceSwitch(name));
@@ -74,62 +77,32 @@ async function switchWorkspace(name: string): Promise<void> {
   }
 }
 
-/** 设置工作区根目录（选择文件夹后，根下每个子目录成为一个工作区） */
+/** 设置数据根目录（引导页/设置页调用：选择文件夹后，Project/ 下子目录即工作区） */
 async function setWorkspaceRoot(dir: string): Promise<void> {
   try {
     const r = await workspaceSetRoot(dir);
     applyWorkspace(r);
-    flash(r.current ? `工作区根已设置，当前「${r.current}」` : "工作区根已设置（根下暂无项目文件夹）");
+    flash(
+      r.current
+        ? `数据根已设置，当前工作区「${r.current}」`
+        : "数据根已设置（Project/ 下暂无工作区，新建文件夹即工作区）",
+    );
   } catch (e) {
     flash(String(e));
   }
 }
 
-/** 选择并设置工作区根目录（文件夹选择器） */
+/** 选择并设置数据根目录（文件夹选择器） */
 async function pickWorkspaceRoot(): Promise<void> {
   if (isMock()) return;
   try {
     const sel = (await open({
       directory: true,
-      title: "选择工作区根目录（根下每个子文件夹是一个工作区）",
-      defaultPath: state.root ?? state.path ?? undefined,
+      title: "选择数据根目录（所有数据的家；根下 Project/ 存放工作区）",
+      defaultPath: state.root ?? undefined,
     })) as string | null;
     if (!sel) return;
     await setWorkspaceRoot(sel);
-  } catch (e) {
-    flash(String(e));
-  }
-}
-
-/** 清除工作区根目录 → 回退单工作区模式（当前工作区保持原路径） */
-async function clearWorkspaceRoot(): Promise<void> {
-  try {
-    applyWorkspace(await workspaceSetRoot(""));
-    flash("已清除工作区根目录，回退单工作区模式");
-  } catch (e) {
-    flash(String(e));
-  }
-}
-
-async function pickVault(): Promise<void> {
-  if (isMock()) return;
-  try {
-    const sel = (await open({
-      directory: true,
-      title: "选择工作区文件夹",
-      // 已设置工作区时，对话框初始定位到当前工作区目录（否则落在系统默认/记忆位置）
-      defaultPath: state.path ?? undefined,
-    })) as string | null;
-    if (!sel) return;
-    await vaultSet(sel);
-    state.path = sel;
-    state.root = null;
-    state.items = [];
-    state.activePath = null;
-    state.content = "";
-    state.query = "";
-    state.results = null;
-    flash("工作区已切换");
   } catch (e) {
     flash(String(e));
   }
@@ -171,9 +144,7 @@ watch(
   },
 );
 
-/* 插件 UI 经同 document 的 tb:vault-active 事件同步"当前上下文"回宿主
-   （宿主 vault 不持有插件 UI 内部状态），使跨插件读取 context.activePath/
-   activeContent 的插件拿到最新上下文 */
+/* 插件 UI 经同 document 的 tb:vault-active 事件同步"当前上下文"回宿主 */
 window.addEventListener("tb:vault-active", (e: Event) => {
   const detail = (e as CustomEvent<{ rel?: string; content?: string }>).detail;
   if (typeof detail?.rel === "string" && detail.rel) {
@@ -184,24 +155,18 @@ window.addEventListener("tb:vault-active", (e: Event) => {
   }
 });
 
-/* 启动：读取已保存的工作区（多工作区模式优先，回退 vault；mock 模式用内置示例） */
+/* 启动：读取已保存的数据根（mock 模式用内置示例） */
 async function initVault(): Promise<void> {
   if (isMock()) {
+    state.root = "mock-root";
     state.path = "mock-vault";
     return;
   }
   try {
     const r = await workspaceGet();
     applyWorkspace(r);
-  } catch {
-    // 老版本宿主无 workspace_get：回退 vault_get（向前兼容）
-    try {
-      const s = await vaultGet();
-      if (!s.path) return;
-      state.path = s.path;
-    } catch (e2) {
-      flash(String(e2));
-    }
+  } catch (e) {
+    flash(String(e));
   }
 }
 void initVault();
@@ -209,16 +174,13 @@ void initVault();
 /** 内部共享（plugins.ts 等监听工作区切换） */
 export { state as vaultState };
 
-/** 组件入口：只读状态 + 操作函数。
- *  注意：state 是 reactive 对象，直接解构其字段会丢失响应性——组件里应
- *  保持 `const vault = useVault()` 后整体使用（vault.state.xxx）。 */
+/** 组件入口：只读状态 + 操作函数。 */
 export function useVault() {
   return {
     state,
-    pickVault,
+    configured,
     pickWorkspaceRoot,
     setWorkspaceRoot,
-    clearWorkspaceRoot,
     switchWorkspace,
     setQuery,
   };

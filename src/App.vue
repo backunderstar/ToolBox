@@ -31,6 +31,7 @@ import TopBar from "./components/TopBar.vue";
 import Sidebar from "./components/Sidebar.vue";
 import StatusBar from "./components/StatusBar.vue";
 import WelcomeView from "./views/WelcomeView.vue";
+import OnboardingView from "./views/OnboardingView.vue";
 import PluginUiView from "./components/PluginUiView.vue";
 import FloatApp from "./views/FloatApp.vue";
 import LoadingView from "./components/LoadingView.vue";
@@ -75,6 +76,13 @@ function isFloatWindow(): boolean {
 }
 
 const isFloat = isFloatWindow();
+
+/* 首启引导：未配置数据根目录（root.json 缺失）→ 全屏引导页（数据根 + 主题）。
+   配置完成后 state.root 就绪，v-if 自动切回主界面。 */
+const showOnboarding = computed(() => !vault.state.root);
+function onOnboardingDone(): void {
+  nav.go("overview");
+}
 
 /* ---- AppInner 逻辑（浮窗分支在模板按 isFloat 分流） ---- */
 const vault = useVault();
@@ -302,7 +310,15 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
 <template>
   <FloatApp v-if="isFloat" />
   <ErrorBoundary v-else>
-    <!-- 插件通知横幅（process 核心 API notify → plugin-event notification） -->
+    <!-- 首启引导（未配置数据根目录）：配置数据根 + 主题 -->
+    <OnboardingView
+      v-if="showOnboarding"
+      :theme-id="themeId"
+      :on-set-theme-id="(id: string) => (themeId = id)"
+      :on-done="onOnboardingDone"
+    />
+    <template v-else>
+      <!-- 插件通知横幅（process 核心 API notify → plugin-event notification） -->
     <transition name="notify-pop">
       <div v-if="appNotification" class="app-notification" role="status">
         <strong>{{ appNotification.title }}</strong>
@@ -347,7 +363,7 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
         :workspace-root="vault.state.root"
         :workspace-items="vault.state.items"
         :on-switch-workspace="vault.switchWorkspace"
-        :on-pick-vault="vault.pickVault"
+        :on-pick-vault="vault.pickWorkspaceRoot"
         :nav-collapsed="navCollapsed"
         :on-toggle-nav="() => (navCollapsed = !navCollapsed)"
         :on-toggle-float="toggleFloat"
@@ -406,5 +422,6 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
         :status="vault.state.status"
       />
     </div>
+    </template>
   </ErrorBoundary>
 </template>

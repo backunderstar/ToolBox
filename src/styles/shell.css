@@ -661,8 +661,11 @@
   height: 24px;
 }
 
-/* 顶栏工作区按钮 */
+/* 顶栏工作区选择（数据根模型：根/Project/* = 工作区；2026-09） */
 .workspace-btn {
+  position: relative;
+}
+.workspace-btn-main {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -674,15 +677,79 @@
   font-size: var(--text-xs);
   font-family: var(--font-mono);
   max-width: 180px;
+  cursor: pointer;
   transition:
     color var(--dur) var(--ease),
     border-color var(--dur) var(--ease);
 }
-.workspace-btn:hover {
+.workspace-btn-main:hover {
   color: var(--fg);
   border-color: var(--border-strong);
 }
-.workspace-btn span {
+.workspace-btn-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 90;
+  min-width: 260px;
+  max-width: 420px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  padding: 4px;
+}
+.workspace-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+.workspace-item:hover {
+  background: var(--bg-soft);
+}
+.workspace-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.workspace-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-item-path {
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-hint {
+  padding: 8px 10px;
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
+}
+.workspace-foot {
+  padding: 6px 10px 4px;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

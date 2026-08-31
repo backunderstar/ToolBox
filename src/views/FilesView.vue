@@ -9,19 +9,15 @@ import Icon from "../components/Icon.vue";
 import ConfirmDialog from "../components/ConfirmDialog.vue";
 
 /**
- * 工作区文件浏览（2026-09 全面版）：
- * - 浏览当前工作区文件树（目录优先），切换工作区自动回根；
- * - 排序（名称/修改时间/大小，可升降序）；显示大小与相对时间；
- * - 选择模式 + 多选批量：删除（回收站）/ 复制到… / 移动到…；
- * - 右键菜单：宿主操作（打开/重命名/复制/移动/删除/资源管理器）+ **插件文件
- *   上下文动作**（manifest actions 中 file:true 的项，触发时把选中文件列表传给插件，
- *   由插件决定文件组织/处理逻辑——框架提供文件能力，插件决定业务表现）。
- * 所有操作走宿主 files_* 命令（S1c 校验，仅当前工作区）。
+ * 工作区文件浏览（2026-09 数据根模型）。
+ * 宿主提供文件处理基础能力（浏览/新建/重命名/移动/复制/删除/搜索/批量，S1c 只作用于
+ * 当前工作区）；插件决定文件处理的业务逻辑——右键/批量菜单的「插件处理」二级菜单
+ * 列出所有插件的文件上下文动作（manifest actions 中 file:true），插件多也不占地方。
  */
 const vault = useVault();
 const pluginsCtx = usePlugins();
 
-/** 当前目录（vault 相对路径，空 = 工作区根） */
+/** 当前目录（工作区相对路径，空 = 工作区根） */
 const dir = ref("");
 const entries = ref<FileEntry[]>([]);
 const loading = ref(false);
@@ -31,21 +27,24 @@ const error = ref("");
 const sortBy = ref<"name" | "mtime" | "size">("name");
 const sortDir = ref<1 | -1>(1);
 
-/** 选择模式：开启后行首出现勾选框 */
+/** 选择模式 + 已选条目（key = rel 路径） */
 const selMode = ref(false);
-/** 已选中的条目（key = rel 路径） */
 const selected = ref<Set<string>>(new Set());
 
-/** 右键菜单（null = 关闭） */
+/** 右键菜单（null = 关闭）；ctxSub = 是否展开「插件处理」二级菜单 */
 const ctx = ref<{ x: number; y: number; entry: FileEntry } | null>(null);
+const ctxSub = ref(false);
 
-/** 待确认删除的条目（单项或批量） */
+/** 批量操作条的插件动作下拉是否展开 */
+const batchPluginsOpen = ref(false);
+
+/** 待确认删除（单项或批量） */
 const confirmDel = ref<{ label: string; rels: string[] } | null>(null);
 const deleting = ref(false);
 
 const crumbs = computed(() => (dir.value ? dir.value.split("/") : []));
 
-/** 启用的插件声明的文件上下文动作（file:true），供右键/批量菜单显示 */
+/** 启用的插件声明的文件上下文动作（file:true） */
 const fileActions = computed(() =>
   pluginsCtx.state.plugins
     .filter((p) => p.enabled)
@@ -56,7 +55,7 @@ const fileActions = computed(() =>
     ),
 );
 
-/** 当前作用于操作的目标集合：右键选中项（如已在选择集内则整个选择集），否则单选 */
+/** 当前操作目标：右键选中项（若在选择集内则整个选择集），否则选择集 */
 const targetRels = computed<string[]>(() => {
   if (!ctx.value) return [...selected.value];
   if (selMode.value && selected.value.has(ctx.value.entry.path)) return [...selected.value];
@@ -90,7 +89,6 @@ function fmtRelTime(mtime?: number | null): string {
   return `${Math.floor(hr / 24)} 天前`;
 }
 
-/** 拼绝对路径（opener 需要绝对路径；files_* 命令用相对路径） */
 function abs(rel: string): string {
   return `${vault.state.path}/${rel}`;
 }
@@ -116,20 +114,20 @@ watch(
     selected.value = new Set();
     selMode.value = false;
     ctx.value = null;
+    ctxSub.value = false;
+    batchPluginsOpen.value = false;
     void reload();
   },
   { immediate: true },
 );
 
 function toggleSort(field: "name" | "mtime" | "size"): void {
-  if (sortBy.value === field) {
-    sortDir.value = sortDir.value === 1 ? -1 : 1;
-  } else {
+  if (sortBy.value === field) sortDir.value = sortDir.value === 1 ? -1 : 1;
+  else {
     sortBy.value = field;
     sortDir.value = 1;
   }
 }
-
 function toggleSelect(e: FileEntry): void {
   const s = new Set(selected.value);
   if (s.has(e.path)) s.delete(e.path);
@@ -142,6 +140,7 @@ function clearSelection(): void {
 }
 function closeCtx(): void {
   ctx.value = null;
+  ctxSub.value = false;
 }
 
 function enter(name: string): void {
@@ -186,6 +185,7 @@ async function openEntry(e: FileEntry): Promise<void> {
 function onContextMenu(e: MouseEvent, entry: FileEntry): void {
   e.preventDefault();
   ctx.value = { x: e.clientX, y: e.clientY, entry };
+  ctxSub.value = false;
 }
 
 async function newFolder(): Promise<void> {
@@ -227,15 +227,12 @@ async function renameEntry(e: FileEntry): Promise<void> {
   }
 }
 
-/** 复制/移动到目标目录（prompt 相对工作区根的目录路径；空 = 工作区根） */
+/** 复制/移动到目标目录（prompt 相对工作区根的目录；空 = 工作区根） */
 async function copyMove(kind: "copy" | "move"): Promise<void> {
   const rels = targetRels.value;
   if (rels.length === 0 || !vault.state.path) return;
   const hint = kind === "copy" ? "复制到" : "移动到";
-  const target = window.prompt(
-    `${hint}目录（相对工作区根，留空 = 工作区根；如 docs/2024）:`,
-    "",
-  );
+  const target = window.prompt(`${hint}目录（相对工作区根，留空 = 工作区根；如 docs/2024）:`, "");
   if (target === null) return;
   const base = target.trim().replace(/\/+$/, "");
   try {
@@ -282,32 +279,30 @@ function openHere(): void {
   void openInExplorer(dir.value ? abs(dir.value) : vault.state.path);
 }
 
-/** 触发插件文件上下文动作：把目标 rel 列表传给插件（source = "file"） */
+/** 触发插件文件上下文动作（source = "file"，带选中 rel 列表） */
 async function runPluginAction(pluginId: string, actionId: string): Promise<void> {
   const rels = targetRels.value;
   closeCtx();
+  batchPluginsOpen.value = false;
   if (rels.length === 0) return;
   await triggerPluginAction(pluginId, actionId, "file", rels);
   vault.state.status = `已调用插件动作「${actionId}」（${rels.length} 项）`;
-  // 插件可能改动了文件结构（建目录/移动/转格式）→ 刷新列表
   void reload();
 }
 </script>
 
 <template>
   <div class="files-view" @click="closeCtx">
-    <header class="files-header">
-      <div class="files-title">
-        <h2 class="view-title">文件</h2>
-        <span class="files-ws" :title="vault.state.path ?? undefined">
-          {{ vault.state.path ?? "未选择工作区" }}
-        </span>
+    <header class="view-header">
+      <div>
+        <h1>文件</h1>
+        <p class="view-sub">浏览当前工作区的文件；插件可处理选中文件（右键「插件处理」）</p>
       </div>
-      <div class="files-actions">
-        <button class="btn sm" @click="toRoot" title="回到工作区根">根</button>
-        <button class="btn sm" @click="back" :disabled="crumbs.length === 0">返回</button>
+      <div class="view-actions">
+        <button class="btn" @click="toRoot" title="回到工作区根" :disabled="!vault.state.path">根</button>
+        <button class="btn" @click="back" :disabled="crumbs.length === 0">返回</button>
         <button
-          class="btn sm"
+          class="btn"
           :class="{ on: selMode }"
           @click="selMode = !selMode"
           :disabled="!vault.state.path || entries.length === 0"
@@ -315,15 +310,9 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
         >
           选择
         </button>
-        <button class="btn sm" @click="newFolder" :disabled="!vault.state.path">
-          <Icon name="plus" :size="12" /> 新建文件夹
-        </button>
-        <button class="btn sm" @click="newFile" :disabled="!vault.state.path">
-          <Icon name="file-text" :size="12" /> 新建文件
-        </button>
-        <button class="btn sm" @click="openHere" :disabled="!vault.state.path">
-          <Icon name="folder" :size="12" /> 在资源管理器中打开
-        </button>
+        <button class="btn" @click="newFolder" :disabled="!vault.state.path">新建文件夹</button>
+        <button class="btn" @click="newFile" :disabled="!vault.state.path">新建文件</button>
+        <button class="btn" @click="openHere" :disabled="!vault.state.path">在资源管理器中打开</button>
       </div>
     </header>
 
@@ -336,6 +325,7 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
     </nav>
 
     <div class="files-toolbar">
+      <span class="files-sort-label">排序</span>
       <button class="sort-btn" :class="{ on: sortBy === 'name' }" @click="toggleSort('name')">
         名称 {{ sortBy === "name" ? (sortDir === 1 ? "↑" : "↓") : "" }}
       </button>
@@ -347,7 +337,7 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
       </button>
     </div>
 
-    <p v-if="!vault.state.path" class="module-empty">请先在顶栏或设置页选择工作区</p>
+    <p v-if="!vault.state.path" class="module-empty">请先在设置页或引导页配置数据根目录并选择工作区</p>
     <p v-else-if="error" class="module-empty warn">{{ error }}</p>
     <p v-else-if="loading" class="module-empty">加载中…</p>
     <p v-else-if="sorted.length === 0" class="module-empty">（空目录）</p>
@@ -378,22 +368,33 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
       </li>
     </ul>
 
-    <!-- 底部操作条：有选中项时出现（选择模式或多选右键后） -->
+    <!-- 底部批量操作条：有选中项时出现 -->
     <div v-if="selected.size > 0" class="files-actionbar">
       <span class="actionbar-count">已选 {{ selected.size }} 项</span>
-      <button class="btn sm" @click="copyMove('copy')">复制到…</button>
-      <button class="btn sm" @click="copyMove('move')">移动到…</button>
-      <button class="btn sm danger" @click="askDelete">删除</button>
-      <template v-for="fa in fileActions" :key="`${fa.pluginId}:${fa.action.id}`">
-        <button class="btn sm plugin" :title="`${fa.pluginName} 插件动作`" @click="runPluginAction(fa.pluginId, fa.action.id)">
-          <Icon :name="fa.action.icon || 'puzzle'" :size="12" />
-          {{ fa.action.label }}
+      <button class="btn" @click="copyMove('copy')">复制到…</button>
+      <button class="btn" @click="copyMove('move')">移动到…</button>
+      <button class="btn danger" @click="askDelete">删除</button>
+      <div v-if="fileActions.length > 0" class="batch-plugins">
+        <button class="btn" @click="batchPluginsOpen = !batchPluginsOpen">
+          插件处理 ▾
         </button>
-      </template>
-      <button class="btn sm" @click="clearSelection">取消</button>
+        <div v-if="batchPluginsOpen" class="batch-plugins-menu" @click.stop>
+          <button
+            v-for="fa in fileActions"
+            :key="`${fa.pluginId}:${fa.action.id}`"
+            class="ctx-item"
+            @click="runPluginAction(fa.pluginId, fa.action.id)"
+          >
+            <Icon :name="fa.action.icon || 'puzzle'" :size="13" />
+            <span class="ctx-item-label">{{ fa.action.label }}</span>
+            <span class="ctx-item-src">{{ fa.pluginName }}</span>
+          </button>
+        </div>
+      </div>
+      <button class="btn" @click="clearSelection">取消</button>
     </div>
 
-    <!-- 右键菜单：宿主操作 + 插件文件动作 -->
+    <!-- 右键菜单：宿主操作 + 「插件处理」二级菜单 -->
     <div
       v-if="ctx"
       class="files-ctx"
@@ -417,9 +418,11 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
       <button class="ctx-item danger" @click="askDelete">
         <Icon name="trash" :size="13" /> 删除
       </button>
-      <template v-if="fileActions.length > 0">
-        <div class="ctx-sep" />
-        <div class="ctx-title">插件处理</div>
+      <button v-if="fileActions.length > 0" class="ctx-item" @click="ctxSub = !ctxSub">
+        <Icon name="puzzle" :size="13" /> 插件处理
+        <span class="ctx-chevron">{{ ctxSub ? "▴" : "▸" }}</span>
+      </button>
+      <div v-if="ctxSub && fileActions.length > 0" class="ctx-sub">
         <button
           v-for="fa in fileActions"
           :key="`${fa.pluginId}:${fa.action.id}`"
@@ -427,9 +430,10 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
           @click="runPluginAction(fa.pluginId, fa.action.id)"
         >
           <Icon :name="fa.action.icon || 'puzzle'" :size="13" />
-          {{ fa.action.label }}（{{ fa.pluginName }}）
+          <span class="ctx-item-label">{{ fa.action.label }}</span>
+          <span class="ctx-item-src">{{ fa.pluginName }}</span>
         </button>
-      </template>
+      </div>
     </div>
 
     <ConfirmDialog
@@ -446,116 +450,101 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
 
 <style scoped>
 .files-view {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   height: 100%;
-  min-height: 0;
-}
-.files-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.files-title {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
-}
-.files-ws {
-  font-size: 12px;
-  color: var(--fg-faint, #888);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 420px;
-}
-.files-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-8);
 }
 .files-crumbs {
   display: flex;
   align-items: center;
   gap: 2px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   overflow-x: auto;
   padding: 2px 0;
+  margin-bottom: var(--space-3);
 }
 .crumb {
   background: none;
   border: none;
-  color: var(--fg, #333);
+  color: var(--fg);
   cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
 }
 .crumb:hover {
-  background: var(--bg-hover, #f0f0f0);
+  background: var(--bg-soft);
 }
 .crumb-sep {
-  color: var(--fg-faint, #999);
+  color: var(--fg-faint);
 }
 .files-toolbar {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.files-sort-label {
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
+  margin-right: var(--space-1);
 }
 .sort-btn {
   background: none;
-  border: 1px solid var(--border, #e5e5e5);
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 3px 10px;
-  font-size: 11px;
-  color: var(--fg-faint, #777);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
   cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.sort-btn:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
 }
 .sort-btn.on {
-  color: var(--accent, #2563eb);
-  border-color: var(--accent, #2563eb);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .files-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--border, #e5e5e5);
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
   overflow: auto;
-  flex: 1;
-  min-height: 0;
 }
 .files-list li {
-  border-bottom: 1px solid var(--border, #eee);
+  border-bottom: 1px solid var(--border);
 }
 .files-list li:last-child {
   border-bottom: none;
 }
 .files-list li.selected {
-  background: color-mix(in srgb, var(--accent, #2563eb) 8%, transparent);
+  background: var(--accent-soft);
 }
 .file-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
-  padding: 7px 10px;
+  padding: 8px var(--space-4);
   background: none;
   border: none;
-  color: var(--fg, #333);
+  color: var(--fg);
   cursor: pointer;
   text-align: left;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .file-row:hover {
-  background: var(--bg-hover, #f5f5f5);
+  background: var(--bg-soft);
 }
 .file-row.dir .file-name {
-  font-weight: 500;
+  font-weight: 600;
 }
 .file-check {
   display: inline-flex;
@@ -563,14 +552,14 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 4px;
-  border: 1px solid var(--border, #ccc);
-  color: var(--fg-faint, #999);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  color: var(--fg-faint);
 }
 .files-list li.selected .file-check {
-  background: var(--accent, #2563eb);
-  border-color: var(--accent, #2563eb);
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 .file-name {
   flex: 1;
@@ -580,14 +569,14 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
   white-space: nowrap;
 }
 .file-size {
-  font-size: 11px;
-  color: var(--fg-faint, #999);
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
   min-width: 64px;
   text-align: right;
 }
 .file-time {
-  font-size: 11px;
-  color: var(--fg-faint, #aaa);
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
   min-width: 64px;
   text-align: right;
 }
@@ -595,7 +584,7 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
   display: flex;
   gap: 2px;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur) var(--ease);
 }
 .file-row:hover .file-ops {
   opacity: 1;
@@ -603,74 +592,102 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
 .op {
   background: none;
   border: none;
-  color: var(--fg-faint, #888);
+  color: var(--fg-faint);
   cursor: pointer;
   padding: 3px 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
 }
 .op:hover {
-  background: var(--bg-hover, #e8e8e8);
-  color: var(--fg, #333);
+  background: var(--bg-soft);
+  color: var(--fg);
 }
 .files-actionbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--border, #e5e5e5);
-  border-radius: 8px;
-  background: var(--bg-card, #fafafa);
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
   flex-wrap: wrap;
+  margin-top: var(--space-3);
 }
 .actionbar-count {
-  font-size: 12px;
-  color: var(--fg-faint, #666);
-  margin-right: 4px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  margin-right: var(--space-1);
 }
 .btn.danger {
-  color: #c0392b;
-  border-color: #e8b4ad;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.batch-plugins {
+  position: relative;
+}
+.batch-plugins-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 80;
+  min-width: 220px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  padding: 4px;
+  margin-bottom: 4px;
 }
 .files-ctx {
   position: fixed;
   z-index: 100;
-  min-width: 180px;
-  background: var(--bg-card, #fff);
-  border: 1px solid var(--border, #ddd);
-  border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+  min-width: 200px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
   padding: 4px;
 }
 .ctx-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
   padding: 6px 10px;
   background: none;
   border: none;
-  border-radius: 6px;
-  color: var(--fg, #333);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: left;
 }
 .ctx-item:hover {
-  background: var(--bg-hover, #f0f0f0);
+  background: var(--bg-soft);
 }
 .ctx-item.danger {
-  color: #c0392b;
+  color: var(--danger);
 }
-.ctx-sep {
-  height: 1px;
-  background: var(--border, #eee);
-  margin: 4px 6px;
+.ctx-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.ctx-title {
+.ctx-item-src {
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
+}
+.ctx-chevron {
+  margin-left: auto;
+  color: var(--fg-faint);
   font-size: 10px;
-  color: var(--fg-faint, #999);
-  padding: 4px 10px 2px;
+}
+.ctx-sub {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border);
 }
 </style>

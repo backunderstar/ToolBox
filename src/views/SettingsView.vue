@@ -261,20 +261,38 @@ function removeCustom(id: string): void {
     </header>
 
     <div class="settings-sections">
-      <!-- ---- 工作区 ---- -->
+      <!-- ---- 工作区（数据根模型：根/Project/* = 工作区） ---- -->
       <section class="settings-card">
         <h2 class="settings-title">工作区</h2>
+        <div class="settings-row">
+          <span class="settings-label">数据根目录</span>
+          <code v-if="vault.state.root" class="settings-path" :title="vault.state.root">
+            {{ vault.state.root }}
+          </code>
+          <span v-else class="settings-value warn">未配置（重启应用进入引导页）</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">操作</span>
+          <div class="settings-actions">
+            <button class="btn" @click="vault.pickWorkspaceRoot">
+              <Icon name="folder" :size="13" />
+              更换数据根目录…
+            </button>
+            <span class="settings-hint">
+              根下自动创建 Project/ 存放工作区（每个项目一个文件夹）；插件与系统配置仍在系统目录
+            </span>
+          </div>
+        </div>
         <template v-if="vault.state.path">
           <div class="settings-row">
             <span class="settings-label">当前工作区</span>
             <code class="settings-path" :title="vault.state.path">{{ vault.state.path }}</code>
           </div>
           <div class="settings-row">
-            <span class="settings-label">操作</span>
+            <span class="settings-label">切换</span>
             <div class="settings-actions">
-              <!-- 多工作区模式：下拉切换；单工作区模式：更换文件夹 -->
               <select
-                v-if="vault.state.root && vault.state.items.length > 0"
+                v-if="vault.state.items.length > 0"
                 class="settings-select"
                 :value="vaultName"
                 title="切换当前工作区"
@@ -284,7 +302,7 @@ function removeCustom(id: string): void {
                   {{ w.name }}
                 </option>
               </select>
-              <button v-else class="btn" @click="vault.pickVault">更换工作区</button>
+              <span v-else class="settings-value">Project/ 下暂无工作区（新建文件夹即工作区）</span>
               <button class="btn" @click="openFolder" :disabled="opening">
                 <Icon name="folder" :size="13" />
                 {{ opening ? "打开中…" : "在资源管理器中打开" }}
@@ -295,28 +313,8 @@ function removeCustom(id: string): void {
         <div v-else class="settings-row">
           <span class="settings-label">工作区</span>
           <div class="settings-actions">
-            <button class="btn" @click="vault.pickVault">选择工作区文件夹</button>
+            <button class="btn" @click="vault.pickWorkspaceRoot">选择数据根目录</button>
             <span class="settings-hint">围绕一个文件夹展开的工具箱：数据始终是你的</span>
-          </div>
-        </div>
-        <!-- 工作区根目录（多工作区：根下每个子文件夹 = 一个工作区） -->
-        <div class="settings-row">
-          <span class="settings-label">工作区根目录</span>
-          <code v-if="vault.state.root" class="settings-path" :title="vault.state.root">
-            {{ vault.state.root }}
-          </code>
-          <span v-else class="settings-value">未设置（单工作区模式）</span>
-        </div>
-        <div class="settings-row">
-          <span class="settings-label">操作</span>
-          <div class="settings-actions">
-            <button class="btn" @click="vault.pickWorkspaceRoot">选择根目录…</button>
-            <button v-if="vault.state.root" class="btn" @click="vault.clearWorkspaceRoot">
-              清除（回单工作区）
-            </button>
-            <span class="settings-hint">
-              设置后，根目录下每个子文件夹是一个工作区，可在顶栏切换；搜索、备份、文件与插件都作用于当前工作区
-            </span>
           </div>
         </div>
       </section>
