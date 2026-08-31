@@ -365,12 +365,52 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
 - 验证：cargo test 62（+workspaces 单测）、clippy 0、前端 lint 0/build ✓/test 40、
   protocol_test 17 全过。
 
+### 1.13d 插件管理解耦 + 新建工作区 + 版本 0.2.0 + NSIS 配置 + 密钥核查（2026-09 收尾）
+
+- **插件管理解耦**（用户反馈"没有工作区时没法管理插件？"）：`plugins/commands.rs`
+  管理类命令（list/set_enabled/uninstall/reinstall_core/install/reload/install_deps/
+  export）**去掉 vault 参数与 S1c 校验**——插件管理是全局操作；插件进程上下文
+  （vault/TB_WORKSPACE）改由 `current_vault(app)` 取当前工作区（未配置为空串）。
+  调用类（plugins_invoke/plugin_call）保留校验。前端 pluginsList 等封装同步去 vault
+  参数（api.test.ts 断言同步改）。
+- **新建工作区入口**（用户反馈"没地方创建新工作区"）：`workspace_create` 命令
+  （数据根/Project/ 下建文件夹 + 自动 .toolbox + 切换为当前，校验非法字符/点开头）；
+  入口：顶栏工作区下拉「新建工作区…」+ 设置页按钮；空列表时下拉提示创建。
+- **空状态响应式**（用户反馈插件页提示框挤出滚动条）：`.empty-state` 的
+  `height:100%`+padding 溢出 → 改 `min-height:240px` 自适应（plugins.css）。
+- **版本 0.2.0**：package.json 单源 → `pnpm version:sync` 同步 tauri.conf.json /
+  src/core/version.ts（APP_VERSION/APP_TAG）/ src-tauri+tb-sdk+core-plugins Cargo.toml；
+  CHANGELOG 新增 [0.2.0] 条目。
+- **NSIS 安装包配置**（用户要求：安装包带版本号、默认安装目录名 ToolBox）：
+  - ⚠️ 坑：tauri 2.11 的 NSIS 配置在 **`bundle.windows.nsis`**（不是 `bundle.nsis`），
+    且无 `displayName` 字段（快捷方式名由 productName 控制）——schema 校验会报
+    "Additional properties are not allowed" / anyOf。
+  - 配置：`installMode: currentUser`（默认装到 `%LOCALAPPDATA%\ToolBox`，无需管理员）
+    + `languages: [SimpChinese, English]`。
+  - 安装包文件名 tauri 自动生成 `ToolBox_<version>_x64-setup.exe`；文件属性
+    ProductName/ProductVersion 随版本同步。**实测**（本地打包 + 静默安装）：默认安装
+    目录 = `%LOCALAPPDATA%\ToolBox` ✓；注意 **NSIS 会记住上次安装位置**
+    （`HKCU\Software\toolbox` 注册表键），换过目录的机器再装会沿用上次目录（正常
+    设计，非默认行为）。
+- **签名密钥防护核查**（用户担心 GitHub Action 里的密钥）：
+  - 机制：GitHub Actions Secrets 加密存储、不可读回只能覆盖、日志自动打码（实测
+    日志中 `TAURI_SIGNING_PRIVATE_KEY: ***`）；workflow 只在 push v* tag / 手动触发，
+    无 pull_request → fork 无法触发读 secret。
+  - 实测核查：下载最新 release run 完整日志 + 线上 latest.json/.sig——日志中唯一
+    出现"密钥前缀"的行是 Generate updater manifest 打印的 latest.json signature 字段
+    （那是**公开签名**；minisign 格式 `.key` 与 `.sig` 都以 `untrusted comment:` 的
+    base64 开头，前缀相同是格式特征）；**私钥主体（中段字符）在全部日志与产物中均
+    未出现**。结论：未泄露；建议定期轮换密钥（需同步 tauri.conf.json updater.pubkey）。
+- **v0.2.0 发布**：tag 已推送（2a8d4c4），CI build-release.yml 自动构建/签名/发布中
+  （用户指示不需要等 action 结果）。
+
 ---
 
 ## 2. 项目一句话
 
 个人工具箱桌面应用：**Rust 核心（Tauri 2）+ Vue 3 宿主 + 插件系统**，数据全部是
-vault 工作区里的普通文件（Markdown/JSON）。
+**数据根目录**（自选，如 `D:\ToolBoxData`）下的普通文件——根下 `Project/` 子文件夹 =
+工作区，每个工作区自动维护隐藏 `.toolbox`（标记/配置/信息）。
 **教学基线（2026-08-29 起）**：宿主框架能力完整（工作区/宿主文件服务/全文搜索/自动
 备份/插件系统/主题/托盘/浮窗/打包分发），业务功能全部插件化；核心插件仅保留一个
 **教学示例 core-example**（cdylib + 自带前端，覆盖全部实现要点，教程见
@@ -401,12 +441,14 @@ pnpm doctor           # 环境检测报告（缺什么、怎么装）
 pnpm tauri dev        # 开发模式（前提：已 build:core 部署核心插件）
 pnpm build:core       # 构建核心插件（debug DLL + Vue UI → 应用配置目录 plugins/_core/）
 pnpm build:core:release  # release → src-tauri/resources/_core/（打包用）
+pnpm bundle:plugins   # 随包外部插件：plugins/<id> → resources/bundled-plugins/（tauri build 自动跑）
 pnpm fetch:python     # 下载捆绑 Python 运行时（python-build-standalone full → resources/python/）
 pnpm build-external-ui plugins/<id>  # 构建外部插件 UI
 pnpm package-plugin <插件目录> [-o 输出.zip]  # 作者侧打包分发包（排除依赖目录，见 §1.9）
 pnpm sync:plugins     # 仓库 plugins/ → 应用插件目录（开发时同步外部插件改动）
+pnpm version:sync     # 版本单源同步：改 package.json version → 同步 tauri.conf.json/version.ts/Cargo.toml
 pnpm lint && pnpm build && pnpm test   # 前端验证（lint 必须 0 警告）
-cargo test --workspace                 # Rust 测试（当前 60）
+cargo test --workspace                 # Rust 测试（当前 62）
 ```
 
 跨平台：`scripts/platform.mjs` 提供 `appDataDir()`（Windows `%APPDATA%` / macOS
@@ -585,9 +627,23 @@ cargo test --workspace                 # Rust 测试（当前 60）
 - 提交策略：**本地 git 提交，推送需用户确认**；push 后 CI 自动验证
 - **捆绑 Python 运行时**（2026-08-21 决策）：python-build-standalone full 变体随包分发，
   两层模型 + 三级解释器解析（**已完成**，见 §1）
+- **数据根目录模型**（2026-09-02，用户重定义）：所有数据在一个自选的数据根下，
+  `Project/` 子文件夹 = 工作区（root.json）；插件/配置仍在系统目录（代码与数据分离）；
+  每个工作区自动维护 `.toolbox`；旧 vault.json 不再读取（不迁移从零开始）
+- **插件管理是全局操作**（2026-09-02）：管理类命令不依赖工作区（S1c 校验只留调用类）；
+  框架 = 文件能力，插件 = 文件处理的表现与业务逻辑（file 上下文动作）
+- **NSIS 配置层级坑**（2026-09-02）：tauri 2.11 的 NSIS 配置在 `bundle.windows.nsis`
+  （不是 `bundle.nsis`，且无 displayName 字段）；默认安装目录 `%LOCALAPPDATA%\<productName>`
+- **签名密钥防护**（2026-09-02 核查）：GitHub Secrets 加密存储 + 日志打码；私钥不进
+  任何产物/日志；minisign 的 `.key` 与 `.sig` 前缀相同是格式特征非泄露；建议定期轮换
+  （轮换需同步 updater.pubkey）
 
 ## 8. 待办（除 §1 进行中的工作外）
 
+- **🔄 v0.2.0 发布中（2026-09-02）**：v0.2.0 tag 已推送（2a8d4c4）→ build-release.yml
+  自动构建/签名/发布（**用户指示不需要等 action 结果**）。下次续：确认 Release 已出
+  （exe 应为 `ToolBox_0.2.0_x64-setup.exe`，含随包插件约 40MB；updater 自动指向
+  latest.json）。若失败，先看 §1.13d 记录的已知坑（secret 换行已 trim、NSIS 配置层级）。
 - **✅ 已推送（2026-09-01 首次发布）**：全部本地提交（含教学基线收敛以来 62 个）已 push
   `origin/main`，远程 HEAD = 本地 HEAD（0f1073b）。此前"未推送累积 56 个"已清零。
   网络情况：本机 **github.com:443 HTTPS 直连恢复可连**（此前被墙 `Connection reset`；
@@ -629,9 +685,10 @@ cargo test --workspace                 # Rust 测试（当前 60）
 > 教训：8/31 发布轮连续 4 个 run 靠 CI 才发现问题（search 目录签名时序、secret 换行、
 > env 覆盖），每次 20+ 分钟；其中 search 时序问题是本地多跑几遍就能暴露的偶发测试。
 
-`pnpm lint` 0 警告（75 文件）· `pnpm test` 40（4 文件）· `pnpm build` ✓ ·
-**`cargo test --workspace` 61**（宿主 56 + pyruntime 3 + core-example 2，含 native DLL 集成测试、插件导出 zip 往返与随包插件部署测试）·
+`pnpm lint` 0 警告（76 文件）· `pnpm test` 40（4 文件）· `pnpm build` ✓ ·
+**`cargo test --workspace` 62**（宿主 57 + pyruntime 3 + core-example 2，含 native DLL 集成测试、插件导出 zip 往返、随包插件部署与 workspaces 单测）·
 `pnpm build:core`（core-example 1 插件 + DLL 自检，自动清理旧随包插件）·
+`pnpm bundle:plugins`（probe-rat-layer 随包资源：production ui + vendor，自检 plugin.json/main.py/ui）·
 `pnpm tauri dev` 冒烟：5 个 process 插件全部使用捆绑解释器、core-example 部署无异常 ·
 打包版冒烟（无 Python PATH 跑 exe：部署捆绑运行时 + 核心插件 + 插件用捆绑解释器）。
 改动后请跑对应子集。
@@ -647,7 +704,7 @@ cargo test --workspace                 # Rust 测试（当前 60）
 |---|---|---|---|
 | `hello-tb` | webview | 命令注册式最小示例（指南 §1 五分钟跑通的仓库实体） | 无 |
 | `py-tools` | process | 协议 + 事件推送 + 搜索提供者 + 核心 API（call_core fs.listDir）+ **自带前端界面**（指南 §3.8：侧边栏「文本工具」，api.call 调命令 / api.on 收事件） | 按钮/vendor（方案 A） |
-| `probe-rat-layer` | process | **异步任务实例**（30s 超时规避）：后台线程分层 + `layer.status` 轮询进度 + 按需渲染 SVG + 内置文件浏览器；真实算法工具（探针卡飞线分层，vendored probe_layer 副本 + 进度/取消钩子），见 §1.12 与插件 README | 按钮/vendor（方案 A） |
+| `probe-rat-layer` | process | **异步任务实例**（30s 超时规避）：后台线程分层 + `layer.status` 轮询进度 + 按需渲染 PNG + 内置文件浏览器 + **文件上下文动作**（初始化项目结构/归档批次）；真实算法工具（探针卡飞线分层，vendored probe_layer 副本 + 进度/取消钩子），见 §1.12 与插件 README | 按钮/vendor（方案 A） |
 | `theme-maple` | 皮肤插件 | 主题包示例（指南 §6） | 无 |
 | `theme-midnight` | 皮肤插件 | 主题包示例（指南 §6） | 无 |
 
