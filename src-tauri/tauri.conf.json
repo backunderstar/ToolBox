@@ -32,6 +32,15 @@
       "nsis"
     ],
     "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ]
+      }
+    },
     "resources": [
       "resources/_core",
       "resources/python",
