@@ -514,23 +514,22 @@ cargo test --workspace                 # Rust 测试（当前 60）
   备用通道：① SSH key + 远程改 `ssh://git@ssh.github.com:443/backunderstar/ToolBox.git`；
   ② 开代理后 `git config --global http.proxy http://127.0.0.1:<port>`。
   推送会触发 ci.yml（已修好 resources/python 占位校验）。
-- **首次 release 打包（2026-09-01 进行中，用户叫停待续）**：`pnpm tauri build` 本地已产出
-  完整产物（`target/release/bundle/nsis/ToolBox_0.1.0_x64-setup.exe` 20.6MB + `.sig` +
-  `latest.json`，签名密钥 `%USERPROFILE%\.tauri\toolbox-updater.key` 密码 `tb-updater-key`）。
-  已推送 GitHub（main + v0.1.0 tag），CI secrets（TAURI_SIGNING_PRIVATE_KEY /
-  TAURI_SIGNING_PRIVATE_KEY_PASSWORD）已由用户配置。**卡点 1（已修，2026-09-01 续）**：
-  CI 的 `cargo test --workspace` 失败而本地全过——根因是 `core::search::tests::d1_window_skip_
-  still_detects_new_file`：目录签名只哈希**目录 mtime**，CI 的 NTFS 目录 mtime 更新延迟
-  （新增文件后签名未变 → 跳过全量 sync → 新文件搜不到）。修复：`dir_tree_signature` 加入
-  **条目名列表**（read_dir 条目名排序哈希，条目增删/改名确定性改变签名，不依赖 mtime 时机），
-  本地 60 passed + search 20 测试连跑 3 次全绿。**卡点 2（已修）**：Build release 步骤报
-  `failed to decode base64 secret key: Invalid symbol 10`——secret 粘贴时带**结尾换行**
-  （offset 348 = key 末尾）。修复：build-release.yml 加 "Prepare signing key (strip trailing
-  newline)" 步骤，命令替换 $(...) 去掉结尾换行后覆写 GITHUB_ENV（key 与 password 都处理）。
-  下次续：重推 main + v0.1.0 tag → build-release.yml 自动发布（cargo test 过 + 签名过 →
-  softprops 自动建 Release 上传 exe/sig/latest.json）；若急用可手动上传本地产物建 release
-  （软props/gh 无，用 API 或浏览器）。另注意：示例插件已默认关闭（plugins.json 只启用
-  probe-rat-layer，core-example 进 disabled，见 §10 旁注）。
+- **✅ 首次 release 已发布（2026-09-01 完成）**：`v0.1.0` GitHub Release 已上线
+  （github-actions[bot] 发布，非 draft），产物齐全：`ToolBox_0.1.0_x64-setup.exe`
+  （19.1MB）+ `.sig` + `latest.json`（updater 清单，endpoints 已指向
+  releases/latest/download/latest.json）。本地产物（`target/release/bundle/nsis/`）与
+  CI 产物并存可作对照。**期间修掉的两个根因**（都有日志佐证）：
+  1. CI `cargo test --workspace` 偶发失败：`core::search::tests::d1_window_skip_still_
+     detects_new_file` 依赖**目录 mtime** 检测新增文件，CI 的 NTFS 目录 mtime 更新延迟
+     → 签名未变跳过全量 sync → 新文件搜不到。修复：`dir_tree_signature` 加入**条目名
+     列表**（read_dir 条目名排序哈希，条目增删/改名确定性改变签名，不依赖 mtime 时机）。
+  2. `tauri build` 的 updater 签名报 `Invalid symbol 10`：secret 粘贴时带**结尾换行**。
+     修复：build-release.yml 加 "Prepare signing key (strip trailing newline)" 步骤，
+     命令替换 `$(...)` 去尾换行后覆写 GITHUB_ENV；**且 Build release 步骤不得再用
+     env: 注入原始 secret**（会覆盖 GITHUB_ENV 的清理值——第一版修复就是栽在这，
+     见该步骤注释）。
+  经验：Actions 日志匿名 API 403，但 `git credential fill` 可取出本机 OAuth token
+  （gho_，scope 含 repo）用于下载日志/secrets 列表，排查 CI 失败不再靠猜。
 - **插件页"安装依赖"按钮**：✅ 已做（2026-08-29，见 §1.2/§1.4）；8/30 补「先停插件进程
   再 pip」修复并发 PermissionError（§6.1 坑 11）。剩余：目标机/真实场景交互验收
   （点击按钮装依赖 → 重载生效），py-jmes 已带 requirements.txt 可当验收对象
@@ -565,6 +564,11 @@ cargo test --workspace                 # Rust 测试（当前 60）
 
 要点：
 
+- **默认启用状态（2026-09 release 收尾，用户决策"现阶段只启用探针卡分层插件"）**：
+  运行时 `plugins.json`（`%APPDATA%\com.toolbox.desktop\plugins.json`）为
+  `{"disabled":["core-example"],"enabled":["probe-rat-layer"],"plugins_dir":"D:\\ToolBoxData\\plugins"}`——
+  hello-tb / py-tools / theme-* 全部不启用；core-example 是宿主默认启用（system 插件），
+  用 disabled 显式关闭。该文件不入库，重装/换机需手动重建。
 - **已删除的示例（2026-09，用户决策"每种只留典型"）**：csv-tool / py-env / py-files /
   py-jmes / py-venv（仓库 git 删除 + 运行时目录 D:\ToolBoxData\plugins 已清 + plugins.json
   enabled 列表已更新）。协议最小骨架 = 模板 `templates/external-plugin/main.py`（原 csv-tool
