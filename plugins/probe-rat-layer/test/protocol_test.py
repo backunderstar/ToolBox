@@ -59,11 +59,15 @@ def make_inputs(out_dir):
 class PluginClient:
     """极简 JSON-RPC 客户端（对应宿主 plugins/process.rs 行为）。"""
 
-    def __init__(self, python):
+    def __init__(self, python, env=None):
+        full_env = dict(os.environ)
+        if env:
+            full_env.update(env)
         self.p = subprocess.Popen(
             [python, "main.py"], cwd=PLUGIN_DIR,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
+            env=full_env,
         )
         self.next_id = 1
 
@@ -148,7 +152,8 @@ def main():
         r = c.recv()
         commands = r.get("result", {}).get("commands") or []
         need = {"layer.run", "layer.status", "layer.cancel", "layer.result",
-                "layer.readOut", "layer.render", "layer.listDir", "layer.report"}
+                "layer.readOut", "layer.render", "layer.listDir", "layer.report",
+                "plugin.action"}
         missing = need - set(commands)
         if missing:
             fail(f"命令白名单缺: {sorted(missing)}")
@@ -256,7 +261,47 @@ def main():
         finally:
             c2.shutdown()
 
-        # 11. shutdown
+        # 11. 文件上下文动作（plugin.action，source="file"）：
+        #     框架提供文件能力，插件决定文件组织逻辑（TB_WORKSPACE = 当前工作区）
+        c3 = PluginClient(args.python, env={"TB_WORKSPACE": tmp})
+        try:
+            c3.send({"id": 0, "method": "init",
+                     "params": {"apiVersion": 1, "pluginId": "probe-rat-layer"}})
+            r3 = c3.recv()
+            # 11a. 初始化探针卡项目结构（建标准目录）
+            res = c3.call("plugin.action", {"action": "init-project-structure",
+                                            "source": "file", "files": []})
+            for d in ("01-原始数据", "02-报告", "03-归档"):
+                if not os.path.isdir(os.path.join(tmp, d)):
+                    fail(f"init-project-structure 未创建 {d}: {res}")
+            print(f"PASS plugin.action init-project-structure（创建 {res.get('created')}）")
+            # 11b. 按批次归档：选中文件移动到 03-归档/<日期>/ 下
+            sample = os.path.join(tmp, "hv_sample.xlsx")
+            with open(sample, "w", encoding="utf-8") as f:
+                f.write("x")
+            res2 = c3.call("plugin.action", {"action": "archive-to-batch", "source": "file",
+                                             "files": ["hv_sample.xlsx"]})
+            if res2.get("moved") != ["hv_sample.xlsx"]:
+                fail(f"archive-to-batch 未移动文件: {res2}")
+            batch_root = os.path.join(tmp, "03-归档")
+            found = any(
+                os.path.isfile(os.path.join(batch_root, d, "hv_sample.xlsx"))
+                for d in os.listdir(batch_root)
+                if os.path.isdir(os.path.join(batch_root, d))
+            )
+            if not found:
+                fail(f"archive-to-batch 文件未出现在批次目录: {res2}")
+            print(f"PASS plugin.action archive-to-batch（→ {res2.get('batch')}）")
+            # 11c. 越界防护：files 里带 ../ 应被忽略（不逃逸工作区）
+            res3 = c3.call("plugin.action", {"action": "archive-to-batch", "source": "file",
+                                             "files": ["../outside.txt"]})
+            if res3.get("moved"):
+                fail(f"archive-to-batch 越界路径不应移动: {res3}")
+            print("PASS plugin.action 越界路径被忽略（工作区沙箱）")
+        finally:
+            c3.shutdown()
+
+        # 12. shutdown
         c.shutdown()
         print("PASS shutdown 干净退出")
     finally:

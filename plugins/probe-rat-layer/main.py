@@ -738,8 +738,62 @@ def call_core(method: str, params: dict):
 _COMMANDS = [
     "layer.listDir", "layer.config", "layer.run", "layer.status", "layer.cancel",
     "layer.result", "layer.readOut", "layer.render", "layer.openOut",
-    "layer.report", "layer.notifyDone",
+    "layer.report", "layer.notifyDone", "plugin.action",
 ]
+
+
+def _safe_join(workspace: str, rel: str):
+    """工作区内安全拼路径：rel 越界/不存在返回 None（防插件动作逃逸工作区）。"""
+    root = os.path.normpath(os.path.abspath(workspace))
+    p = os.path.normpath(os.path.abspath(os.path.join(root, rel)))
+    if p != root and not p.startswith(root + os.sep):
+        return None
+    return p
+
+
+def cmd_plugin_action(args: dict) -> dict:
+    """宿主外壳动作（2026-09 文件上下文动作：source="file"）。
+
+    框架分工：宿主文件视图提供文件能力（浏览/复制/移动/删除/搜索），插件决定
+    文件处理的**表现形式与业务逻辑**——本命令即插件侧实现：
+    - init-project-structure  按探针卡项目规范初始化目录结构（01-原始数据/02-报告/03-归档）
+    - archive-to-batch        把选中的文件/目录按当天批次归档到 03-归档/<YYYYMMDD>/
+    工作区路径来自宿主注入的环境变量 TB_WORKSPACE（插件启动时=当前工作区）。
+    """
+    action = args.get("action", "")
+    source = args.get("source", "")
+    files = args.get("files") or []
+    workspace = os.environ.get("TB_WORKSPACE", "")
+    if source != "file":
+        return {"ok": True, "message": f"忽略非文件来源动作: {source}"}
+    if not workspace or not os.path.isdir(workspace):
+        raise ValueError(f"工作区目录无效: {workspace}")
+    if action == "init-project-structure":
+        created = []
+        for d in ("01-原始数据", "02-报告", "03-归档"):
+            p = os.path.join(workspace, d)
+            if not os.path.isdir(p):
+                os.makedirs(p, exist_ok=True)
+                created.append(d)
+        return {"ok": True, "created": created}
+    if action == "archive-to-batch":
+        batch = os.path.join(workspace, "03-归档",
+                             datetime.datetime.now().strftime("%Y%m%d"))
+        os.makedirs(batch, exist_ok=True)
+        moved = []
+        for rel in files:
+            src = _safe_join(workspace, rel)
+            if src is None or not os.path.exists(src):
+                continue
+            dst = os.path.join(batch, os.path.basename(src))
+            if os.path.exists(dst):  # 同名冲突：加时间戳前缀
+                dst = os.path.join(
+                    batch, datetime.datetime.now().strftime("%H%M%S") + "_" + os.path.basename(src))
+            os.replace(src, dst)
+            moved.append(rel)
+        return {"ok": True, "moved": moved,
+                "batch": os.path.relpath(batch, workspace)}
+    return {"ok": True, "message": f"未实现动作: {action}"}
 
 
 def handle_request(msg: dict) -> dict:
@@ -803,6 +857,8 @@ def handle_request(msg: dict) -> dict:
                 call_core("notify", {"title": args.get("title", "探针卡分层"),
                                      "body": args.get("body", "任务完成")})
                 result = {"ok": True}
+            elif command == "plugin.action":
+                result = cmd_plugin_action(args)
             else:
                 raise ValueError("未知命令: %s" % command)
         else:

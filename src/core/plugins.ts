@@ -222,8 +222,8 @@ const MOCK_PLUGINS: PluginInfo[] = [
     theme: null,
     hasDeps: false,
     actions: [
-      { id: "greet", label: "示例问候", icon: "puzzle", topbar: true, tray: true },
-      { id: "open", label: "打开示例界面", icon: "file-text", topbar: false, tray: true },
+      { id: "greet", label: "示例问候", icon: "puzzle", topbar: true, tray: true, file: false },
+      { id: "open", label: "打开示例界面", icon: "file-text", topbar: false, tray: true, file: false },
     ],
     settings: "ui/settings.js",
     float: "ui/float.js",
@@ -337,28 +337,31 @@ async function uninstall(id: string): Promise<void> {
 }
 
 /**
- * 触发插件外壳动作（顶栏按钮 / 托盘项）——统一交互契约：
- * ① 发 `plugin-event` 事件 `action`（payload {action, source}）→ 插件自带前端
+ * 触发插件外壳动作（顶栏按钮 / 托盘项 / 文件上下文动作）——统一交互契约：
+ * ① 发 `plugin-event` 事件 `action`（payload {action, source, files?}）→ 插件自带前端
  *    UI 用 api.on("action") 订阅响应（webview / native 插件 UI 均可）
- * ② 插件非 webview 时调约定命令 `plugin.action {action, source}`（native/process
+ * ② 插件非 webview 时调约定命令 `plugin.action {action, source, files?}`（native/process
  *    逻辑响应；未实现该命令则忽略——事件通道已发出）
- * source = topbar | tray | settings，插件可按来源区分行为。
+ * source = topbar | tray | settings | file，插件可按来源区分行为；
+ * source = "file" 时 files 为文件视图选中的工作区相对路径列表。
  */
 export async function triggerPluginAction(
   pluginId: string,
   action: string,
-  source: "topbar" | "tray" | "settings",
+  source: "topbar" | "tray" | "settings" | "file",
+  files?: string[],
 ): Promise<void> {
   const p = vaultState.path;
+  const data = files?.length ? { action, source, files } : { action, source };
   // ① 事件通道（插件 UI 订阅）
   void import("@tauri-apps/api/event")
-    .then((m) => m.emit("plugin-event", { pluginId, event: "action", data: { action, source } }))
+    .then((m) => m.emit("plugin-event", { pluginId, event: "action", data }))
     .catch(() => undefined);
   // ② 命令通道（webview 插件命令在宿主侧无分发，跳过）
   const pl = state.plugins.find((x) => x.id === pluginId);
   if (!pl || pl.runtime === "webview" || !p) return;
   try {
-    await pluginCall(p, pluginId, "plugin.action", { action, source });
+    await pluginCall(p, pluginId, "plugin.action", data);
   } catch {
     /* 插件未实现 plugin.action：忽略（事件通道已发出） */
   }

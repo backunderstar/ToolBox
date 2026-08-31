@@ -7,6 +7,20 @@
   "command": ["python", "main.py"],
   "permissions": ["log", "notify", "shell"],
   "ui": { "entry": "ui/index.js" },
+  "actions": [
+    {
+      "id": "init-project-structure",
+      "label": "初始化探针卡项目结构",
+      "icon": "folder",
+      "file": true
+    },
+    {
+      "id": "archive-to-batch",
+      "label": "归档到批次目录",
+      "icon": "folder",
+      "file": true
+    }
+  ],
   "nav": [
     {
       "id": "probe-rat-layer",

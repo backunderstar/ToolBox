@@ -64,17 +64,19 @@ pub struct NavDecl {
     pub view: String,
 }
 
-/// 宿主外壳动作声明（顶栏图标按钮 / 托盘菜单项，二选一或都用）：
+/// 宿主外壳动作声明（顶栏图标按钮 / 托盘菜单项 / 文件上下文动作，按字段启用）：
 /// 点击 → 宿主发 `plugin-event` 事件 `action`（插件 UI 用 api.on("action") 订阅）
 /// + 若插件非 webview 则调用约定命令 `plugin.action {action, source}`。
-///   交互不感知具体外壳来源（source = topbar | tray），插件统一处理。
+///   交互不感知具体外壳来源（source = topbar | tray | file），插件统一处理。
+///   source = "file" 时 payload 附带 `files: [rel, ...]`（文件视图选中的
+///   工作区相对路径），插件据此决定文件处理逻辑（归类/转格式/建结构）。
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionDecl {
     /// 动作 id（插件内唯一）
     #[serde(default)]
     pub id: String,
-    /// 展示名（托盘菜单项文本 / 顶栏按钮 title）
+    /// 展示名（托盘菜单项文本 / 顶栏按钮 title / 文件菜单项）
     #[serde(default)]
     pub label: String,
     /// 顶栏图标名（前端内置图标表的 key，如 "puzzle"）
@@ -86,6 +88,11 @@ pub struct ActionDecl {
     /// 是否显示到托盘菜单（缺省 false → 仅顶栏）
     #[serde(default)]
     pub tray: bool,
+    /// 是否作为**文件上下文动作**：宿主「文件」视图对选中文件/目录显示该动作
+    /// （右键菜单 / 多选操作条），触发时把选中的工作区相对路径列表传给插件
+    /// （`plugin.action {action, source: "file", files: [...]}`）。2026-09 新增。
+    #[serde(default)]
+    pub file: bool,
 }
 
 /// 插件设置面板声明：设置页「插件设置」段挂载的自定义界面入口

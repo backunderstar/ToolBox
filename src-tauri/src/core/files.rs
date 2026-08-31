@@ -153,6 +153,41 @@ pub fn rename(vault: &str, from: &str, to: &str) -> Result<(), String> {
     std::fs::rename(&a, &b).map_err(|e| format!("重命名失败: {e}"))
 }
 
+/// 移动（跨目录语义；内部即 rename，命令层独立入口让前端/插件意图明确）。
+pub fn move_(vault: &str, from: &str, to: &str) -> Result<(), String> {
+    rename(vault, from, to)
+}
+
+/// 复制文件或目录（递归）到目标。目标已存在拒绝；自动创建父目录。
+/// 保护：目标不能是源自身或其子目录（否则无限递归）。
+pub fn copy(vault: &str, from: &str, to: &str) -> Result<(), String> {
+    let a = crate::core::path::resolve_safe(vault, from)?;
+    let b = crate::core::path::resolve_safe(vault, to)?;
+    if a == b || b.starts_with(&a) {
+        return Err("目标不能是源自身或其子目录".to_string());
+    }
+    if b.exists() {
+        return Err(format!("目标已存在: {to}"));
+    }
+    if let Some(parent) = b.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+    }
+    copy_recursive(&a, &b).map_err(|e| format!("复制失败: {e}"))
+}
+
+fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let e = entry?;
+            copy_recursive(&e.path(), &dst.join(e.file_name()))?;
+        }
+    } else {
+        std::fs::copy(src, dst)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,4 +308,26 @@ pub fn files_rename(
 ) -> Result<(), String> {
     ensure_vault(&app, &vault)?;
     rename(&vault, &from, &to)
+}
+
+#[tauri::command]
+pub fn files_move(
+    app: tauri::AppHandle,
+    vault: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    ensure_vault(&app, &vault)?;
+    move_(&vault, &from, &to)
+}
+
+#[tauri::command]
+pub fn files_copy(
+    app: tauri::AppHandle,
+    vault: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    ensure_vault(&app, &vault)?;
+    copy(&vault, &from, &to)
 }

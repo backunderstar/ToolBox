@@ -113,6 +113,8 @@ pub fn run() {
             core::files::files_mkdir,
             core::files::files_delete,
             core::files::files_rename,
+            core::files::files_move,
+            core::files::files_copy,
             // 插件命令在 plugins::commands 定义（tauri 宏在定义模块生成
             // __cmd__* 辅助项，路径需指向定义模块；非命令项仍走 plugins::*）
             plugins::commands::plugins_list,

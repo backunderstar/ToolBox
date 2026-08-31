@@ -45,6 +45,8 @@ export interface PluginAction {
   topbar: boolean;
   /** 是否显示到托盘菜单 */
   tray: boolean;
+  /** 文件上下文动作：宿主「文件」视图右键/批量菜单显示，触发时携带选中文件列表 */
+  file: boolean;
 }
 
 /** 插件主题声明（与 Rust ThemeDecl 对应）：非空时该插件是主题包 */
@@ -166,6 +168,10 @@ export const fsDelete = (vault: string, rel: string) =>
   invoke<void>("files_delete", { vault, rel });
 export const fsRename = (vault: string, from: string, to: string) =>
   invoke<void>("files_rename", { vault, from, to });
+export const fsMove = (vault: string, from: string, to: string) =>
+  invoke<void>("files_move", { vault, from, to });
+export const fsCopy = (vault: string, from: string, to: string) =>
+  invoke<void>("files_copy", { vault, from, to });
 
 /** 聚合搜索：文件全文 + 启用的搜索提供者插件命中（source 字段标记来源） */
 export const searchAll = (vault: string, query: string) =>
