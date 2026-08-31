@@ -79,12 +79,11 @@ jobs:
           printf 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD=%s\n' "$PASS" >> "$GITHUB_ENV"
 
       # beforeBuildCommand 会先 build:core:release（核心插件 DLL + UI）再构建前端；
-      # updater 产物（.sig）需要签名私钥，未配置 secrets 时此步会失败
+      # updater 产物（.sig）需要签名私钥，未配置 secrets 时此步会失败。
+      # 注意：不要在此处用 env: 直接注入 secrets——会覆盖上面 Prepare signing key
+      # 写入 $GITHUB_ENV 的「去尾换行」后的值（历史教训：Invalid symbol 10）。
       - name: Build release (NSIS + updater artifacts)
         run: pnpm tauri build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       # updater 清单：version/signature/url → latest.json（应用内 check() 读取的元数据）
       # 注意 bundle 产物在 workspace 根的 target/ 下（不是 src-tauri/target/）
