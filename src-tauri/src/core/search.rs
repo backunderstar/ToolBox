@@ -31,8 +31,9 @@ const MAX_TOTAL_HITS: usize = 200;
 /// （collect_md 递归 + 全量文件 stat + 内容比对），vault 大时搜索更跟手。
 /// 正确性完备（无"刚建的文件搜不到"回归）：
 /// - 目录树签名探测：窗口内跳过前重算目录签名（只 read_dir + stat 目录，
-///   远轻于全量 sync）。目录条目增删/改名会更新目录 mtime（NTFS/FAT 可靠）
-///   → 签名变化 → 强制重同步；
+///   远轻于全量 sync）。签名含**条目名列表**——目录条目增删/改名确定性
+///   改变签名（不依赖目录 mtime 的更新时机：CI 的 NTFS 目录 mtime 更新
+///   可能延迟，见 d1_window_skip_still_detects_new_file 回归）→ 强制重同步；
 /// - 空结果兜底：文件**内容**修改不改变目录签名（条目未增删），窗口内跳过
 ///   后若结果为空 → 强制重同步再查一次（修改后立即搜索新内容仍命中）；
 /// - 命中存在性检查（file_mtime / read_head）：删除后立即搜索不出幽灵结果。
@@ -72,10 +73,11 @@ fn maybe_sync_index(conn: &mut Connection, root: &Path) -> Result<bool, String> 
     Ok(false)
 }
 
-/// 目录树签名：所有目录的 `(相对路径, 目录 mtime_ns)` 列表哈希。
-/// 目录条目增删/改名会更新目录 mtime（NTFS/FAT/exFAT 可靠），文件内容
-/// 修改不更新——正好覆盖"需要强制重同步"的条目级变化，成本远低于
-/// 全量 sync（无文件 stat、无内容读取、无 SQLite 写）。
+/// 目录树签名：所有目录的「条目名列表 + 目录 mtime_ns」哈希。
+/// 条目增删/改名 → 条目名列表变化 → 签名变化（**确定性**，不依赖文件系统
+/// 目录 mtime 的更新时机）；文件内容修改不改变条目名与目录 mtime → 签名
+/// 不变——正好覆盖"需要强制重同步"的条目级变化。成本与之前同量级
+/// （read_dir + stat 目录），无文件 stat、无内容读取、无 SQLite 写。
 fn dir_tree_signature(root: &Path) -> String {
     use std::hash::{Hash, Hasher};
     let mut sig: Vec<String> = Vec::new();
@@ -100,11 +102,19 @@ fn collect_dirs(
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
+    let mut entries: Vec<(String, std::fs::DirEntry)> = Vec::new();
     for entry in read.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with('.') || IGNORED_DIRS.contains(&name.as_str()) {
             continue;
         }
+        entries.push((name, entry));
+    }
+    // 条目名列表：条目增删/改名 → 签名变化（确定性；不依赖目录 mtime 更新时机）
+    let mut names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
+    names.sort_unstable();
+    out.push(format!("{base}|entries={}", names.join(",")));
+    for (name, entry) in entries {
         let rel = if base.is_empty() {
             name.clone()
         } else {
