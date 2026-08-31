@@ -60,6 +60,12 @@ function onSwitchWorkspace(e: Event): void {
   const name = (e.target as HTMLSelectElement).value;
   if (name) void vault.switchWorkspace(name);
 }
+/* 新建工作区（数据根/Project/ 下创建并切换） */
+async function createWorkspace(): Promise<void> {
+  const name = window.prompt("新建工作区名称（将在 数据根/Project/ 下创建）：");
+  if (!name || !name.trim()) return;
+  await vault.createWorkspace(name.trim());
+}
 /* 启用的插件中声明了设置面板（manifest settings.entry）的列表 */
 const settingsPlugins = computed(() =>
   pluginsCtx.state.plugins.filter((p) => p.enabled && p.settings),
@@ -302,7 +308,11 @@ function removeCustom(id: string): void {
                   {{ w.name }}
                 </option>
               </select>
-              <span v-else class="settings-value">Project/ 下暂无工作区（新建文件夹即工作区）</span>
+              <span v-else class="settings-value">Project/ 下暂无工作区</span>
+              <button class="btn" @click="createWorkspace">
+                <Icon name="plus" :size="13" />
+                新建工作区
+              </button>
               <button class="btn" @click="openFolder" :disabled="opening">
                 <Icon name="folder" :size="13" />
                 {{ opening ? "打开中…" : "在资源管理器中打开" }}

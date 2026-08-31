@@ -131,6 +131,8 @@ export const workspaceSetRoot = (path: string) =>
   invoke<WorkspaceInfo>("workspace_set_root", { path });
 export const workspaceSwitch = (name: string) =>
   invoke<WorkspaceInfo>("workspace_switch", { name });
+export const workspaceCreate = (name: string) =>
+  invoke<WorkspaceInfo>("workspace_create", { name });
 
 /* ---- 应用设置（%APPDATA%/com.toolbox.desktop/app.json 通用键值） ---- */
 
@@ -177,31 +179,29 @@ export const fsCopy = (vault: string, from: string, to: string) =>
 export const searchAll = (vault: string, query: string) =>
   invoke<SearchHit[]>("search_all", { vault, query });
 
-/* ---- 插件系统 ---- */
+/* ---- 插件系统（管理类命令为全局操作，不依赖工作区；调用类保留 vault） ---- */
 
-export const pluginsList = (vault: string) => invoke<PluginInfo[]>("plugins_list", { vault });
-export const pluginsSetEnabled = (vault: string, id: string, enabled: boolean) =>
-  invoke<void>("plugins_set_enabled", { vault, id, enabled });
-export const pluginsReload = (vault: string, id: string) =>
-  invoke<void>("plugins_reload", { vault, id });
+export const pluginsList = () => invoke<PluginInfo[]>("plugins_list");
+export const pluginsSetEnabled = (id: string, enabled: boolean) =>
+  invoke<void>("plugins_set_enabled", { id, enabled });
+export const pluginsReload = (id: string) => invoke<void>("plugins_reload", { id });
 /** 安装插件依赖：用捆绑 Python 的 pip 把 requirements.txt 装进 <插件>/vendor/（需有网）；
  *  返回 pip 输出尾部；成功后应重载插件生效 */
-export const pluginsInstallDeps = (vault: string, id: string) =>
-  invoke<string>("plugins_install_deps", { vault, id });
-export const pluginsUninstall = (vault: string, id: string) =>
-  invoke<void>("plugins_uninstall", { vault, id });
+export const pluginsInstallDeps = (id: string) =>
+  invoke<string>("plugins_install_deps", { id });
+export const pluginsUninstall = (id: string) => invoke<void>("plugins_uninstall", { id });
 /** 重新安装已卸载的核心插件（从随应用分发的资源恢复 DLL + 目录） */
-export const pluginsReinstallCore = (vault: string, id: string) =>
-  invoke<void>("plugins_reinstall_core", { vault, id });
+export const pluginsReinstallCore = (id: string) =>
+  invoke<void>("plugins_reinstall_core", { id });
 /** 已卸载的核心插件 id 列表（前端展示"重新安装"入口） */
 export const pluginsRemovedCore = () => invoke<string[]>("plugins_removed_core");
 /** 界面安装插件（通用 runtime）：source = .zip 包路径或插件目录路径；kind = "zip" | "dir"。
  *  按清单 runtime 部署（native → _core/；webview/process/主题皮肤 → plugins/）。 */
-export const pluginsInstall = (vault: string, source: string, kind: string) =>
-  invoke<string>("plugins_install", { vault, source, kind });
+export const pluginsInstall = (source: string, kind: string) =>
+  invoke<string>("plugins_install", { source, kind });
 /** 导出插件为 .zip 插件包（分享/备份）：dest = 保存路径；返回导出文件路径 */
-export const pluginsExport = (vault: string, id: string, dest: string) =>
-  invoke<string>("plugins_export", { vault, id, dest });
+export const pluginsExport = (id: string, dest: string) =>
+  invoke<string>("plugins_export", { id, dest });
 /** 当前生效的全局插件目录（自定义或默认 %APPDATA%） */
 export const pluginsDirGet = () => invoke<string>("plugins_dir_get");
 /** 设置全局插件目录（自动迁移现有插件，旧目录进回收站）；传空恢复默认 */

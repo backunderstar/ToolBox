@@ -278,15 +278,12 @@ async function refresh(): Promise<void> {
     state.runtimeErrors = {};
     return;
   }
-  const p = vaultState.path;
-  if (!p) {
-    state.plugins = [];
-    return;
-  }
+  // 插件管理是全局操作：不依赖工作区（列表/启停/安装/卸载与工作区无关，
+  // 2026-09 用户反馈"没有工作区时没法管理插件"——已解耦）
   state.loading = true;
   const seq = ++refreshSeq;
   try {
-    const list = await pluginsList(p);
+    const list = await pluginsList();
     if (seq !== refreshSeq) return; // 过期响应丢弃
     state.plugins = list;
     // 重置所有注册表（保留运行时对象，只清命令）
@@ -312,27 +309,21 @@ async function refresh(): Promise<void> {
 }
 
 async function setEnabled(id: string, enabled: boolean): Promise<void> {
-  const p = vaultState.path;
-  if (!p) return;
   if (!isMock()) {
-    await pluginsSetEnabled(p, id, enabled);
+    await pluginsSetEnabled(id, enabled);
   }
   await refresh();
 }
 
 async function reload(id: string): Promise<void> {
-  const p = vaultState.path;
-  if (!p) return;
   if (!isMock()) {
-    await pluginsReload(p, id);
+    await pluginsReload(id);
   }
   await refresh();
 }
 
 async function uninstall(id: string): Promise<void> {
-  const p = vaultState.path;
-  if (!p) return;
-  await pluginsUninstall(p, id); // 停进程 + 清状态 + 删目录（回收站）
+  await pluginsUninstall(id); // 停进程 + 清状态 + 删目录（回收站）
   await refresh();
 }
 

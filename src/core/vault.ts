@@ -1,6 +1,6 @@
 import { reactive, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
-import { searchAll, workspaceGet, workspaceSetRoot, workspaceSwitch } from "./api";
+import { searchAll, workspaceCreate, workspaceGet, workspaceSetRoot, workspaceSwitch } from "./api";
 import type { SearchHit, WorkspaceItem } from "./api";
 
 /**
@@ -74,6 +74,18 @@ async function switchWorkspace(name: string): Promise<void> {
     flash(`已切换到工作区「${name}」`);
   } catch (e) {
     flash(String(e));
+  }
+}
+
+/** 新建工作区（数据根/Project/ 下创建文件夹并切换为当前；成功返回 true） */
+async function createWorkspace(name: string): Promise<boolean> {
+  try {
+    applyWorkspace(await workspaceCreate(name));
+    flash(`已创建工作区「${name}」`);
+    return true;
+  } catch (e) {
+    flash(String(e));
+    return false;
   }
 }
 
@@ -181,6 +193,7 @@ export function useVault() {
     configured,
     pickWorkspaceRoot,
     setWorkspaceRoot,
+    createWorkspace,
     switchWorkspace,
     setQuery,
   };

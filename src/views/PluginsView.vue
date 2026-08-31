@@ -2,7 +2,6 @@
 import { onMounted, reactive, ref } from "vue";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { usePlugins } from "../core/plugins";
-import { useVault } from "../core/vault";
 import { useNav } from "../core/navigation";
 import { useTauriListen } from "../core/useTauriListen";
 import {
@@ -35,7 +34,6 @@ interface PluginEventLog extends PluginEventPayload {
   time: number;
 }
 
-const vault = useVault();
 const nav = useNav();
 const pluginsCtx = usePlugins();
 
@@ -57,8 +55,6 @@ const depsResult = ref<{ id: string; output: string } | null>(null);
 
 /** 导出插件为 .zip 包（分享/备份）：选择保存位置 → 后端打包目录全部内容 */
 async function doExport(id: string): Promise<void> {
-  const v = vault.state.path;
-  if (!v) return;
   try {
     const sel = await save({
       title: "导出插件包",
@@ -68,7 +64,7 @@ async function doExport(id: string): Promise<void> {
     if (typeof sel !== "string" || !sel) return; // 用户取消
     busy[id] = true;
     try {
-      const path = await pluginsExport(v, id, sel);
+      const path = await pluginsExport(id, sel);
       actionError.value = null;
       depsResult.value = { id, output: `已导出：${path}` };
     } catch (e) {
@@ -98,13 +94,12 @@ async function pickInstall(kind: "zip" | "dir"): Promise<void> {
 }
 
 async function doInstall(): Promise<void> {
-  const v = vault.state.path;
-  if (!v || !pendingInstall.value) return;
+  if (!pendingInstall.value) return;
   const { path: src, kind } = pendingInstall.value;
   pendingInstall.value = null;
   busy["@install"] = true;
   try {
-    await pluginsInstall(v, src, kind);
+    await pluginsInstall(src, kind);
     await pluginsCtx.refresh();
   } catch (e) {
     actionError.value = `安装失败: ${e}`;
@@ -156,11 +151,9 @@ function loadRemoved(): void {
 onMounted(loadRemoved);
 
 async function doReinstall(id: string): Promise<void> {
-  const v = vault.state.path;
-  if (!v) return;
   busy[id] = true;
   try {
-    await pluginsReinstallCore(v, id);
+    await pluginsReinstallCore(id);
     await pluginsCtx.refresh();
     loadRemoved();
   } catch (e) {
@@ -212,11 +205,9 @@ async function doReload(id: string): Promise<void> {
 
 /** 安装插件依赖：捆绑 Python 的 pip 装到 <插件>/vendor/，成功后重载插件生效 */
 async function doInstallDeps(id: string): Promise<void> {
-  const v = vault.state.path;
-  if (!v) return;
   depsBusy[id] = true;
   try {
-    const output = await pluginsInstallDeps(v, id);
+    const output = await pluginsInstallDeps(id);
     depsResult.value = { id, output };
     // 依赖就位后重启插件进程，让 sys.path 里的 vendor/ 生效
     try {
@@ -261,7 +252,7 @@ function confirmMessage(id: string): string {
           class="btn"
           title="安装插件包（.zip 压缩包，含 plugin.json；按运行时自动部署到对应位置）"
           @click="pickInstall('zip')"
-          :disabled="!vault.state.path || pluginsCtx.state.loading"
+          :disabled="pluginsCtx.state.loading"
         >
           安装 .zip
         </button>
@@ -269,7 +260,7 @@ function confirmMessage(id: string): string {
           class="btn"
           title="安装插件目录（含 plugin.json；DLL 装到 _core\，JS/Python/主题皮肤装到插件目录根）"
           @click="pickInstall('dir')"
-          :disabled="!vault.state.path || pluginsCtx.state.loading"
+          :disabled="pluginsCtx.state.loading"
         >
           安装目录
         </button>
@@ -317,16 +308,10 @@ function confirmMessage(id: string): string {
       </div>
     </Transition>
 
-    <template v-if="!vault.state.path">
+    <template v-if="pluginsCtx.state.plugins.length === 0 && !pluginsCtx.state.loading">
       <div class="empty-state">
         <Icon name="gear" :size="28" />
-        <p>请先在顶栏选择一个工作区，再管理插件</p>
-      </div>
-    </template>
-    <template v-else-if="pluginsCtx.state.plugins.length === 0 && !pluginsCtx.state.loading">
-      <div class="empty-state">
-        <Icon name="gear" :size="28" />
-        <p>工作区 plugins 目录下还没有插件</p>
+        <p>还没有插件</p>
         <code class="hint-path">plugins/&lt;插件id&gt;/plugin.json</code>
       </div>
     </template>

@@ -740,6 +740,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.workspace-new {
+  color: var(--accent);
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  padding-top: 8px;
+}
 .workspace-hint {
   padding: 8px 10px;
   font-size: var(--text-xs);

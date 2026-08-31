@@ -337,7 +337,9 @@ async function runPluginAction(pluginId: string, actionId: string): Promise<void
       </button>
     </div>
 
-    <p v-if="!vault.state.path" class="module-empty">请先在设置页或引导页配置数据根目录并选择工作区</p>
+    <p v-if="!vault.state.path" class="module-empty">
+      还没有工作区——点击顶栏工作区按钮「新建工作区」，或用插件处理项目文件
+    </p>
     <p v-else-if="error" class="module-empty warn">{{ error }}</p>
     <p v-else-if="loading" class="module-empty">加载中…</p>
     <p v-else-if="sorted.length === 0" class="module-empty">（空目录）</p>

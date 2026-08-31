@@ -44,16 +44,22 @@ pub fn plugin_log(plugin_id: String, level: String, message: String) -> Result<(
 /// （spawn_blocking）执行——Tauri async 命令共享一个 tokio runtime，直接同步
 /// 阻塞会冻结全部事件与并行命令。闭包内经 `app.state()` 重新取锁（State 引用
 /// 不能跨 await / 进 'static 闭包）。vault 校验很轻，留在命令外层尽早失败。
+/// 当前工作区路径（插件**管理**命令的上下文：插件进程的 vault / TB_WORKSPACE）。
+/// 插件管理（列表/启停/安装/卸载/依赖）是全局操作，不依赖前端选工作区；
+/// 未配置数据根/未选工作区 → 空串（列表仍可管理，插件进程 vault 为空）。
+fn current_vault(app: &tauri::AppHandle) -> String {
+    crate::core::workspaces::current_workspace_path(app)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
 
 #[tauri::command]
-pub async fn plugins_list(
-    app: tauri::AppHandle,
-    vault: String,
-) -> Result<Vec<PluginInfo>, String> {
-    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
-    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
-    let v = vault.clone();
+pub async fn plugins_list(app: tauri::AppHandle) -> Result<Vec<PluginInfo>, String> {
+    // 插件管理是全局操作（列表/启停/安装不依赖工作区）；插件进程上下文（vault/
+    // TB_WORKSPACE）用当前工作区，见 current_vault。S1c 校验只保留在**调用**类命令
+    // （plugins_invoke / plugin_call，插件执行可读写工作区文件）。
+    let v = current_vault(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<Mutex<PluginManager>>();
         let mut m = state.lock().map_err(|e| e.to_string())?;
@@ -67,14 +73,10 @@ pub async fn plugins_list(
 #[tauri::command]
 pub async fn plugins_set_enabled(
     app: tauri::AppHandle,
-    vault: String,
     id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
-    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
-    let v = vault.clone();
+    let v = current_vault(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<Mutex<PluginManager>>();
         let mut m = state.lock().map_err(|e| e.to_string())?;
@@ -87,15 +89,8 @@ pub async fn plugins_set_enabled(
 
 /// 卸载插件：停进程 + 清启用状态 + 删除插件目录。
 #[tauri::command]
-pub async fn plugins_uninstall(
-    app: tauri::AppHandle,
-    vault: String,
-    id: String,
-) -> Result<(), String> {
-    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
-    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
-    let v = vault.clone();
+pub async fn plugins_uninstall(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let v = current_vault(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<Mutex<PluginManager>>();
         let mut m = state.lock().map_err(|e| e.to_string())?;
@@ -109,16 +104,11 @@ pub async fn plugins_uninstall(
 
 /// 重新安装已卸载的核心插件（从随应用分发的资源恢复）。
 #[tauri::command]
-pub async fn plugins_reinstall_core(
-    app: tauri::AppHandle,
-    vault: String,
-    id: String,
-) -> Result<(), String> {
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
+pub async fn plugins_reinstall_core(app: tauri::AppHandle, id: String) -> Result<(), String> {
     if !is_safe_plugin_id(&id) {
         return Err(format!("非法插件 id: {id}"));
     }
-    let v = vault.clone();
+    let v = current_vault(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<Mutex<PluginManager>>();
         let mut m = state.lock().map_err(|e| e.to_string())?;
@@ -145,12 +135,10 @@ pub async fn plugins_removed_core(app: tauri::AppHandle) -> Vec<String> {
 #[tauri::command]
 pub async fn plugins_install(
     app: tauri::AppHandle,
-    vault: String,
     source: String,
     kind: String,
 ) -> Result<String, String> {
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
-    let v = vault.clone();
+    let v = current_vault(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<Mutex<PluginManager>>();
         let mut m = state.lock().map_err(|e| e.to_string())?;
@@ -255,15 +243,8 @@ pub async fn plugins_dir_set(
 /// 在解包目录中定位插件清单：根 plugin.json，或唯一子目录下的 plugin.json
 /// （常见打包结构 `<id>/plugin.json` + DLL）。
 #[tauri::command]
-pub async fn plugins_reload(
-    app: tauri::AppHandle,
-    vault: String,
-    id: String,
-) -> Result<(), String> {
-    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
-    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
-    let v = vault.clone();
+pub async fn plugins_reload(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let v = current_vault(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<Mutex<PluginManager>>();
         let mut m = state.lock().map_err(|e| e.to_string())?;
@@ -278,19 +259,12 @@ pub async fn plugins_reload(
 /// 目标机没有 Python 也能自助补依赖（捆绑运行时 full 变体带 pip；需有网）。
 /// 返回 pip 输出尾部；成功后前端重载插件生效。
 #[tauri::command]
-pub async fn plugins_install_deps(
-    app: tauri::AppHandle,
-    vault: String,
-    id: String,
-) -> Result<String, String> {
-    // 安全（S1c）：vault 必须等于已配置工作区，否则插件命令可把文件作用域
-    // 指向任意目录（读任意文件夹/写任意位置）。校验失败直接拒绝。
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
+pub async fn plugins_install_deps(app: tauri::AppHandle, id: String) -> Result<String, String> {
     // 安全（S1a）：id 会拼进插件目录路径
     if !is_safe_plugin_id(&id) {
         return Err(format!("非法插件 id: {id}"));
     }
-    let v = vault.clone();
+    let v = current_vault(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<Mutex<PluginManager>>();
         let mut m = state.lock().map_err(|e| e.to_string())?;
@@ -305,15 +279,13 @@ pub async fn plugins_install_deps(
 #[tauri::command]
 pub async fn plugins_export(
     app: tauri::AppHandle,
-    vault: String,
     id: String,
     dest: String,
 ) -> Result<String, String> {
-    crate::core::vault::ensure_vault_matches(&app, &vault)?;
     if !is_safe_plugin_id(&id) {
         return Err(format!("非法插件 id: {id}"));
     }
-    let v = vault.clone();
+    let v = current_vault(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<Mutex<PluginManager>>();
         let mut m = state.lock().map_err(|e| e.to_string())?;

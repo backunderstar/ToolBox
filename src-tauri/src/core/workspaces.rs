@@ -262,6 +262,35 @@ pub fn workspace_switch(app: tauri::AppHandle, name: String) -> Result<Workspace
     info(&app)
 }
 
+/// 新建工作区：在 数据根/Project/ 下创建文件夹（含 .toolbox 元数据）并切换为当前。
+/// name 校验：非空、不以 `.` 开头、不含路径分隔符与 Windows 非法字符。
+#[tauri::command]
+pub fn workspace_create(app: tauri::AppHandle, name: String) -> Result<WorkspaceInfo, String> {
+    let Some(root) = read_root(&app) else {
+        return Err("尚未配置数据根目录（请先完成引导）".to_string());
+    };
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("工作区名称不能为空".to_string());
+    }
+    if name.starts_with('.')
+        || name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+    {
+        return Err(format!("工作区名称含非法字符: {name}"));
+    }
+    let ws = PathBuf::from(&root).join(PROJECTS_DIR).join(&name);
+    if ws.exists() {
+        return Err(format!("工作区已存在: {name}"));
+    }
+    std::fs::create_dir_all(&ws).map_err(|e| format!("创建工作区失败: {e}"))?;
+    if let Err(e) = ensure_ws_meta(&ws) {
+        crate::core::log::warn(&format!("[workspace] 元数据维护失败: {e}"));
+    }
+    save_settings(&app, &root, Some(&name))?;
+    let _ = app.emit("workspace-changed", ());
+    info(&app)
+}
+
 /* ---- 路径校验（搜索/备份/文件/插件命令的 scope 根）---- */
 
 fn normalize(s: &str) -> String {

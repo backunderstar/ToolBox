@@ -363,6 +363,7 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
         :workspace-root="vault.state.root"
         :workspace-items="vault.state.items"
         :on-switch-workspace="vault.switchWorkspace"
+        :on-create-workspace="vault.createWorkspace"
         :on-pick-vault="vault.pickWorkspaceRoot"
         :nav-collapsed="navCollapsed"
         :on-toggle-nav="() => (navCollapsed = !navCollapsed)"

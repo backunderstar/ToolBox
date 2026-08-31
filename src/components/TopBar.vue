@@ -34,6 +34,8 @@ const props = defineProps<{
   workspaceItems: WorkspaceItem[];
   /** 切换当前工作区（多工作区模式下拉项） */
   onSwitchWorkspace: (name: string) => void;
+  /** 新建工作区（数据根/Project/ 下创建并切换；返回是否成功） */
+  onCreateWorkspace: (name: string) => Promise<boolean> | boolean;
   navCollapsed: boolean;
   onToggleNav: () => void;
   /** 显示 / 隐藏桌面浮窗（快速待办） */
@@ -88,6 +90,14 @@ function onDocClick(e: MouseEvent): void {
 }
 onMounted(() => document.addEventListener("click", onDocClick));
 onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
+
+/* 新建工作区：输入名称 → 数据根/Project/ 下创建并切换 */
+async function onCreateWs(): Promise<void> {
+  const name = window.prompt("新建工作区名称（将在 数据根/Project/ 下创建）：");
+  if (!name || !name.trim()) return;
+  wsOpen.value = false;
+  await props.onCreateWorkspace(name.trim());
+}
 
 /* Ctrl+K：聚焦搜索框 */
 watch(
@@ -151,11 +161,11 @@ function onKeyDown(e: KeyboardEvent): void {
         <span>{{ vaultName ?? "选择工作区" }}</span>
         <Icon v-if="workspaceRoot" name="chevron-down" :size="11" />
       </button>
-      <!-- 多工作区模式：根目录下项目列表（点击切换） -->
+      <!-- 多工作区模式：根目录下项目列表（点击切换）+ 新建工作区 -->
       <Transition name="fade-slide">
         <div v-if="workspaceRoot && wsOpen" class="workspace-dropdown">
           <div v-if="workspaceItems.length === 0" class="workspace-hint">
-            根目录下暂无项目文件夹
+            还没有工作区——点击下方「新建工作区」
           </div>
           <button
             v-for="w in workspaceItems"
@@ -172,8 +182,12 @@ function onKeyDown(e: KeyboardEvent): void {
             <span class="workspace-item-name">{{ w.name }}</span>
             <span class="workspace-item-path">{{ w.path }}</span>
           </button>
+          <button class="workspace-item workspace-new" @click="onCreateWs">
+            <Icon name="plus" :size="12" />
+            <span class="workspace-item-name">新建工作区…</span>
+          </button>
           <div class="workspace-foot">
-            根目录：{{ workspaceRoot }}
+            数据根：{{ workspaceRoot }}
           </div>
         </div>
       </Transition>

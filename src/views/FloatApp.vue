@@ -70,13 +70,9 @@ const tabs = computed(() =>
 /* 工作区变化时拉取插件列表（浮窗是独立窗口，各自拉取；插件启停变化由重开浮窗/切工作区反映） */
 watch(
   vaultPath,
-  async (v) => {
-    if (!v) {
-      floatPlugins.value = [];
-      return;
-    }
+  async () => {
     try {
-      const list = await pluginsList(v);
+      const list = await pluginsList();
       floatPlugins.value = list.filter((p) => p.enabled && p.float);
       // 当前页签失效（插件被禁用/卸载）→ 回退到第一个
       if (!floatPlugins.value.some((p) => p.id === tab.value)) {

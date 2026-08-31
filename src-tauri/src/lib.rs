@@ -105,6 +105,7 @@ pub fn run() {
             workspaces::workspace_get,
             workspaces::workspace_set_root,
             workspaces::workspace_switch,
+            workspaces::workspace_create,
             // 宿主文件服务（vault 内文件列表/读写/增删改；插件核心 API 与宿主共用）
             core::files::files_list,
             core::files::files_read,

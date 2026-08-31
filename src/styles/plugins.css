@@ -440,17 +440,19 @@
 }
 
 /* ============ 通用空状态 / 依赖输出（原 notes.css，2026-08-30 迁入） ============ */
+/* 自适应高度（min-height 兜底）：不用 height:100%——内容少时撑满父容器 + padding
+   会溢出挤出滚动条（2026-09 插件页空状态反馈） */
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--space-3);
-  height: 100%;
+  min-height: 240px;
   max-width: 420px;
   margin: 0 auto;
   text-align: center;
-  padding: var(--space-8);
+  padding: var(--space-6) var(--space-4);
 }
 .empty-state h2 {
   font-size: var(--text-xl);

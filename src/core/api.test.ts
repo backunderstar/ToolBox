@@ -125,39 +125,34 @@ describe("api IPC 映射（invoke 命令名与参数）", () => {
   });
 
   it("插件系统", async () => {
-    await pluginsList("V");
-    expect(mockInvoke).toHaveBeenCalledWith("plugins_list", { vault: "V" });
-    await pluginsSetEnabled("V", "py-tools", true);
+    await pluginsList();
+    expect(mockInvoke).toHaveBeenCalledWith("plugins_list");
+    await pluginsSetEnabled("py-tools", true);
     expect(mockInvoke).toHaveBeenCalledWith("plugins_set_enabled", {
-      vault: "V",
       id: "py-tools",
       enabled: true,
     });
-    await pluginsReload("V", "py-tools");
-    expect(mockInvoke).toHaveBeenCalledWith("plugins_reload", { vault: "V", id: "py-tools" });
-    await pluginsInstallDeps("V", "py-tools");
+    await pluginsReload("py-tools");
+    expect(mockInvoke).toHaveBeenCalledWith("plugins_reload", { id: "py-tools" });
+    await pluginsInstallDeps("py-tools");
     expect(mockInvoke).toHaveBeenCalledWith("plugins_install_deps", {
-      vault: "V",
       id: "py-tools",
     });
-    await pluginsUninstall("V", "py-tools");
-    expect(mockInvoke).toHaveBeenCalledWith("plugins_uninstall", { vault: "V", id: "py-tools" });
-    await pluginsReinstallCore("V", "core-notes");
+    await pluginsUninstall("py-tools");
+    expect(mockInvoke).toHaveBeenCalledWith("plugins_uninstall", { id: "py-tools" });
+    await pluginsReinstallCore("core-notes");
     expect(mockInvoke).toHaveBeenCalledWith("plugins_reinstall_core", {
-      vault: "V",
       id: "core-notes",
     });
     await pluginsRemovedCore();
     expect(mockInvoke).toHaveBeenCalledWith("plugins_removed_core");
-    await pluginsInstall("V", "D:\\p.zip", "zip");
+    await pluginsInstall("D:\\p.zip", "zip");
     expect(mockInvoke).toHaveBeenCalledWith("plugins_install", {
-      vault: "V",
       source: "D:\\p.zip",
       kind: "zip",
     });
-    await pluginsExport("V", "py-tools", "D:\\out.zip");
+    await pluginsExport("py-tools", "D:\\out.zip");
     expect(mockInvoke).toHaveBeenCalledWith("plugins_export", {
-      vault: "V",
       id: "py-tools",
       dest: "D:\\out.zip",
     });
