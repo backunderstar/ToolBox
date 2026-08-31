@@ -28,6 +28,12 @@ pnpm sync:plugins
 
 应用内「插件」页确认 `probe-rat-layer` 已启用；process 插件进程常驻，改 `main.py` 后点「重新加载」。
 
+**随安装包分发（2026-09 release 起）**：`pnpm bundle:plugins` 会把本插件（含 vendor 离线依赖、
+production 构建的 ui）复制进 `src-tauri/resources/bundled-plugins/probe-rat-layer/`，随 ToolBox
+安装包分发；首启由宿主部署到全局插件目录。**随包插件默认关闭**——装完 ToolBox 后在插件页手动
+启用一次；升级 ToolBox 时随包版本会覆盖部署（插件内运行产物 cache/jobs 在构建期已排除，但
+插件目录里用户自己的改动会被覆盖，有定制需求请复制到别的目录再改）。
+
 依赖（`requirements.txt`）：`shapely numpy matplotlib openpyxl xlrd`。目标机无需装 Python：
 宿主三级解析解释器（插件自带 python.exe → 全局捆绑 `%APPDATA%\com.toolbox.desktop\python\` → 系统 PATH）。
 

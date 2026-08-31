@@ -62,43 +62,15 @@ pub fn vault_set(app: tauri::AppHandle, path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// 服务端校验：命令携带的 `vault` 参数必须等于已配置的工作区路径
-/// （Windows 下大小写不敏感比较）。
+/// 服务端校验：命令携带的 `vault` 参数必须等于当前生效工作区路径
+/// （委托 workspaces::ensure_workspace_matches——多工作区模式下为 root/current，
+/// 单工作区模式回退本文件 vault.json；逻辑与历史 ensure_vault_matches 一致）。
 ///
 /// **为什么需要**：vault 是所有文件类命令（搜索/备份/插件 fs）的作用域根。
 /// 若完全信任前端传入的路径，任意第三方插件（或一次 XSS）都能把 vault 指向
 /// 任意目录——`search_all` 变成"读取任意文件夹"原语，配合插件写命令可向
 /// 任意已存在目录注入文件（如写启动目录实现持久化）。把 vault 绑定到
 /// 设置页保存的唯一路径后，这些命令的作用域被限制在用户明确选择的工作区内。
-/// 规范化工作区路径用于比较：去首尾空白、去尾部分隔符、统一 `\` → `/`。
-/// 避免 `C:\vault` vs `C:/vault`、`C:\vault\` vs `C:\vault` 这类等价写法被误判不一致。
-fn normalize_vault_path(s: &str) -> String {
-    s.trim()
-        .trim_end_matches(['/', '\\'])
-        .replace('\\', "/")
-}
-
 pub fn ensure_vault_matches(app: &tauri::AppHandle, vault: &str) -> Result<(), String> {
-    let configured = read_vault_path(app)?;
-    let Some(configured) = configured else {
-        return Err("工作区未设置，请先在设置中选择工作区".to_string());
-    };
-    let same = {
-        #[cfg(target_os = "windows")]
-        {
-            // Windows 路径大小写不敏感（盘符 C: vs c:）
-            normalize_vault_path(&configured).to_lowercase()
-                == normalize_vault_path(vault).to_lowercase()
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            normalize_vault_path(&configured) == normalize_vault_path(vault)
-        }
-    };
-    if !same {
-        return Err(format!(
-            "工作区路径与已配置不一致（已配置: {configured}）—— 请重新选择工作区"
-        ));
-    }
-    Ok(())
+    super::workspaces::ensure_workspace_matches(app, vault)
 }

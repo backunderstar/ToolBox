@@ -19,6 +19,7 @@
     "tauri": "tauri",
     "build:core": "node scripts/build-core.mjs",
     "build:core:release": "node scripts/build-core.mjs --release",
+    "bundle:plugins": "node scripts/bundle-external-plugins.mjs",
     "fetch:python": "node scripts/fetch-python.mjs",
     "version:sync": "node scripts/sync-version.mjs",
     "sync:plugins": "node scripts/sync-external-plugins.mjs",

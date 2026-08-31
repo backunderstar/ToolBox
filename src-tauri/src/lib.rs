@@ -12,7 +12,7 @@ use core::app::{
     app_config_dir, close_behavior, create_float_window, create_tray, ensure_main_visible,
     float_toggle, rebuild_tray, tray_enabled, EXITING, FLOAT_HOTKEY, FLOAT_WINDOW,
 };
-use core::{backup, vault};
+use core::{backup, vault, workspaces};
 use plugins::PluginManager;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -101,11 +101,16 @@ pub fn run() {
             core::app::open_in_explorer,
             vault::vault_get,
             vault::vault_set,
+            // 多工作区（工作区根目录 + 当前工作区切换；vault 是其单工作区回退）
+            workspaces::workspace_get,
+            workspaces::workspace_set_root,
+            workspaces::workspace_switch,
             // 宿主文件服务（vault 内文件列表/读写/增删改；插件核心 API 与宿主共用）
             core::files::files_list,
             core::files::files_read,
             core::files::files_write,
             core::files::files_create,
+            core::files::files_mkdir,
             core::files::files_delete,
             core::files::files_rename,
             // 插件命令在 plugins::commands 定义（tauri 宏在定义模块生成
@@ -157,6 +162,9 @@ pub fn run() {
                     core::log::set_level(lv);
                 }
             }
+            // 首启初始化：plugins.json 不存在 → 全部插件默认关闭（core-example
+            // 显式进 disabled；外部插件按 enabled 集合，空 = 全关）。dev 一致执行。
+            plugins::manager::ensure_initial_state(app.handle());
             // 打包版：把安装包资源里的核心插件部署到 %APPDATA%（dev 由 build:core 管理）。
             // 首次启动/升级时递归复制 DLL 是重 IO，放后台线程避免阻塞窗口创建与首帧
             // 渲染。部署只写插件目录、无返回值供后续使用（插件扫描发生在前端调
@@ -173,6 +181,11 @@ pub fn run() {
                 let h = app.handle().clone();
                 std::thread::spawn(move || {
                     plugins::ensure_core_plugins(&h);
+                });
+                // 随包外部插件（resources/bundled-plugins → 全局插件目录顶层）
+                let h = app.handle().clone();
+                std::thread::spawn(move || {
+                    plugins::ensure_bundled_plugins(&h);
                 });
             }
             // 插件预热：首次 plugins_list 的 refresh（扫描插件目录 + 启动启用插件）

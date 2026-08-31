@@ -22,6 +22,9 @@ pub use manager::PluginManager;
 // 此处不 re-export 避免 dev 下引用不存在的项）
 #[cfg(not(dev))]
 pub use manager::ensure_core_plugins;
+// 打包版随包外部插件部署（仅 release 存在；dev 由 pnpm bundle:plugins 产出资源目录）
+#[cfg(not(dev))]
+pub use manager::ensure_bundled_plugins;
 // 打包版捆绑 Python 运行时部署（仅 release 存在；dev 由 pnpm fetch:python 直接落资源目录）
 #[cfg(not(dev))]
 pub use pyruntime::ensure_bundled_python;

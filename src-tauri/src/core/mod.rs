@@ -4,6 +4,7 @@
 //!   （2026-09 从 lib.rs 957 行单体拆出，命令按域归位）
 //! - `path`    路径安全工具（vault 相对路径解析）
 //! - `vault`   Vault 工作区：路径选择与持久化（M1 落地）
+//! - `workspaces` 多工作区：工作区根目录 + 当前工作区（2026-09；vault 是其单工作区回退）
 //! - `files`   宿主文件服务：vault 内文件列表/读写/增删改（系统级横切能力，
 //!   插件核心 API 与宿主数据层共用，2026-08 迁回本体）
 //! - `search`  全文搜索（SQLite FTS5，宿主内嵌横切能力）
@@ -21,3 +22,4 @@ pub mod log;
 pub mod path;
 pub mod search;
 pub mod vault;
+pub mod workspaces;

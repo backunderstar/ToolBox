@@ -55,11 +55,15 @@ const PluginsView = defineAsyncComponent({
   loader: () => import("./views/PluginsView.vue"),
   loadingComponent: LoadingView,
 });
+const FilesView = defineAsyncComponent({
+  loader: () => import("./views/FilesView.vue"),
+  loadingComponent: LoadingView,
+});
 
 /** 宿主固定路由的视图 id（ViewId 联合）。外部插件声明同名 nav id 会与内置
  *  路由冲突（侧边栏显示被覆盖，点击仍走内置分支，显示与跳转不一致）——
  *  渲染前过滤。用 Set<string>：检查对象是任意插件声明的 nav id。 */
-const RESERVED_VIEW_IDS = new Set<string>(["overview", "plugins", "settings"]);
+const RESERVED_VIEW_IDS = new Set<string>(["overview", "files", "plugins", "settings"]);
 
 /** 是否为浮窗窗口（加载同一前端入口，按窗口 label 分流） */
 function isFloatWindow(): boolean {
@@ -93,6 +97,8 @@ const navConfig = ref<NavConfig | null>(loadNavConfig());
 /* 导航项定义底表：静态项 + 已启用插件的 nav 声明 */
 const navDefs = computed<NavItemDef[]>(() => [
   { id: "overview", label: "概览", icon: "grid", groupId: "work" },
+  // 工作区文件浏览（2026-09 多工作区：浏览当前工作区文件树）
+  { id: "files", label: "文件", icon: "folder", groupId: "work" },
   // 插件管理页归「系统」组（产品决策；老用户旧布局由 navPrefs 一次性迁移）
   { id: "plugins", label: "插件", icon: "puzzle", groupId: "system" },
   { id: "settings", label: "设置", icon: "gear", groupId: "system", fixed: true },
@@ -337,6 +343,10 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
         :searching="vault.state.searching"
         :on-open-result="openSearchResult"
         :vault-name="vaultName"
+        :vault-path="vault.state.path"
+        :workspace-root="vault.state.root"
+        :workspace-items="vault.state.items"
+        :on-switch-workspace="vault.switchWorkspace"
         :on-pick-vault="vault.pickVault"
         :nav-collapsed="navCollapsed"
         :on-toggle-nav="() => (navCollapsed = !navCollapsed)"
@@ -363,10 +373,10 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
               :ping="pingInfo"
               :theme-name="themeName"
               :plugins="pluginCtx.state.plugins"
-              :on-open-example="() => nav.go('example')"
               :on-open-plugins="() => nav.go('plugins')"
             />
             <PluginsView v-else-if="view === 'plugins'" :key="'plugins'" />
+            <FilesView v-else-if="view === 'files'" :key="'files'" />
             <SettingsView
               v-else-if="view === 'settings'"
               :key="'settings'"

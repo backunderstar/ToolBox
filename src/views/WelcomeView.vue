@@ -10,7 +10,6 @@ const props = defineProps<{
   ping: PingInfo | null;
   themeName: string;
   plugins: PluginInfo[];
-  onOpenExample: () => void;
   onOpenPlugins: () => void;
 }>();
 
@@ -22,13 +21,7 @@ const ok = computed(() => isCoreConnected(props.ping));
     <section class="hero fade-in">
       <div class="hero-overline">ToolBox · Personal Workbench</div>
       <h1>个人工具箱</h1>
-      <p>
-        你的笔记、文件与工具，围绕一个普通文件夹展开。
-        数据始终是你的——随时可迁移、可备份、可发布。
-      </p>
-      <div class="hero-actions">
-        <button class="btn-primary" @click="onOpenExample">打开示例插件</button>
-      </div>
+      <p>围绕文件夹展开的工具箱，数据始终是你的。</p>
     </section>
 
     <section class="env-card fade-in" style="animation-delay: 80ms">

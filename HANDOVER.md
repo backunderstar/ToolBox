@@ -284,6 +284,48 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
     输出代码（仅 viz.py 头注释保留历史说明）；vendored pytest 31 / protocol_test 13
     全过，CLI `--render-png` 冒烟通过。
 
+### 1.13 收尾轮（2026-09-01：release 发布 + 4 项新改动，用户确认方案后实施）
+
+- **✅ release 发布**：v0.1.0 已发布 GitHub Releases（exe + sig + latest.json），期间修掉
+  两个 CI 根因（search 目录签名改条目名列表、signing secret 结尾换行 trim），见 §8。
+- **✅ 检查更新多处 false**（用户报"检查更新处会有多个 false 显示"）：SettingsView 自动
+  更新区用了 `{{ cond && "文本" }}` 多行并列，条件为 false 的行渲染字面 "false"
+  （Vue 里 `false && "x"` 求值为 false 再插值成 "false" 字符串，6 行 5 行 false）。
+  改为单一 `computed`（`updateStatusText` switch）单值渲染。
+- **✅ 欢迎页文案 + 死按钮**：文案改"围绕文件夹展开的工具箱，数据始终是你的。"；
+  删「打开示例插件」按钮——跳转的 `example` 视图不存在（点击落到空白页），
+  连同 `onOpenExample` prop / App.vue 传参清理。
+- **✅ 插件随包分发**（用户决策：只随包 probe-rat-layer、带 vendor、全部默认关闭）：
+  - 构建期 `scripts/bundle-external-plugins.mjs`（`pnpm bundle:plugins`，tauri
+    beforeBuildCommand 自动跑）：`plugins/<id>` → `src-tauri/resources/bundled-plugins/<id>/`，
+    **保留 vendor**（离线可用）、ui 用 production 构建、排除 cache/jobs/test/__pycache__/pyc/log。
+  - 打包：tauri.conf.json bundle.resources 加 `resources/bundled-plugins`（ci.yml 占位
+    目录同步加）；首启 `ensure_bundled_plugins` 部署到全局插件目录**顶层**
+    （与 `_core` 同构但目标是普通外部插件位置，走 enabled 集合）；用户卸载记
+    `removed_bundled` 键（同 `removed_core` 语义）不再复活。
+  - **全部默认关闭**：`ensure_initial_state` 首启（plugins.json 不存在时）写
+    `{"disabled":["core-example"],"enabled":[]}`——native 教学示例默认启用被 disabled
+    覆盖，外部插件本就不在 enabled。dev 与打包版一致。
+- **✅ 多工作区 + 文件浏览**（用户方案确认）：
+  - `core/workspaces.rs`：`workspaces.json`（app_config_dir）存 `{root, current}`；
+    根下每个**直接子目录 = 一个工作区**；`current_workspace_path` = root/current，
+    未设 root 回退旧 vault.json（单工作区模式，向后兼容）。命令 `workspace_get /
+    workspace_set_root（空串=清除回退）/ workspace_switch`，变更 emit `workspace-changed`。
+  - 搜索/备份/文件/插件命令的 scope 校验 `ensure_vault_matches` 委托
+    `ensure_workspace_matches`（比较当前工作区路径，签名不变调用点不动）。
+  - 前端：vault.ts 状态加 root/items、`applyWorkspace`；顶栏工作区按钮改**下拉切换**
+    （有 root 时列项目；无 root 保持"选择文件夹"）；设置页工作区段加"工作区根目录"
+    设置（选择/清除）+ 当前工作区下拉；vault.ts 兼容老宿主（workspace_get 失败回退
+    vault_get）。
+  - **插件上下文注入**：process 插件 spawn 注入环境变量 `TB_WORKSPACE`=当前工作区路径
+    （插件 main.py 读 os.environ 即可按工作区处理文件）。
+  - **文件浏览视图**（最小版）：新视图 `FilesView`（侧边栏「文件」项，view id `files`
+    加入 RESERVED_VIEW_IDS）；浏览/进入目录/返回/面包屑/新建文件夹（新增 `files_mkdir`
+    命令）/新建文件/重命名/删除（回收站）/打开（系统默认，@tauri-apps/plugin-opener）/
+    在资源管理器中打开；切工作区自动回根。所有操作走 files_*（S1c 校验，仅当前工作区）。
+  - 验证：cargo test 61（+deploy_bundled 部署测试）、clippy 0、前端 lint 0/build ✓/
+    test 40、插件 protocol_test 13 全过。
+
 ---
 
 ## 2. 项目一句话
@@ -548,8 +590,8 @@ cargo test --workspace                 # Rust 测试（当前 60）
 > 教训：8/31 发布轮连续 4 个 run 靠 CI 才发现问题（search 目录签名时序、secret 换行、
 > env 覆盖），每次 20+ 分钟；其中 search 时序问题是本地多跑几遍就能暴露的偶发测试。
 
-`pnpm lint` 0 警告（53 文件）· `pnpm test` 24（2 文件）· `pnpm build` ✓ ·
-**`cargo test --workspace` 60**（宿主 55 + pyruntime 3 + core-example 2，含 native DLL 集成测试与插件导出 zip 往返测试）·
+`pnpm lint` 0 警告（75 文件）· `pnpm test` 40（4 文件）· `pnpm build` ✓ ·
+**`cargo test --workspace` 61**（宿主 56 + pyruntime 3 + core-example 2，含 native DLL 集成测试、插件导出 zip 往返与随包插件部署测试）·
 `pnpm build:core`（core-example 1 插件 + DLL 自检，自动清理旧随包插件）·
 `pnpm tauri dev` 冒烟：5 个 process 插件全部使用捆绑解释器、core-example 部署无异常 ·
 打包版冒烟（无 Python PATH 跑 exe：部署捆绑运行时 + 核心插件 + 插件用捆绑解释器）。

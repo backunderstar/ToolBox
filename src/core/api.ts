@@ -106,6 +106,30 @@ export const RUNTIME_LABEL: Record<string, string> = {
 export const vaultGet = () => invoke<VaultSettings>("vault_get");
 export const vaultSet = (path: string) => invoke<void>("vault_set", { path });
 
+/* ---- 多工作区（工作区根目录 + 当前工作区；vault 是其单工作区回退） ---- */
+
+/** 根目录下的一个工作区（项目文件夹） */
+export interface WorkspaceItem {
+  name: string;
+  path: string;
+  mtime: number;
+}
+
+/** 工作区信息：root/current 配置 + 当前生效路径 + 根下列表 */
+export interface WorkspaceInfo {
+  root: string | null;
+  current: string | null;
+  /** 当前生效工作区绝对路径（root/current 或回退 vault.json） */
+  vault: string | null;
+  items: WorkspaceItem[];
+}
+
+export const workspaceGet = () => invoke<WorkspaceInfo>("workspace_get");
+export const workspaceSetRoot = (path: string) =>
+  invoke<WorkspaceInfo>("workspace_set_root", { path });
+export const workspaceSwitch = (name: string) =>
+  invoke<WorkspaceInfo>("workspace_switch", { name });
+
 /* ---- 应用设置（%APPDATA%/com.toolbox.desktop/app.json 通用键值） ---- */
 
 export const appSettingsGet = () => invoke<Record<string, unknown>>("app_settings_get");
@@ -136,6 +160,8 @@ export const fsWrite = (vault: string, rel: string, content: string) =>
   invoke<void>("files_write", { vault, rel, content });
 export const fsCreate = (vault: string, rel: string) =>
   invoke<void>("files_create", { vault, rel });
+export const fsMkdir = (vault: string, rel: string) =>
+  invoke<void>("files_mkdir", { vault, rel });
 export const fsDelete = (vault: string, rel: string) =>
   invoke<void>("files_delete", { vault, rel });
 export const fsRename = (vault: string, from: string, to: string) =>

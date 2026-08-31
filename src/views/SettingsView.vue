@@ -51,6 +51,15 @@ const FRONTEND_KEYS = ["toolbox.theme", "toolbox.custom-themes", "toolbox.nav", 
 
 const vault = useVault();
 const pluginsCtx = usePlugins();
+/* 当前工作区名（显示在下拉/路径截断；多工作区模式下即根目录下子目录名） */
+const vaultName = computed(() =>
+  vault.state.path ? (vault.state.path.split(/[\\/]/).pop() ?? vault.state.path) : null,
+);
+/* 设置页工作区下拉切换（多工作区模式） */
+function onSwitchWorkspace(e: Event): void {
+  const name = (e.target as HTMLSelectElement).value;
+  if (name) void vault.switchWorkspace(name);
+}
 /* 启用的插件中声明了设置面板（manifest settings.entry）的列表 */
 const settingsPlugins = computed(() =>
   pluginsCtx.state.plugins.filter((p) => p.enabled && p.settings),
@@ -101,6 +110,24 @@ const themeVersion = ref(0);
 const updateStatus = ref<"idle" | "checking" | "latest" | "installing" | "done" | "error">("idle");
 const updateVersion = ref("");
 const updateErr = ref("");
+/* 状态文案（computed 单值渲染；历史 bug：模板里 `{{ cond && "文本" }}` 多行
+   并存会让条件为 false 的行渲染出字面 "false"，见 8/31 设置页检查更新区） */
+const updateStatusText = computed(() => {
+  switch (updateStatus.value) {
+    case "checking":
+      return "正在检查…";
+    case "latest":
+      return "已是最新版本";
+    case "installing":
+      return `发现 v${updateVersion.value}，正在下载安装…`;
+    case "done":
+      return `v${updateVersion.value} 已安装，请重启应用生效`;
+    case "error":
+      return "检查失败（未配置发布源或网络异常）";
+    default:
+      return "从 GitHub Releases 检测新版本";
+  }
+});
 /* 配置迁移：exporting/importing 进行中；msg 操作结果提示 */
 const configBusy = ref<"" | "exporting" | "importing">("");
 const configMsg = ref("");
@@ -245,7 +272,19 @@ function removeCustom(id: string): void {
           <div class="settings-row">
             <span class="settings-label">操作</span>
             <div class="settings-actions">
-              <button class="btn" @click="vault.pickVault">更换工作区</button>
+              <!-- 多工作区模式：下拉切换；单工作区模式：更换文件夹 -->
+              <select
+                v-if="vault.state.root && vault.state.items.length > 0"
+                class="settings-select"
+                :value="vaultName"
+                title="切换当前工作区"
+                @change="onSwitchWorkspace"
+              >
+                <option v-for="w in vault.state.items" :key="w.name" :value="w.name">
+                  {{ w.name }}
+                </option>
+              </select>
+              <button v-else class="btn" @click="vault.pickVault">更换工作区</button>
               <button class="btn" @click="openFolder" :disabled="opening">
                 <Icon name="folder" :size="13" />
                 {{ opening ? "打开中…" : "在资源管理器中打开" }}
@@ -257,7 +296,27 @@ function removeCustom(id: string): void {
           <span class="settings-label">工作区</span>
           <div class="settings-actions">
             <button class="btn" @click="vault.pickVault">选择工作区文件夹</button>
-            <span class="settings-hint">笔记、插件与数据都围绕一个普通文件夹展开</span>
+            <span class="settings-hint">围绕一个文件夹展开的工具箱：数据始终是你的</span>
+          </div>
+        </div>
+        <!-- 工作区根目录（多工作区：根下每个子文件夹 = 一个工作区） -->
+        <div class="settings-row">
+          <span class="settings-label">工作区根目录</span>
+          <code v-if="vault.state.root" class="settings-path" :title="vault.state.root">
+            {{ vault.state.root }}
+          </code>
+          <span v-else class="settings-value">未设置（单工作区模式）</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">操作</span>
+          <div class="settings-actions">
+            <button class="btn" @click="vault.pickWorkspaceRoot">选择根目录…</button>
+            <button v-if="vault.state.root" class="btn" @click="vault.clearWorkspaceRoot">
+              清除（回单工作区）
+            </button>
+            <span class="settings-hint">
+              设置后，根目录下每个子文件夹是一个工作区，可在顶栏切换；搜索、备份、文件与插件都作用于当前工作区
+            </span>
           </div>
         </div>
       </section>
@@ -515,12 +574,7 @@ function removeCustom(id: string): void {
         <div class="settings-row">
           <span class="settings-label">自动更新</span>
           <span class="settings-value">
-            {{ updateStatus === "idle" && "从 GitHub Releases 检测新版本" }}
-            {{ updateStatus === "checking" && "正在检查…" }}
-            {{ updateStatus === "latest" && "已是最新版本" }}
-            {{ updateStatus === "installing" && `发现 v${updateVersion}，正在下载安装…` }}
-            {{ updateStatus === "done" && `v${updateVersion} 已安装，请重启应用生效` }}
-            {{ updateStatus === "error" && "检查失败（未配置发布源或网络异常）" }}
+            {{ updateStatusText }}
           </span>
           <button
             class="btn-ghost sm"

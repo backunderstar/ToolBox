@@ -71,6 +71,8 @@ pub struct ProcessPlugin {
 
 impl ProcessPlugin {
     /// 启动插件进程（cwd = 插件目录，便于脚本用相对路径）。
+    /// 注入 `TB_WORKSPACE` 环境变量 = 当前工作区路径：多工作区模式下插件
+    /// 进程无需感知切换，读 env 即可按"当前工作区"读写文件（见插件开发指南）。
     pub fn spawn(
         plugin_id: &str,
         program: &str,
@@ -83,6 +85,7 @@ impl ProcessPlugin {
         let mut child = Command::new(program)
             .args(args)
             .current_dir(plugin_dir)
+            .env("TB_WORKSPACE", vault)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped()) // 捕获：读线程转发日志 + 保留末尾，init 失败时回显

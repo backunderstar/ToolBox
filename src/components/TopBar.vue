@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 import type { ThemeMode } from "../themes/themes";
 import { APP_TAG } from "../core/version";
-import type { SearchHit } from "../core/api";
+import type { SearchHit, WorkspaceItem } from "../core/api";
 
 /**
  * 顶栏（应用外壳）：导航折叠 / 品牌 / 工作区选择 / 全局搜索（任意视图可用，
@@ -25,7 +25,15 @@ const props = defineProps<{
   /** 点击搜索结果：打开对应文件 */
   onOpenResult: (path: string) => void;
   vaultName: string | null;
+  /** 当前工作区绝对路径（下拉高亮当前项用） */
+  vaultPath: string | null;
   onPickVault: () => void;
+  /** 工作区根目录（多工作区模式；null = 单工作区，点击按钮 = 选择文件夹） */
+  workspaceRoot: string | null;
+  /** 根目录下的工作区（项目文件夹）列表 */
+  workspaceItems: WorkspaceItem[];
+  /** 切换当前工作区（多工作区模式下拉项） */
+  onSwitchWorkspace: (name: string) => void;
   navCollapsed: boolean;
   onToggleNav: () => void;
   /** 显示 / 隐藏桌面浮窗（快速待办） */
@@ -63,6 +71,23 @@ watch(
     activeIdx.value = -1;
   },
 );
+
+/* 多工作区切换下拉：有根目录时点击展开项目列表；点外部关闭 */
+const wsOpen = ref(false);
+function onWsBtnClick(): void {
+  if (props.workspaceRoot) {
+    wsOpen.value = !wsOpen.value;
+  } else {
+    props.onPickVault();
+  }
+}
+function onDocClick(e: MouseEvent): void {
+  if (!(e.target as HTMLElement).closest(".workspace-btn")) {
+    wsOpen.value = false;
+  }
+}
+onMounted(() => document.addEventListener("click", onDocClick));
+onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 
 /* Ctrl+K：聚焦搜索框 */
 watch(
@@ -120,10 +145,39 @@ function onKeyDown(e: KeyboardEvent): void {
       <span class="topbar-tag">{{ APP_TAG }}</span>
     </div>
 
-    <button class="workspace-btn" @click="onPickVault" title="选择 / 切换工作区文件夹">
-      <Icon name="folder" :size="13" />
-      <span>{{ vaultName ?? "选择工作区" }}</span>
-    </button>
+    <div class="workspace-btn" :title="workspaceRoot ? '切换工作区（根目录下项目）' : '选择 / 切换工作区文件夹'">
+      <button class="workspace-btn-main" @click="onWsBtnClick">
+        <Icon name="folder" :size="13" />
+        <span>{{ vaultName ?? "选择工作区" }}</span>
+        <Icon v-if="workspaceRoot" name="chevron-down" :size="11" />
+      </button>
+      <!-- 多工作区模式：根目录下项目列表（点击切换） -->
+      <Transition name="fade-slide">
+        <div v-if="workspaceRoot && wsOpen" class="workspace-dropdown">
+          <div v-if="workspaceItems.length === 0" class="workspace-hint">
+            根目录下暂无项目文件夹
+          </div>
+          <button
+            v-for="w in workspaceItems"
+            :key="w.name"
+            class="workspace-item"
+            :class="{ active: w.path === vaultPath }"
+            @click="
+              wsOpen = false;
+              onSwitchWorkspace(w.name);
+            "
+            :title="w.path"
+          >
+            <Icon name="folder" :size="12" />
+            <span class="workspace-item-name">{{ w.name }}</span>
+            <span class="workspace-item-path">{{ w.path }}</span>
+          </button>
+          <div class="workspace-foot">
+            根目录：{{ workspaceRoot }}
+          </div>
+        </div>
+      </Transition>
+    </div>
 
     <div
       class="search"

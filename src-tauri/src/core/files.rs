@@ -125,6 +125,15 @@ pub fn create(vault: &str, rel: &str) -> Result<(), String> {
     std::fs::rename(&tmp, &p).map_err(|e| format!("创建失败: {e}"))
 }
 
+/// 新建目录（自动创建父链；已存在拒绝）。
+pub fn mkdir(vault: &str, rel: &str) -> Result<(), String> {
+    let p = crate::core::path::resolve_safe(vault, rel)?;
+    if p.exists() {
+        return Err(format!("已存在: {rel}"));
+    }
+    std::fs::create_dir_all(&p).map_err(|e| format!("创建目录失败: {e}"))
+}
+
 /// 删除文件或目录（**进系统回收站**，可恢复）。保护：不能删 vault 根。
 pub fn delete(vault: &str, rel: &str) -> Result<(), String> {
     let p = crate::core::path::resolve_safe(vault, rel)?;
@@ -241,6 +250,12 @@ pub fn files_write(
 pub fn files_create(app: tauri::AppHandle, vault: String, rel: String) -> Result<(), String> {
     ensure_vault(&app, &vault)?;
     create(&vault, &rel)
+}
+
+#[tauri::command]
+pub fn files_mkdir(app: tauri::AppHandle, vault: String, rel: String) -> Result<(), String> {
+    ensure_vault(&app, &vault)?;
+    mkdir(&vault, &rel)
 }
 
 #[tauri::command]

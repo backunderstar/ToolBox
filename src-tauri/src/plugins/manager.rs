@@ -167,6 +167,13 @@ pub(crate) fn global_plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, Stri
 /// 以下划线开头，与外部插件 id（仅小写字母/数字/连字符）不可能冲突。
 pub const CORE_DIR: &str = "_core";
 
+/// 随包外部插件资源子目录名（bundle.resources: resources/bundled-plugins）。
+/// 部署目标是全局插件目录**顶层**（与 `_core` 区分）：随包外部插件是普通
+/// process/webview 插件，走 enabled 集合（默认关闭），核心插件是信任代码。
+/// 仅 release 的 ensure_bundled_plugins 使用；dev 下压制 dead_code。
+#[cfg_attr(dev, allow(dead_code))]
+pub const BUNDLED_DIR: &str = "bundled-plugins";
+
 /// 打包版随应用分发核心插件：从资源目录（`resource_dir/resources/_core`，安装包内）
 /// 部署到 `%APPDATA%/com.toolbox.desktop/plugins/_core`（清空后整体复制，
 /// 保证与应用版本一致；核心插件是随应用分发的信任代码）。
@@ -243,6 +250,88 @@ pub(crate) fn save_removed_core(app: &tauri::AppHandle, removed: &HashSet<String
     save_state_map(app, &map)
 }
 
+/// 已卸载随包外部插件 id 集合（plugins.json 的 `removed_bundled` 键；随安装包
+/// 分发的外部插件被用户卸载后记录在此，随包部署跳过，直到重新安装恢复）。
+/// 仅 release 的 ensure_bundled_plugins 使用；dev 下压制 dead_code。
+#[cfg_attr(dev, allow(dead_code))]
+pub(crate) fn load_removed_bundled(app: &tauri::AppHandle) -> HashSet<String> {
+    load_state_map(app)
+        .get("removed_bundled")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg_attr(dev, allow(dead_code))]
+pub(crate) fn save_removed_bundled(app: &tauri::AppHandle, removed: &HashSet<String>) -> Result<(), String> {
+    let mut map = load_state_map(app);
+    let arr: Vec<Value> = removed
+        .iter()
+        .cloned()
+        .map(Value::String)
+        .collect();
+    map.insert("removed_bundled".into(), Value::Array(arr));
+    save_state_map(app, &map)
+}
+
+/// 打包版随应用分发外部插件：从资源目录（`resource_dir/resources/bundled-plugins`，
+/// 安装包内）部署到全局插件目录**顶层**（覆盖式，保证与应用版本一致）。
+/// 与 `ensure_core_plugins` 同构；随包外部插件是普通插件，由 enabled 集合控制
+/// （默认关闭），用户卸载后记 `removed_bundled` 不再复活。
+/// 仅在打包构建（release，无 dev cfg）执行；dev 直接在全局插件目录放置插件即可。
+#[cfg(not(dev))]
+pub fn ensure_bundled_plugins(app: &tauri::AppHandle) {
+    let Ok(res) = app.path().resource_dir() else {
+        return;
+    };
+    let src = res.join("resources").join(BUNDLED_DIR);
+    if !src.is_dir() {
+        return;
+    }
+    let Ok(global) = global_plugins_dir(app) else {
+        return;
+    };
+    let removed = load_removed_bundled(app);
+    match deploy_bundled_plugins(&src, &global, &removed) {
+        Ok(n) => crate::core::log::info(&format!(
+            "[plugin] 已部署随包外部插件（{n} 个）到 {:?}",
+            global
+        )),
+        Err(e) => crate::core::log::error(&format!("[plugin] 随包外部插件部署失败: {e}")),
+    }
+}
+
+/// 部署实现（可测）：与 `deploy_core_plugins` 同构——逐个覆盖部署到全局目录
+/// 顶层（不清空全局目录；用户手动安装的插件保留），已卸载的跳过。
+/// 仅打包构建（`#[cfg(not(dev))]` 的 ensure_bundled_plugins）与测试使用。
+#[cfg_attr(dev, allow(dead_code))]
+pub(crate) fn deploy_bundled_plugins(
+    src: &Path,
+    global: &Path,
+    removed: &HashSet<String>,
+) -> Result<usize, String> {
+    std::fs::create_dir_all(global).map_err(|e| format!("创建插件目录失败: {e}"))?;
+    let read = std::fs::read_dir(src).map_err(|e| format!("读取资源目录失败 {src:?}: {e}"))?;
+    let mut n = 0;
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !entry.path().is_dir() || removed.contains(&name) {
+            // 跳过已卸载的随包插件（用户卸载后保持卸载状态，不随应用重启恢复）
+            continue;
+        }
+        let target = global.join(&name);
+        // 覆盖部署（先删旧目录再复制，避免残留已删除的文件）
+        let _ = std::fs::remove_dir_all(&target);
+        copy_dir_recursive(&entry.path(), &target)?;
+        n += 1;
+    }
+    Ok(n)
+}
+
 /// 核心插件资源源目录：优先打包资源（resource_dir/resources/_core，安装包内），
 /// 其次 dev 源码 resources（src-tauri/resources/_core，由 build:core:release 生成）。
 pub(crate) fn core_plugin_source(app: &tauri::AppHandle, id: &str) -> Result<PathBuf, String> {
@@ -277,6 +366,28 @@ fn state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("定位配置目录失败: {e}"))?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建配置目录失败: {e}"))?;
     Ok(dir.join("plugins.json"))
+}
+
+/// 首启初始化（用户决策 2026-09：所有插件默认关闭）：plugins.json 不存在时创建
+/// `{"disabled":["core-example"],"enabled":[]}`——核心教学示例（native 默认启用）
+/// 显式进 disabled，外部插件本就不在 enabled 集合（全关）。已存在则不覆盖
+/// （尊重用户既有状态/迁移过的旧格式）。dev 与打包版一致执行。
+pub(crate) fn ensure_initial_state(app: &tauri::AppHandle) {
+    let Ok(p) = state_path(app) else {
+        return;
+    };
+    if p.exists() {
+        return;
+    }
+    let mut map = serde_json::Map::new();
+    map.insert("disabled".into(), serde_json::json!(["core-example"]));
+    map.insert("enabled".into(), Value::Array(vec![]));
+    match save_state_map(app, &map) {
+        Ok(()) => crate::core::log::info(
+            "[plugin] 首启初始化：所有插件默认关闭（core-example 已禁用，外部插件需手动启用）",
+        ),
+        Err(e) => crate::core::log::error(&format!("[plugin] 首启初始化失败: {e}")),
+    }
 }
 
 pub(crate) fn load_state_map(app: &tauri::AppHandle) -> serde_json::Map<String, Value> {
@@ -1531,6 +1642,40 @@ mod export_tests {
         assert!(names.contains(&"demo-export/plugin.json".to_string()), "{names:?}");
         assert!(names.contains(&"demo-export/main.py".to_string()), "{names:?}");
         assert!(names.contains(&"demo-export/ui/index.js".to_string()), "{names:?}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 随包外部插件部署：资源目录 → 全局插件目录**顶层**；跳过已卸载；
+    /// 不清空用户手动安装的插件；覆盖部署清残留。
+    #[test]
+    fn deploy_bundled_plugins_copies_and_skips_removed() {
+        let base = std::env::temp_dir().join(format!("tb-bundled-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let src = base.join("src/bundled-plugins");
+        std::fs::create_dir_all(src.join("probe-rat-layer")).unwrap();
+        std::fs::write(src.join("probe-rat-layer/plugin.json"), "{}").unwrap();
+        std::fs::write(src.join("probe-rat-layer/main.py"), "print('hi')").unwrap();
+        std::fs::create_dir_all(src.join("gone-plugin")).unwrap();
+        std::fs::write(src.join("gone-plugin/plugin.json"), "{}").unwrap();
+
+        let global = base.join("global-plugins");
+        // 用户手动安装的插件目录保留（部署不清空全局目录）
+        std::fs::create_dir_all(global.join("my-plugin")).unwrap();
+        std::fs::write(global.join("my-plugin/plugin.json"), "{}").unwrap();
+
+        let removed = HashSet::from(["gone-plugin".to_string()]);
+        let n = deploy_bundled_plugins(&src, &global, &removed).unwrap();
+        assert_eq!(n, 1, "应部署 1 个（gone-plugin 已卸载跳过）");
+        assert!(global.join("probe-rat-layer/main.py").is_file());
+        assert!(!global.join("gone-plugin").exists(), "已卸载随包插件跳过部署");
+        assert!(global.join("my-plugin/plugin.json").is_file(), "用户手动插件保留");
+
+        // 覆盖部署：新版本覆盖旧目录，无残留文件
+        std::fs::write(src.join("probe-rat-layer/new.txt"), "2").unwrap();
+        std::fs::write(global.join("probe-rat-layer/stale.txt"), "stale").unwrap();
+        deploy_bundled_plugins(&src, &global, &removed).unwrap();
+        assert!(!global.join("probe-rat-layer/stale.txt").exists(), "覆盖部署应清旧残留");
+        assert!(global.join("probe-rat-layer/new.txt").is_file());
         let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -47,3 +47,4 @@ plugins/probe-rat-layer/jobs/
 plugins/probe-rat-layer/out/
 plugins/probe-rat-layer/cache/
 plugins/probe-rat-layer/test/.pytest_tmp/
+src-tauri/resources/bundled-plugins/
