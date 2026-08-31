@@ -540,6 +540,14 @@ cargo test --workspace                 # Rust 测试（当前 60）
 
 ## 9. 验证基线（2026-08-29 教学基线收敛后全绿）
 
+> **推送门禁（2026-09-01 用户指示，务必遵守）**：**本地没有跑通完整验证之前不要 push**。
+> GitHub Actions 一次全量 CI 约 15-25 分钟，靠 CI 抓问题太费时间。推送前本地必须全绿：
+> `pnpm lint` / `pnpm build` / `pnpm test` / `cargo test --workspace` /
+> `cargo clippy --workspace --all-targets --no-deps -- -D warnings`；改动插件时另加
+> vendored pytest 与 `test/protocol_test.py`。push 后 CI 只是复核，不是第一道防线。
+> 教训：8/31 发布轮连续 4 个 run 靠 CI 才发现问题（search 目录签名时序、secret 换行、
+> env 覆盖），每次 20+ 分钟；其中 search 时序问题是本地多跑几遍就能暴露的偶发测试。
+
 `pnpm lint` 0 警告（53 文件）· `pnpm test` 24（2 文件）· `pnpm build` ✓ ·
 **`cargo test --workspace` 60**（宿主 55 + pyruntime 3 + core-example 2，含 native DLL 集成测试与插件导出 zip 往返测试）·
 `pnpm build:core`（core-example 1 插件 + DLL 自检，自动清理旧随包插件）·
