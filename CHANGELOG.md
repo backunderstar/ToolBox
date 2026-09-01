@@ -5,6 +5,46 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 > 详细的开发记录见 [HANDOVER.md](HANDOVER.md)；里程碑规划见 [PLAN.md](PLAN.md)。
 
+## [0.3.0] — 2026-09-02
+
+探针卡分层插件核心重写（Python + 130MB vendor → Rust native cdylib），算法提质提速，
+前端与插件系统多项 Bug 修复与 UI 统一。
+
+### 变更
+
+- **探针卡分层插件（probe-rat-layer）计算核心 Rust 化**：原 process Python（vendor 130MB）
+  改写为 **native cdylib 核心插件**（`tb_probe_rat_layer.dll`，随应用分发），零 vendor、
+  性能接近进程内直接调用；命令/事件/前端契约**完全不变**，宿主沿用 `libloading + C ABI`
+  加载。jobs/cache/settings 落在应用配置目录 `probe-rat-layer/`，重启恢复上次任务
+  （见 `core-plugins/probe-rat-layer/` 与 `docs/改造方案-探针卡分层Rust化.md`）。
+- **分层算法提速 + 提质（方案 B）**：
+  - `_resolve_conflicts` 改**边驱动**（硬冲突图边 → 同层坏单元集，就近挪到无冲突允许层），
+    复杂度由 O(线²) 降到 O(边数+坏单元×邻接度)；
+  - `_enforce_capacity` 改**增量更新**（移动只在受影响格点算占用、增量改栅格，去掉整栅格
+    clone + 全量 max 扫描）；
+  - 初始铺层改 **MFPS（最难优先）排序 + `preferred_dir` 方向感知**贪婪；模拟退火
+    `hard_conflict_in` 邻接表化（O(deg)）。
+  - 实测（`hv` 预设，1800 网，release）：**73.6s → 1.74s**，已分配 1781→1798、
+    需人工 19→2、硬冲突/软冲突与旧版持平。
+- **文件浏览器限定工作区**：`layer.listDir` 从工作区根开始、钳制在工作区内、不再列盘符；
+  修复"浏览失败：目录不存在"（空路径把 `Some("")` 当真实目录）。
+- **HV 信号网分类修复**：`classify_net`/`_vdigit` 由"V 后任意位置出现数字"改为"**V 紧邻
+  数字**"，避免把 `..._HV_1` 这类信号误判为电源/平面网。
+
+### 修复
+
+- **结果页完成显示旧数据**：`cmd_run` 的 `set_active` 不写 `active.job_id`，导致
+  `layer.status` 返回过期 jobId，前端据此 `layer.result` 读到上一次结果。改为启动任务时
+  同步 `active.job_id`，前端仅在前端未知 job 时才接收 `status.jobId`。
+- **耗时 undefined**：存储 / 事件中的 summary 统一用 `summary_ext`（含 `elapsed_sec`）。
+- 框架 UI 统一：`window.prompt` 改为 `PromptDialog`；确认框 / 按钮 / 空态 / 通知等统一走
+  设计令牌（`tokens.css`）。
+
+### 新增
+
+- 核心插件（cdylib）分层算法的**真实数据回归测试**（`cargo test -- --ignored`，应用 `hv`
+  预设），输出指标便于核对；`docs/探针卡分层-可布线零过孔改进方案.md`（规划稿）。
+
 ## [0.2.0] — 2026-09-02
 
 数据根目录模型 + 首启引导 + 随包插件分发 + 文件浏览/插件文件动作。

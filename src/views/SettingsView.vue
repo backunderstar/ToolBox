@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { isCoreConnected, type PingInfo } from "../core/ipc";
 import type { NavConfig, NavItemDef } from "../core/navPrefs";
 import { useVault } from "../core/vault";
+import { askPrompt } from "../core/prompt";
 import { openInExplorer, configExport, configImport, appSettingsGet, appSettingsSet, traySetEnabled } from "../core/api";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
@@ -62,7 +63,12 @@ function onSwitchWorkspace(e: Event): void {
 }
 /* 新建工作区（数据根/Project/ 下创建并切换） */
 async function createWorkspace(): Promise<void> {
-  const name = window.prompt("新建工作区名称（将在 数据根/Project/ 下创建）：");
+  const name = await askPrompt({
+    title: "新建工作区",
+    message: "将在 数据根/Project/ 下创建并切换",
+    placeholder: "工作区名称",
+    initial: "",
+  });
   if (!name || !name.trim()) return;
   await vault.createWorkspace(name.trim());
 }

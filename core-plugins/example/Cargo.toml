@@ -1,6 +1,6 @@
 [package]
 name = "tb-example"
-version = "0.2.0"
+version = "0.3.0"
 description = "ToolBox 核心插件教学示例：覆盖命令/事件/搜索提供者/宿主能力/自带前端全部实现要点"
 edition = "2021"
 

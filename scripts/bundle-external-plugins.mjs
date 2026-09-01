@@ -19,8 +19,9 @@ import { fileURLToPath } from "node:url";
 import { buildPluginUi } from "./plugin-ui-build.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-/** 随包插件清单（现阶段只随包探针卡分层插件，用户决策） */
-const BUNDLED = ["probe-rat-layer"];
+// 随包插件清单（2026-09：探针卡分层已 Rust 化为核心插件 core-plugins/probe-rat-layer，
+// 不再作为外部插件随包；此列表为空，后续新增外部随包插件再加回去）
+const BUNDLED = [];
 
 /** 排除目录（任意层级）：运行期产物/缓存/测试/版本控制 */
 const EXCLUDE_DIRS = new Set(["cache", "jobs", "test", "__pycache__", ".git", "node_modules"]);

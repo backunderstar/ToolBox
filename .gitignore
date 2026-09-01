@@ -32,6 +32,8 @@ plugins/*/.venv/
 # 见 scripts/build-external-ui.mjs）
 plugins/*/ui/index.js
 plugins/*/ui/style.css
+core-plugins/*/ui/index.js
+core-plugins/*/ui/style.css
 target/external-ui/
 
 # 插件模板构建产物（templates/external-plugin 的 npm run build 生成，同外部插件不入库）

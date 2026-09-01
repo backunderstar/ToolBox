@@ -18,6 +18,7 @@ import {
 import { floatToggle, openInExplorer } from "./core/api";
 import { triggerPluginAction } from "./core/plugins";
 import { useTauriListen } from "./core/useTauriListen";
+import { PromptHost } from "./core/prompt";
 import {
   applyTheme,
   getInitialTheme,
@@ -424,5 +425,6 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
       />
     </div>
     </template>
+    <PromptHost />
   </ErrorBoundary>
 </template>

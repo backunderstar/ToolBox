@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 import type { ThemeMode } from "../themes/themes";
 import { APP_TAG } from "../core/version";
+import { askPrompt } from "../core/prompt";
 import type { SearchHit, WorkspaceItem } from "../core/api";
 
 /**
@@ -93,7 +94,12 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 
 /* 新建工作区：输入名称 → 数据根/Project/ 下创建并切换 */
 async function onCreateWs(): Promise<void> {
-  const name = window.prompt("新建工作区名称（将在 数据根/Project/ 下创建）：");
+  const name = await askPrompt({
+    title: "新建工作区",
+    message: "将在 数据根/Project/ 下创建并切换",
+    placeholder: "工作区名称",
+    initial: "",
+  });
   if (!name || !name.trim()) return;
   wsOpen.value = false;
   await props.onCreateWorkspace(name.trim());

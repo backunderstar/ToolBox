@@ -8,7 +8,7 @@
 # 新核心插件照它实现（见 docs/核心插件示例教程.md）。
 [workspace]
 resolver = "2"
-members = ["src-tauri", "tb-sdk", "core-plugins/example"]
+members = ["src-tauri", "tb-sdk", "core-plugins/example", "core-plugins/probe-rat-layer"]
 
 # workspace 级 lint：linker_messages 放行——MSVC link.exe 每次链接都往 stdout 写
 # "正在创建库 ... 和对象 ..."（创建 .lib/.exp 的正常提示），被该 lint 当成警告刷屏

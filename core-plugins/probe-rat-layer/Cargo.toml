@@ -1,0 +1,39 @@
+[package]
+name = "tb-probe-rat-layer"
+version = "0.3.0"
+description = "探针卡飞线分层核心插件（native cdylib）：Allegro pin 表 + 筛选文件 → 扇区轮询/贪心/模拟退火分层 → layer_N.lst 供 Allegro 导入。"
+edition = "2021"
+
+# 继承 workspace lints（linker_messages 放行等，见根 Cargo.toml [workspace.lints]）
+[lints]
+workspace = true
+
+[lib]
+# cdylib = 宿主经 libloading + C ABI 加载（tb_plugin! 生成 tb_abi_version/tb_create/tb_call/...）
+# rlib = 供 `cargo test` 链接（宿主只用 cdylib）
+crate-type = ["cdylib", "rlib"]
+name = "tb_probe_rat_layer"
+
+[dependencies]
+tb-sdk = { path = "../../tb-sdk" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Excel xls/xlsx 读取（替代 openpyxl + xlrd）
+calamine = "0.26"
+# 2D 网格/栅格化（替代 numpy）
+ndarray = "0.16"
+# 可复现的模拟退火 RNG（替代 random.Random；如需与 Python 逐位一致可换 rand-mt）
+rand = "0.8"
+rand_pcg = "0.3"
+# 时间戳（job_id / report generated_at）
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# CSV 导出
+csv = "1"
+# 渲染（替代 matplotlib）：plotters 位图后端输出 PNG
+plotters = "0.3"
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"
+
+[dev-dependencies]
+# FFI 冒烟测试用：直接加载 cdylib DLL，复刻宿主 native.rs 的 libloading 加载路径
+libloading = "0.8"

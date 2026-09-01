@@ -19,9 +19,13 @@ const VERSION = pkg.version;
 // 教学基线：核心插件仅保留一个教学示例（core-example）。
 // 新增核心插件：在 core-plugins/<id>/ 写 crate + ui/，然后往 PLUGINS 加一项即可
 // （manifest 由本脚本生成，含 bundled 标记；id 必须与 core-plugins/<id> 目录对应）。
+// dir：插件 crate/ui 源码目录名（默认 = id 去掉 "core-" 前缀；id 非 core- 前缀时必须显式给）
+// crate：cargo package 名（cargo build -p <crate> 产出 DLL）
 const PLUGINS = [
   {
     id: "core-example",
+    dir: "example",          // core-plugins/example/ui
+    crate: "tb-example",
     name: "示例插件",
     dll: "tb_example.dll",
     description: "核心插件教学示例：命令/事件/搜索提供者/宿主能力/自带前端/外壳扩展点全覆盖",
@@ -40,6 +44,25 @@ const PLUGINS = [
     // 教学点：manifest config 会注入 tb_create 的 cfg（示例读取 author 回显）
     config: { author: "ToolBox 教程" },
   },
+  {
+    // 探针卡分层：原 Python + 130MB vendor 的 process 插件 → Rust cdylib 核心插件。
+    // id 保持 "probe-rat-layer"（与原生/前端契约一致），dir 显式指定（id 非 core- 前缀）。
+    id: "probe-rat-layer",
+    dir: "probe-rat-layer",  // core-plugins/probe-rat-layer/ui
+    crate: "tb-probe-rat-layer",
+    name: "探针卡分层",
+    dll: "tb_probe_rat_layer.dll",
+    description: "探针卡飞线分层（probe_layer）：Allegro pin 表 + 筛选文件 → 扇区轮询/贪心/模拟退火分层 → layer_N.lst 供 Allegro 导入。Rust 原生核心插件",
+    ui: { entry: "ui/index.js" },
+    // 文件上下文动作（宿主文件视图右键/批量「插件处理 ▸」菜单）
+    actions: [
+      { id: "init-project-structure", label: "初始化探针卡项目结构", icon: "folder", file: true },
+      { id: "archive-to-batch", label: "归档到批次目录", icon: "folder", file: true },
+    ],
+    // 侧边栏「插件」分组导航
+    nav: [{ id: "probe-rat-layer", label: "探针卡分层", icon: "grid", group: "插件" }],
+    config: {},
+  },
 ];
 
 // 注：core-search / core-backup 已迁回宿主本体框架（core/search.rs + core/backup.rs，
@@ -53,7 +76,7 @@ const PLUGINS = [
  *  共用）；本函数只负责定位入口/校验与路径换算。
  *  @returns {Promise<Array<{outDir: string, jsName: string}>>} 各入口产物目录与目标 js 名 */
 async function buildCorePluginUi(p) {
-  const uiDir = path.join(root, "core-plugins", p.id.slice(5), "ui");
+  const uiDir = path.join(root, "core-plugins", p.dir ?? p.id.slice(5), "ui");
   const outDir = path.join(root, "target", "plugin-ui", p.id);
   const env = isRelease ? "production" : "development";
   const built = [];
@@ -100,12 +123,14 @@ const profile = isRelease ? "release" : "debug";
 // 打包资源目录始终存在（tauri build.rs 检查 resources/_core；release 填充 DLL）
 mkdirSync(path.join(root, "src-tauri", "resources", "_core"), { recursive: true });
 console.log(`[build-core] 构建核心插件（${profile}）...`);
-// 只编插件 cdylib（-p 限定）：宿主 app / tb-sdk 是它们的依赖会被自动带上，
-// 但不构建宿主二进制——避免 beforeBuildCommand 阶段白编译整个宿主应用
-execSync(
-  `cargo build --manifest-path "${path.join(root, "Cargo.toml")}" -p tb-example${isRelease ? " --release" : ""}`,
-  { stdio: "inherit" },
-);
+// 只编插件 cdylib（crate 由 p.crate 指定）：宿主 app / tb-sdk 是它们的依赖会被自动带上，
+// 但不构建宿主二进制——避免 beforeBuildCommand 阶段白编译整个宿主应用。
+for (const p of PLUGINS) {
+  execSync(
+    `cargo build --manifest-path "${path.join(root, "Cargo.toml")}" -p ${p.crate}${isRelease ? " --release" : ""}`,
+    { stdio: "inherit" },
+  );
+}
 
 // 输出目录：release → 打包资源（src-tauri/resources/_core）；debug → 应用配置目录
 let coreRoot;

@@ -7,6 +7,7 @@ import type { FileEntry } from "../core/api";
 import { openPath } from "@tauri-apps/plugin-opener";
 import Icon from "../components/Icon.vue";
 import ConfirmDialog from "../components/ConfirmDialog.vue";
+import { askPrompt } from "../core/prompt";
 
 /**
  * 工作区文件浏览（2026-09 数据根模型）。
@@ -189,7 +190,7 @@ function onContextMenu(e: MouseEvent, entry: FileEntry): void {
 }
 
 async function newFolder(): Promise<void> {
-  const name = window.prompt("新建文件夹名称：");
+  const name = await askPrompt({ title: "新建文件夹", placeholder: "文件夹名称", initial: "" });
   if (!name || !vault.state.path) return;
   try {
     const rel = dir.value ? `${dir.value}/${name}` : name;
@@ -202,7 +203,7 @@ async function newFolder(): Promise<void> {
 }
 
 async function newFile(): Promise<void> {
-  const name = window.prompt("新建文件名称（含扩展名）：");
+  const name = await askPrompt({ title: "新建文件", placeholder: "文件名（含扩展名）", initial: "" });
   if (!name || !vault.state.path) return;
   try {
     const rel = dir.value ? `${dir.value}/${name}` : name;
@@ -215,7 +216,7 @@ async function newFile(): Promise<void> {
 }
 
 async function renameEntry(e: FileEntry): Promise<void> {
-  const name = window.prompt("重命名为：", e.name);
+  const name = await askPrompt({ title: "重命名", initial: e.name, placeholder: e.name });
   if (!name || name === e.name || !vault.state.path) return;
   try {
     const to = dir.value ? `${dir.value}/${name}` : name;
@@ -232,7 +233,12 @@ async function copyMove(kind: "copy" | "move"): Promise<void> {
   const rels = targetRels.value;
   if (rels.length === 0 || !vault.state.path) return;
   const hint = kind === "copy" ? "复制到" : "移动到";
-  const target = window.prompt(`${hint}目录（相对工作区根，留空 = 工作区根；如 docs/2024）:`, "");
+  const target = await askPrompt({
+    title: `${hint}目录`,
+    message: "相对工作区根，留空 = 工作区根；如 docs/2024",
+    placeholder: "docs/2024",
+    initial: "",
+  });
   if (target === null) return;
   const base = target.trim().replace(/\/+$/, "");
   try {
