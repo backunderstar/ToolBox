@@ -5,6 +5,22 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 > 详细的开发记录见 [HANDOVER.md](HANDOVER.md)；里程碑规划见 [PLAN.md](PLAN.md)。
 
+## [Unreleased]
+
+### 变更
+
+- **发布流程文档重写**：[docs/发布流程.md](docs/发布流程.md) 区分「CI 全自动（路径 A：tag 触发
+  build-release.yml）/ 本地签名构建（路径 B：`pnpm tauri build`，未配 Secrets 时用）」，修正同步范围
+  （4 个 crate）与 clippy 命令（`--no-deps`，并强调**打包前跑 release 档**）。
+- **文档体系梳理**：新增 [docs/README.md](docs/README.md) 文档索引（定位/状态/交叉引用/阅读路径）；
+  把 [改造方案-探针卡分层Rust化.md](docs/改造方案-探针卡分层Rust化.md) 状态更新为**已实施**；
+  操作手册 / 插件开发指南 补上真实算法核心插件 **probe-rat-layer**。
+
+### 修复
+
+- **清理 release 档 dead_code 警告**：移除无调用方的 `save_removed_bundled`（仅在 release 档
+  `cfg(dev)` 不生效时触发，CI debug 档不会暴露）；打包前 `cargo clippy --release -D warnings` 归零。
+
 ## [0.3.0] — 2026-09-02
 
 探针卡分层插件核心重写（Python + 130MB vendor → Rust native cdylib），算法提质提速，
