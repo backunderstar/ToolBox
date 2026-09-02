@@ -87,10 +87,10 @@ pub fn classify_pair(
         0.0
     };
 
-    // 端点(引脚)邻近**硬**冲突：不同 net 任一端点(pin)对距离 < 0.5×(线宽+间距)（要求半径的一半）时，
-    // 引脚附近的焊盘/走线会重叠，**不能放同一层**（严格要求不同 net 的 pin 不能靠太近）。
-    // 半径随线宽缩放（width8 → 约 4.1mm；width0.2 → 约 0.2mm）。
-    let req = 0.5 * geometry::min_allowed_distance(wa, wb);
+    // 端点(引脚)邻近**硬**冲突：不同 net 的 pin 间距要**放大到线径（线宽）**——任一端点(pin)对距离
+    // < max(线宽_a, 线宽_b) 时，引脚附近的焊盘/走线会重叠，**不能放同一层**（严格要求不同 net 的 pin
+    // 不能靠太近）。线径越大越严（width8 → 8mm；width0.2 → 0.2mm）。
+    let req = wa.width.max(wb.width);
     let mut ep = f64::INFINITY;
     for p in [wa.start, wa.end] {
         for q in [wb.start, wb.end] {

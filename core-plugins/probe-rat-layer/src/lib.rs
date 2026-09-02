@@ -502,7 +502,8 @@ mod tests {
                 }
                 if let (Some(&la), Some(&lb)) = (r.assignment.get(&a.wire_id), r.assignment.get(&b.wire_id)) {
                     if la == lb {
-                        let req = 0.5 * crate::geometry::min_allowed_distance(a, b);
+                        // pin 间距放大到线径（线宽）
+                        let req = a.width.max(b.width);
                         let mut ep = f64::INFINITY;
                         for p in [a.start, a.end] {
                             for q in [b.start, b.end] {
