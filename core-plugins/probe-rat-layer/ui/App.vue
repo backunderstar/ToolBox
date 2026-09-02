@@ -163,6 +163,14 @@ function routableRatio(s: any): string {
   return t > 0 ? `${Math.round((r / t) * 100)}%` : "0%";
 }
 
+/** 走通率（模拟路径版，%）：summary 的 routable_path_ratio；缺省回退计算 */
+function routableRatioPath(s: any): string {
+  if (!s) return "0%";
+  if (typeof s.routable_path_ratio === "number") return `${Math.round(s.routable_path_ratio * 100)}%`;
+  const t = s.total_net_count, r = s.routable_path_net_count;
+  return t > 0 ? `${Math.round((r / t) * 100)}%` : "0%";
+}
+
 /* ---------- 内置文件浏览器（layer.listDir；从当前工作区开始，限定在工作区内） ---------- */
 const browserOpen = ref(false);
 const browserMode = ref<"file" | "dir">("file");
@@ -878,7 +886,8 @@ onBeforeUnmount(() => {
             <div class="prl-stat"><span class="prl-stat-num">{{ result.summary.hard_conflict_count }}</span><span>硬冲突</span></div>
             <div class="prl-stat"><span class="prl-stat-num">{{ result.summary.soft_conflict_count }}</span><span>软冲突</span></div>
             <div class="prl-stat"><span class="prl-stat-num">{{ result.summary.manual_route_net_count }}</span><span>人工 route</span></div>
-            <div class="prl-stat"><span class="prl-stat-num">{{ routableRatio(result.summary) }}</span><span>走通率</span></div>
+            <div class="prl-stat"><span class="prl-stat-num">{{ routableRatio(result.summary) }}</span><span>走通率(直线)</span></div>
+            <div class="prl-stat"><span class="prl-stat-num">{{ routableRatioPath(result.summary) }}</span><span>走通率(路径)</span></div>
             <div class="prl-stat"><span class="prl-stat-num">{{ result.summary.elapsed_sec }}s</span><span>耗时</span></div>
           </div>
           <p v-if="result.summary.warnings.length" class="prl-meta">
