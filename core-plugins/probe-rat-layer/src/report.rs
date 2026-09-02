@@ -58,6 +58,8 @@ pub fn build_report(result: &LayeringResult, cfg: &LayeringConfig) -> Value {
                 0.0
             },
             "unroutable_nets": result.unroutable_nets,
+            "multi_layer_nets": result.multi_layer_nets,
+            "via_estimate": result.via_estimate,
             "warnings": result.warnings,
         },
         "plane_nets": result.plane_nets,
@@ -212,6 +214,12 @@ pub fn print_summary(result: &LayeringResult) -> String {
             result.routable_net_count,
             result.total_net_count,
             (result.routable_net_count as f64 / result.total_net_count as f64 * 100.0).round()
+        ));
+    }
+    if result.multi_layer_nets > 0 {
+        lines.push(format!(
+            "跨层 net {} / 估算过孔 {}（少过孔度量，越小越好）",
+            result.multi_layer_nets, result.via_estimate
         ));
     }
     if !result.capacity_lower_bound.is_empty() {

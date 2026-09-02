@@ -226,6 +226,7 @@ pub fn run_once(
     let occ_per_layer = pp::max_occupancy_per_layer(&assignment, &wires, &data.keepouts, &pins, cfg);
     let (routable_net_count, total_net_count, unroutable_nets) =
         pp::routable_nets(&assignment, &wires, &data.keepouts, &pins, cfg);
+    let (multi_layer_nets, via_estimate) = pp::net_span_stats(&assignment, &wires);
 
     let net_by_id: HashMap<String, Net> = data
         .nets
@@ -339,6 +340,8 @@ pub fn run_once(
         routable_net_count,
         total_net_count,
         unroutable_nets,
+        multi_layer_nets,
+        via_estimate,
     })
 }
 

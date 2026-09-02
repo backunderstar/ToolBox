@@ -334,7 +334,7 @@ mod tests {
             .collect();
         let total_wires: usize = result.layers.iter().map(|l| l.wires.len()).sum();
         eprintln!(
-            "[real-data] 线数={} 信号层={:?} 已分配={} 平面网={} 硬冲突={} 软冲突={} 需人工={} 走通率={}/{} 用时={:.2}s",
+            "[real-data] 线数={} 信号层={:?} 已分配={} 平面网={} 硬冲突={} 软冲突={} 需人工={} 走通率={}/{} 跨层net={} 估算过孔={} 用时={:.2}s",
             data.wires.len(),
             signal_layers,
             result.assignment.len(),
@@ -344,6 +344,8 @@ mod tests {
             result.manual_route_nets.len(),
             result.routable_net_count,
             result.total_net_count,
+            result.multi_layer_nets,
+            result.via_estimate,
             el
         );
         for li in &result.layers {
@@ -356,6 +358,60 @@ mod tests {
         assert!(result.layers.iter().any(|l| l.kind == "signal"), "应有信号层");
         assert_eq!(result.plane_nets.len(), 0, "HV 信号不应被判为平面网");
         assert_eq!(total_wires, result.assignment.len(), "层内线数之和应等于已分配线数");
+    }
+
+    /// 里程碑 0：软同 net（same_net_via_penalty λ>0）对比基线（λ=0），看少过孔收益是否以质量开销为代价。
+    /// 本地运行 `cargo test --release -- --ignored --nocapture` 查看两行指标对比。
+    #[test]
+    #[ignore]
+    fn real_data_milestone0_soft_samelayer() {
+        let w = r"D:\ToolBoxData\Project\测试";
+        let data = crate::io::load_input(
+            &format!("{w}\\1.xlsx"),
+            Some(&format!("{w}\\hv_all.lst")),
+            4,
+            0.2,
+            0.2,
+        )
+        .expect("读入应成功");
+        let multi_pin = data.nets.iter().filter(|n| n.pins.len() > 2).count();
+        eprintln!(
+            "[M0 data] nets={} 多pin网(>2pin)={} wires={}",
+            data.nets.len(),
+            multi_pin,
+            data.wires.len()
+        );
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+        let hv = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 3, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 8, "balance_length_rounds": 3,
+            "minimize_crossings_passes": 3, "sa_restarts": 1, "sa_seed": 42, "sa_initial_temp": 8,
+            "sa_cooling": 0.9995, "sa_max_steps": 0, "sa_swap_ratio": 0.7, "sa_balance_slack": 2,
+            "via_area_cost": 0.1,
+        });
+        let mut base = default_config().with_overrides(&hv).expect("config 覆盖应成功");
+        base.same_net_via_penalty = 0.0;
+        let mut soft = base.clone();
+        soft.same_net_via_penalty = 1.0;
+        for (label, cfg) in [("基线 λ=0", &base), ("软同层 λ=1", &soft)] {
+            let prog = Progress::new(&active, &cancel);
+            let t = std::time::Instant::now();
+            let r = pipeline::run_once(&data, cfg, &prog).expect("pipeline 应成功");
+            eprintln!(
+                "[M0 {label}] 已分配={} 硬冲突={} 软冲突={} 需人工={} 走通率={}/{} 跨层net={} 估算过孔={} 用时={:.2}s",
+                r.assignment.len(),
+                r.hard_conflicts.len(),
+                r.soft_conflicts.len(),
+                r.manual_route_nets.len(),
+                r.routable_net_count,
+                r.total_net_count,
+                r.multi_layer_nets,
+                r.via_estimate,
+                t.elapsed().as_secs_f64()
+            );
+        }
     }
 
     fn synthetic_data() -> LoadedData {

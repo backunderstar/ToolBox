@@ -151,3 +151,27 @@ pub fn routable_nets(
     unroutable.sort();
     (routable, total, unroutable)
 }
+
+/// 少过孔度量：`(跨层 net 数, via 估算数)`。
+/// - 跨层 net 数 = 分布在 >1 层的 net 数（同 net 段分散到多层的网）。
+/// - via 估算数 = Σ_nets (该 net 用到的层数 − 1)，≈需要新增过孔数的下界（仅已分配信号线）。
+pub fn net_span_stats(
+    assignment: &HashMap<String, i64>,
+    wires: &[Wire],
+) -> (usize, usize) {
+    let mut net_layers: HashMap<String, std::collections::HashSet<i64>> = HashMap::new();
+    for w in wires {
+        if let Some(&layer) = assignment.get(&w.wire_id) {
+            net_layers.entry(w.net_id.clone()).or_default().insert(layer);
+        }
+    }
+    let mut multi = 0usize;
+    let mut via = 0usize;
+    for s in net_layers.values() {
+        if s.len() > 1 {
+            multi += 1;
+        }
+        via += s.len().saturating_sub(1);
+    }
+    (multi, via)
+}

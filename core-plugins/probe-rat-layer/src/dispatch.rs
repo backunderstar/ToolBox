@@ -761,6 +761,8 @@ fn summary_json(r: &LayeringResult) -> Value {
             0.0
         },
         "unroutable_nets": r.unroutable_nets,
+        "multi_layer_nets": r.multi_layer_nets,
+        "via_estimate": r.via_estimate,
         "iterations_used": r.iterations_used,
         "warnings": r.warnings,
         "capacity_lower_bound": r.capacity_lower_bound,

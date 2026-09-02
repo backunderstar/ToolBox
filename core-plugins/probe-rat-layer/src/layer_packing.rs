@@ -38,7 +38,9 @@ fn _make_units(
     allowed: &HashMap<String, HashSet<i64>>,
     cfg: &LayeringConfig,
 ) -> Vec<_Unit> {
-    if !cfg.same_net_same_layer {
+    // 只有"完全按段"（same_net_same_layer=false 且 软偏好 λ=0）才逐 wire 建 unit；
+    // 一旦启用硬/软同 net（same_net_same_layer 或 same_net_via_penalty>0）都按 net 分组（整网优先）。
+    if !cfg.same_net_same_layer && cfg.same_net_via_penalty <= 0.0 {
         return wires
             .iter()
             .map(|w| _Unit {
@@ -453,6 +455,140 @@ fn _unit_dir(u: &_Unit) -> &'static str {
     }
 }
 
+/// 单元 `u` 放到层 `nl`（基于已有 layer_units 占用）是否会与**别的单元**产生硬冲突。
+fn _unit_conflicts_layer_units(
+    u: &_Unit,
+    nl: i64,
+    layer_units: &HashMap<i64, Vec<_Unit>>,
+    graph: &ConflictGraph,
+) -> bool {
+    let Some(others) = layer_units.get(&nl) else {
+        return false;
+    };
+    for w in &u.wires {
+        for nb in graph.neighbors(&w.wire_id) {
+            if others
+                .iter()
+                .any(|o| o.uid != u.uid && o.wires.iter().any(|w2| w2.wire_id == nb))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// 贪心放置单个单元：在允许层中挑"方向匹配 + 当前负载最小"且**无硬冲突**的层；无则 None。
+fn _place_unit(
+    u: &_Unit,
+    layer_units: &HashMap<i64, Vec<_Unit>>,
+    layer_load: &HashMap<i64, f64>,
+    layer_dir: &HashMap<i64, String>,
+    layers: &[i64],
+    graph: &ConflictGraph,
+) -> Option<i64> {
+    let mut cands: Vec<(i64, u8, f64)> = u
+        .allowed
+        .iter()
+        .copied()
+        .filter(|nl| layers.contains(nl))
+        .filter(|nl| !_unit_conflicts_layer_units(u, *nl, layer_units, graph))
+        .map(|nl| {
+            let ldir = layer_dir.get(&nl).map(|s| s.as_str()).unwrap_or("any");
+            let mismatch: u8 = match (_unit_dir(u), ldir) {
+                ("H", "V") | ("V", "H") => 1,
+                _ => 0,
+            };
+            let load = layer_load.get(&nl).copied().unwrap_or(0.0);
+            (nl, mismatch, load)
+        })
+        .collect();
+    if cands.is_empty() {
+        return None;
+    }
+    cands.sort_by(|a, b| {
+        a.1.cmp(&b.1)
+            .then_with(|| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    cands.first().map(|x| x.0)
+}
+
+/// 里程碑 0 的"两级决策"兜底：整网（net 单元）在冲突消除后仍与别网硬冲突（无法整体挪走）时，
+/// 把它**按段拆成单线单元**再逐个贪心放（段级灵活兜底），从而既优先整网同层、又不拖垮受限网。
+/// 只在 `same_net_via_penalty > 0`（软偏好）时启用；硬 `same_net_same_layer` 不拆。
+fn _split_stuck_nets(
+    layer_units: &mut HashMap<i64, Vec<_Unit>>,
+    layers: &[i64],
+    layer_dir: &HashMap<i64, String>,
+    allowed: &HashMap<String, HashSet<i64>>,
+    graph: &ConflictGraph,
+    cancel: &CancelFlag,
+) -> Result<(), LayeringCancelled> {
+    check_cancel(cancel)?;
+    // wire -> (layer, unit_uid)
+    let mut wire_loc: HashMap<String, (i64, String)> = HashMap::new();
+    for (l, us) in layer_units.iter() {
+        for u in us {
+            for w in &u.wires {
+                wire_loc.insert(w.wire_id.clone(), (*l, u.uid.clone()));
+            }
+        }
+    }
+    // 顽固单元：与**别的单元**在同一层且存在硬冲突边（即冲突消除没挪走的整网）
+    let mut stuck: HashSet<String> = HashSet::new();
+    for (a, b) in graph.edges() {
+        if let (Some((la, ua)), Some((lb, ub))) = (wire_loc.get(&a), wire_loc.get(&b)) {
+            if la == lb && ua != ub {
+                stuck.insert(ua.clone());
+                stuck.insert(ub.clone());
+            }
+        }
+    }
+    if stuck.is_empty() {
+        return Ok(());
+    }
+    let mut layer_load: HashMap<i64, f64> = layers
+        .iter()
+        .map(|&l| (l, layer_units.get(&l).map(|us| us.iter().map(_len).sum()).unwrap_or(0.0)))
+        .collect();
+    for &l in layers {
+        check_cancel(cancel)?;
+        let to_split: Vec<_Unit> = layer_units
+            .get(&l)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|u| stuck.contains(&u.uid) && u.wires.len() > 1)
+            .collect();
+        for u in to_split {
+            layer_units.get_mut(&l).unwrap().retain(|x| x.uid != u.uid);
+            *layer_load.get_mut(&l).unwrap() -= _len(&u);
+            // 按"难优先"（线长降序）拆成单线独立放置
+            let mut wires = u.wires;
+            wires.sort_by(|a, b| {
+                b.length()
+                    .partial_cmp(&a.length())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            for w in wires {
+                check_cancel(cancel)?;
+                let wu = _Unit {
+                    uid: w.wire_id.clone(),
+                    wires: vec![w.clone()],
+                    allowed: allowed.get(&w.wire_id).cloned().unwrap_or_default(),
+                };
+                if let Some(nl) = _place_unit(&wu, layer_units, &layer_load, layer_dir, layers, graph) {
+                    layer_units.get_mut(&nl).unwrap().push(wu.clone());
+                    *layer_load.get_mut(&nl).unwrap() += _len(&wu);
+                }
+                // 无可用层：留给后续人工兜底（不进 assignment）
+            }
+        }
+    }
+    Ok(())
+}
+
 fn _pack_units(
     units: Vec<_Unit>,
     layers: &[i64],
@@ -461,6 +597,7 @@ fn _pack_units(
     pins: &[Pin],
     cfg: &LayeringConfig,
     graph: &ConflictGraph,
+    allowed: &HashMap<String, HashSet<i64>>,
     mut progress: Option<&mut dyn FnMut(f64)>,
     cancel: &CancelFlag,
 ) -> Result<HashMap<String, i64>, LayeringCancelled> {
@@ -548,6 +685,13 @@ fn _pack_units(
     _enforce_capacity(&mut layer_units, layers, zones, pins, cfg, graph, cancel)?;
     prog(0.9);
     check_cancel(cancel)?;
+    // 里程碑 0：软同 net（λ>0）时，对"整网放不下/仍在硬冲突"的网做段级拆分兜底，再复跑容量校正。
+    if cfg.same_net_via_penalty > 0.0 {
+        _split_stuck_nets(&mut layer_units, layers, layer_dir, allowed, graph, cancel)?;
+        prog(0.93);
+        check_cancel(cancel)?;
+        _enforce_capacity(&mut layer_units, layers, zones, pins, cfg, graph, cancel)?;
+    }
     let mut assignment: HashMap<String, i64> = HashMap::new();
     for (l, us) in &layer_units {
         for u in us {
@@ -590,7 +734,7 @@ pub fn pack_layers(
         }
     }
     let units = _make_units(wires, allowed, cfg);
-    _pack_units(units, &layers, &layer_dir, zones, pins, cfg, graph, progress, cancel)
+    _pack_units(units, &layers, &layer_dir, zones, pins, cfg, graph, allowed, progress, cancel)
 }
 
 /// 同层软冲突（交叉）最小化：跨层线对交换，减少同层软冲突边数。

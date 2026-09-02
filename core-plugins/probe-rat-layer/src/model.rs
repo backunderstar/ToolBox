@@ -353,4 +353,8 @@ pub struct LayeringResult {
     pub total_net_count: usize,
     /// 走通率：被判定不可布的 net id（均来自已分配 net）。
     pub unroutable_nets: Vec<String>,
+    /// 少过孔度量：跨层（分布在 >1 层）的 net 数。
+    pub multi_layer_nets: usize,
+    /// 少过孔度量：估算"net 内跨层边界数"总和（≈需新增过孔数的下界；仅信号线）。
+    pub via_estimate: usize,
 }

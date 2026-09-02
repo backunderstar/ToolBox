@@ -10,6 +10,9 @@ pub struct LayeringConfig {
     pub method: String,          // "packing" | "dsatur"
     pub sector_angle_deg: f64,
     pub same_net_same_layer: bool,
+    /// 同 net 尽量同层的软偏好强度 λ：>0 时启用"先整网、放不下按段拆"的两级决策
+    /// （里程碑 0）；λ=0 完全按段（现状）。0 为完全按段，越大越偏向整网同层（少过孔）。
+    pub same_net_via_penalty: f64,
     // —— 迭代参数 ——
     pub resolve_conflict_rounds: i64,
     pub balance_length_rounds: i64,
@@ -55,6 +58,7 @@ impl Default for LayeringConfig {
             method: "packing".into(),
             sector_angle_deg: 45.0,
             same_net_same_layer: false,
+            same_net_via_penalty: 0.0,
             resolve_conflict_rounds: 8,
             balance_length_rounds: 3,
             minimize_crossings_passes: 3,
@@ -144,6 +148,7 @@ impl LayeringConfig {
             "max_loop_iterations" => self.max_loop_iterations = i(v)?,
             "sa_seed" => self.sa_seed = v.as_u64().unwrap_or(42),
             "same_net_same_layer" => self.same_net_same_layer = b(v)?,
+            "same_net_via_penalty" => self.same_net_via_penalty = f(v)?,
             "keepout_enabled" => self.keepout_enabled = b(v)?,
             "plane_nets_excluded" => self.plane_nets_excluded = b(v)?,
             "feedback_enabled" => self.feedback_enabled = b(v)?,
