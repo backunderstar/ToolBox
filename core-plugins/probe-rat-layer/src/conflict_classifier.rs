@@ -7,15 +7,29 @@ use crate::keepout;
 use crate::model::{Conflict, ConflictGraph, ConflictLevel, Wire};
 
 /// bbox 相交的候选线对（同 net 排除），扫描线 O(n log n + k)。
+/// 每个线 bbox 各向膨胀 `expansion_radius`（线宽/2+间距/2），使"引脚邻近"（端点对距离 < 0.5×(线宽+间距)）
+/// 但**原始 bbox 不交**的线对也能进入候选——否则 pin 邻近硬冲突会被漏判（同层仍可出现过近 pin）。
 pub fn pair_candidates(wires: &[Wire]) -> Vec<(usize, usize)> {
     let n = wires.len();
     if n < 2 {
         return Vec::new();
     }
-    let xmin: Vec<f64> = wires.iter().map(|w| w.bounding_box().0).collect();
-    let ymin: Vec<f64> = wires.iter().map(|w| w.bounding_box().1).collect();
-    let xmax: Vec<f64> = wires.iter().map(|w| w.bounding_box().2).collect();
-    let ymax: Vec<f64> = wires.iter().map(|w| w.bounding_box().3).collect();
+    let xmin: Vec<f64> = wires
+        .iter()
+        .map(|w| w.bounding_box().0 - geometry::expansion_radius(w))
+        .collect();
+    let ymin: Vec<f64> = wires
+        .iter()
+        .map(|w| w.bounding_box().1 - geometry::expansion_radius(w))
+        .collect();
+    let xmax: Vec<f64> = wires
+        .iter()
+        .map(|w| w.bounding_box().2 + geometry::expansion_radius(w))
+        .collect();
+    let ymax: Vec<f64> = wires
+        .iter()
+        .map(|w| w.bounding_box().3 + geometry::expansion_radius(w))
+        .collect();
 
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by(|&i, &j| xmin[i].partial_cmp(&xmin[j]).unwrap());
@@ -73,9 +87,9 @@ pub fn classify_pair(
         0.0
     };
 
-    // 端点(引脚)邻近：不同 net 任一端点(pin)对距离 < 0.5×(线宽+间距)（要求半径的一半）时，
-    // 引脚附近的焊盘/走线会重叠，**优先**分到不同层。做成**软冲突**（SA 尽量分开，放不下才容忍），
-    // 避免"宽 8 + 密集板"时硬冲突图近全连通、导致大量网进人工（那没有实际意义）。
+    // 端点(引脚)邻近**硬**冲突：不同 net 任一端点(pin)对距离 < 0.5×(线宽+间距)（要求半径的一半）时，
+    // 引脚附近的焊盘/走线会重叠，**不能放同一层**（严格要求不同 net 的 pin 不能靠太近）。
+    // 半径随线宽缩放（width8 → 约 4.1mm；width0.2 → 约 0.2mm）。
     let req = 0.5 * geometry::min_allowed_distance(wa, wb);
     let mut ep = f64::INFINITY;
     for p in [wa.start, wa.end] {
@@ -90,7 +104,7 @@ pub fn classify_pair(
         return Conflict {
             wire_a: wa.wire_id.clone(),
             wire_b: wb.wire_id.clone(),
-            level: ConflictLevel::Soft,
+            level: ConflictLevel::Hard,
             intersect_pt: inter_pt,
             clearance_gap: geometry::clearance_gap(wa, wb, ep),
             dist_to_endpoints: (d1, d2),

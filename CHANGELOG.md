@@ -49,11 +49,11 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 - **清理 release 档 dead_code 警告**：移除无调用方的 `save_removed_bundled`（仅在 release 档
   `cfg(dev)` 不生效时触发，CI debug 档不会暴露）；打包前 `cargo clippy --release -D warnings` 归零。
 - **探针卡分层 pin 邻近**：新增端点(pin)邻近判定——不同 net 任一端点对距离 < `0.5×(线宽+间距)`
-  （`min_allowed_distance` 的一半）时判为**软冲突**（SA 优先把 pin 近的网分到不同层，放不下才容忍），
-  避免"线宽大时同层出现 pin 靠太近的两个 net"这一不合理结果（如 POWER 线宽 8mm 时半径 ≈ 4.1mm）。
-  做成**软**而非硬，是为了避免"宽 8 + 密集板"时硬冲突图近全连通、导致大量网进人工（那没有实际意义）。
-  实测（width8 / 20 层）：**需人工 1782 → 0**（全部自动分层），同层 pin 近降为软冲突 901 个；
-  width0.2 基线**不变**（1798 / 需人工2 / 硬冲突 272，0.2mm 半径下无 pin 对命中）。
+  （`min_allowed_distance` 的一半）时判为**硬冲突**，**严格要求不同 net 的 pin 不能靠太近**（同层放不下），
+  避免"线宽大时同层出现 pin 靠太近的两个 net"这一不合理结果。同时把 `pair_candidates` 的 bbox 各向
+  膨胀 `expansion_radius`，**确保"原始 bbox 不交但引脚邻近"的线对也能进入候选**，否则会被漏判。
+  实测（width8 / 20 层）：**同层 pin 邻近违规 = 0**，需人工 58（密板物理上放不下 8mm 走线的那些网）；
+  width0.2 基线基本不变（1798 / 需人工 2 / 硬冲突 272）。
 
 ## [0.3.0] — 2026-09-02
 

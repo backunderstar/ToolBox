@@ -465,8 +465,8 @@ mod tests {
         }
     }
 
-    /// 线宽=8（POWER，20 层）时验证 pin 邻近为**软冲突**：不因同层 pin 近距离硬冲突而大量进人工，
-    /// 同时尽量把 pin 近的网分到不同层。应满足：人工占比可控（大多能自动分层）。
+    /// 线宽=8（POWER，20 层）时验证 pin 邻近为**硬**约束：不同 net 任一端点(pin)对距离
+    /// < 0.5×(线宽+间距) 的线对**不能放同一层**。应满足同层 pin 邻近违规数为 0。
     #[test]
     #[ignore]
     fn real_data_width8_pin_proximity() {
@@ -492,35 +492,44 @@ mod tests {
         let cfg = default_config().with_overrides(&hv).expect("config 覆盖应成功");
         let prog = Progress::new(&active, &cancel);
         let r = pipeline::run_once(&data, &cfg, &prog).expect("pipeline 应成功");
-        // 软冲突数量（pin 邻近计入 soft_conflicts，非硬冲突）
-        let soft_pairs: Vec<(String, String)> = r
-            .soft_conflicts
-            .iter()
-            .map(|c| (c.wire_a.clone(), c.wire_b.clone()))
-            .collect();
-        let same_layer_pin_close = crate::post_process::soft_conflicts_per_layer(&r.assignment, &r.soft_conflicts)
-            .values()
-            .sum::<i64>();
+        let mut violations = 0usize;
+        let wires = &data.wires;
+        for i in 0..wires.len() {
+            for j in (i + 1)..wires.len() {
+                let (a, b) = (&wires[i], &wires[j]);
+                if a.net_id == b.net_id {
+                    continue;
+                }
+                if let (Some(&la), Some(&lb)) = (r.assignment.get(&a.wire_id), r.assignment.get(&b.wire_id)) {
+                    if la == lb {
+                        let req = 0.5 * crate::geometry::min_allowed_distance(a, b);
+                        let mut ep = f64::INFINITY;
+                        for p in [a.start, a.end] {
+                            for q in [b.start, b.end] {
+                                let d = p.dist(q);
+                                if d < ep {
+                                    ep = d;
+                                }
+                            }
+                        }
+                        if ep < req {
+                            violations += 1;
+                        }
+                    }
+                }
+            }
+        }
         eprintln!(
-            "[width8/20层] 已分配={} 硬冲突={} 软冲突={} 需人工={} 走通率={}/{} 同层pin近(软)={}",
+            "[width8/20层] 已分配={} 硬冲突={} 软冲突={} 需人工={} 走通率={}/{} 同层pin邻近违规={}",
             r.assignment.len(),
             r.hard_conflicts.len(),
             r.soft_conflicts.len(),
             r.manual_route_nets.len(),
             r.routable_net_count,
             r.total_net_count,
-            same_layer_pin_close
+            violations
         );
-        let _ = soft_pairs;
-        // 人工占比可控：不应像硬冲突那样 >95% 进人工（这里希望大多能自动分层）
-        let manual_frac = r.manual_route_nets.len() as f64 / data.wires.len() as f64;
-        assert!(
-            manual_frac < 0.5,
-            "需人工占比过高: {}/{} ({:.0}%)",
-            r.manual_route_nets.len(),
-            data.wires.len(),
-            manual_frac * 100.0
-        );
+        assert_eq!(violations, 0, "仍存在同层 pin 邻近违规: {violations}");
     }
 
     fn synthetic_data() -> LoadedData {
