@@ -266,18 +266,6 @@ pub(crate) fn load_removed_bundled(app: &tauri::AppHandle) -> HashSet<String> {
         .unwrap_or_default()
 }
 
-#[cfg_attr(dev, allow(dead_code))]
-pub(crate) fn save_removed_bundled(app: &tauri::AppHandle, removed: &HashSet<String>) -> Result<(), String> {
-    let mut map = load_state_map(app);
-    let arr: Vec<Value> = removed
-        .iter()
-        .cloned()
-        .map(Value::String)
-        .collect();
-    map.insert("removed_bundled".into(), Value::Array(arr));
-    save_state_map(app, &map)
-}
-
 /// 打包版随应用分发外部插件：从资源目录（`resource_dir/resources/bundled-plugins`，
 /// 安装包内）部署到全局插件目录**顶层**（覆盖式，保证与应用版本一致）。
 /// 与 `ensure_core_plugins` 同构；随包外部插件是普通插件，由 enabled 集合控制
