@@ -205,6 +205,26 @@ pub fn occupancy_along(w: &Wire, cmap: &CongestionMap) -> f64 {
     max
 }
 
+/// 折线路径上的占用峰值（里程碑 1：让走通率反映"真实路径"而非直线）。
+pub fn occupancy_along_path(points: &[crate::model::Point], cmap: &CongestionMap) -> f64 {
+    let mut max = 0.0;
+    for seg in points.windows(2) {
+        let (a, b) = (seg[0], seg[1]);
+        let n = (a.dist(b) / cmap.cell * 2.0) as usize + 1;
+        let n = n.max(2);
+        for i in 0..n {
+            let t = i as f64 / (n as f64 - 1.0);
+            let x = a.x + (b.x - a.x) * t;
+            let y = a.y + (b.y - a.y) * t;
+            let val = occupancy_at(x, y, cmap);
+            if val > max {
+                max = val;
+            }
+        }
+    }
+    max
+}
+
 pub fn max_occupancy(cmap: &CongestionMap) -> f64 {
     cmap.occupancy.iter().cloned().fold(0.0, f64::max)
 }

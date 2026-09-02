@@ -761,6 +761,13 @@ fn summary_json(r: &LayeringResult) -> Value {
             0.0
         },
         "unroutable_nets": r.unroutable_nets,
+        "routable_path_net_count": r.routable_path_net_count,
+        "routable_path_ratio": if r.total_net_count > 0 {
+            (r.routable_path_net_count as f64 / r.total_net_count as f64 * 10000.0).round() / 10000.0
+        } else {
+            0.0
+        },
+        "unroutable_nets_path": r.unroutable_nets_path,
         "multi_layer_nets": r.multi_layer_nets,
         "via_estimate": r.via_estimate,
         "iterations_used": r.iterations_used,

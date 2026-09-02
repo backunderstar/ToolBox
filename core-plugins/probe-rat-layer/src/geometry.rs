@@ -268,3 +268,81 @@ pub fn bboxes_overlap(wa: &Wire, wb: &Wire, margin: f64) -> bool {
     let b = wb.bounding_box();
     !(a.2 + margin < b.0 || b.2 + margin < a.0 || a.3 + margin < b.1 || b.3 + margin < a.1)
 }
+
+// ---------------------------------------------------------------------------
+// 模拟走线路径（里程碑 1）：曼哈顿 L/Z 估计路由，沿层 preferred_dir，尽力避开禁布区。
+// ---------------------------------------------------------------------------
+
+/// 折线总长。
+fn route_len(points: &[Point]) -> f64 {
+    points
+        .windows(2)
+        .map(|w| w[0].dist(w[1]))
+        .sum::<f64>()
+}
+
+/// 折线落在禁布区内的总长（zone 按 margin 内缩膨胀后再算）。
+fn route_keepout_len(points: &[Point], zones: &[KeepoutZone], margin: f64) -> f64 {
+    let mut total = 0.0;
+    for seg in points.windows(2) {
+        let (a, b) = (seg[0], seg[1]);
+        for z in zones {
+            let inflated = match z {
+                KeepoutZone::Rect(r) => KeepoutZone::Rect(RectZone {
+                    zone_id: r.zone_id.clone(),
+                    xmin: r.xmin - margin,
+                    ymin: r.ymin - margin,
+                    xmax: r.xmax + margin,
+                    ymax: r.ymax + margin,
+                }),
+                KeepoutZone::Circle(c) => KeepoutZone::Circle(CircleZone {
+                    zone_id: c.zone_id.clone(),
+                    center: c.center,
+                    radius: c.radius + margin,
+                }),
+            };
+            total += seg_in_zone_length(a, b, &inflated);
+        }
+    }
+    total
+}
+
+/// 生成一条曼哈顿估计路由（`start`→`end` 折线）。
+/// "preferred" 为层方向（"H"/"V"/"any"）；同时试 L/Z 候选，优先**少穿禁布区**、再按最短。
+/// 返回至少含起点/终点的折线点序列。
+pub fn estimate_route(
+    start: Point,
+    end: Point,
+    preferred: &str,
+    zones: &[KeepoutZone],
+    margin: f64,
+) -> Vec<Point> {
+    if start.dist(end) <= EPS {
+        return vec![start, end];
+    }
+    let mut cands: Vec<(f64, f64, Vec<Point>)> = Vec::new();
+    // 两条 L 形
+    let l1 = vec![start, Point::new(end.x, start.y), end];
+    let l2 = vec![start, Point::new(start.x, end.y), end];
+    cands.push((route_keepout_len(&l1, zones, margin), route_len(&l1), l1));
+    cands.push((route_keepout_len(&l2, zones, margin), route_len(&l2), l2));
+    // Z 形（中部对角折返，贴合 preferred_dir）：H 层走中水平、V 层走中垂直
+    if preferred == "V" || preferred == "any" {
+        let midx = (start.x + end.x) / 2.0;
+        let z = vec![start, Point::new(midx, start.y), Point::new(midx, end.y), end];
+        cands.push((route_keepout_len(&z, zones, margin), route_len(&z), z));
+    }
+    if preferred == "H" || preferred == "any" {
+        let midy = (start.y + end.y) / 2.0;
+        let z = vec![start, Point::new(start.x, midy), Point::new(end.x, midy), end];
+        cands.push((route_keepout_len(&z, zones, margin), route_len(&z), z));
+    }
+    cands.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            })
+    });
+    cands[0].2.clone()
+}

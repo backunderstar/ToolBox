@@ -152,6 +152,60 @@ pub fn routable_nets(
     (routable, total, unroutable)
 }
 
+/// 里程碑 1：走通率的"模拟路由路径"版。每条已分配 wire 按其所在层 `preferred_dir` 生成曼哈顿 L/Z
+/// 估计路径（带 margin 避开禁布区），判该路径占用峰值 ≤ `layer_capacity`。比直线版更贴近真实可布性
+/// （真实路径更长、可能穿更多高密度区），通常给出**更低（更诚实）**的走通率。返回 `(可布, 总数, 不可布 id)`。
+pub fn routable_nets_path(
+    assignment: &HashMap<String, i64>,
+    wires: &[Wire],
+    zones: &[crate::model::KeepoutZone],
+    pins: &[Pin],
+    cfg: &LayeringConfig,
+    layer_dir: &HashMap<i64, String>,
+) -> (usize, usize, Vec<String>) {
+    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::new();
+    for w in wires {
+        if let Some(&layer) = assignment.get(&w.wire_id) {
+            by_layer.entry(layer).or_default().push(w.clone());
+        }
+    }
+    let mut cmap_of: HashMap<i64, congestion::CongestionMap> = HashMap::new();
+    for (layer, ws) in &by_layer {
+        cmap_of.insert(*layer, congestion::build_congestion_map(ws, zones, pins, cfg));
+    }
+    let mut by_net: HashMap<String, Vec<&Wire>> = HashMap::new();
+    for w in wires {
+        if assignment.contains_key(&w.wire_id) {
+            by_net.entry(w.net_id.clone()).or_default().push(w);
+        }
+    }
+    let mut total = 0usize;
+    let mut routable = 0usize;
+    let mut unroutable: Vec<String> = Vec::new();
+    for (net_id, ws) in by_net {
+        total += 1;
+        let ok = ws.iter().all(|w| {
+            let Some(&layer) = assignment.get(&w.wire_id) else {
+                return false;
+            };
+            let Some(cmap) = cmap_of.get(&layer) else {
+                return true;
+            };
+            let preferred = layer_dir.get(&layer).map(|s| s.as_str()).unwrap_or("any");
+            let margin = w.width / 2.0 + w.clearance + cfg.keepout_margin_factor * w.width;
+            let route = crate::geometry::estimate_route(w.start, w.end, preferred, zones, margin);
+            congestion::occupancy_along_path(&route, cmap) <= cfg.layer_capacity
+        });
+        if ok {
+            routable += 1;
+        } else {
+            unroutable.push(net_id.clone());
+        }
+    }
+    unroutable.sort();
+    (routable, total, unroutable)
+}
+
 /// 少过孔度量：`(跨层 net 数, via 估算数)`。
 /// - 跨层 net 数 = 分布在 >1 层的 net 数（同 net 段分散到多层的网）。
 /// - via 估算数 = Σ_nets (该 net 用到的层数 − 1)，≈需要新增过孔数的下界（仅已分配信号线）。

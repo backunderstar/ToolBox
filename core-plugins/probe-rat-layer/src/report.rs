@@ -58,6 +58,13 @@ pub fn build_report(result: &LayeringResult, cfg: &LayeringConfig) -> Value {
                 0.0
             },
             "unroutable_nets": result.unroutable_nets,
+            "routable_path_net_count": result.routable_path_net_count,
+            "routable_path_ratio": if result.total_net_count > 0 {
+                round4(result.routable_path_net_count as f64 / result.total_net_count as f64)
+            } else {
+                0.0
+            },
+            "unroutable_nets_path": result.unroutable_nets_path,
             "multi_layer_nets": result.multi_layer_nets,
             "via_estimate": result.via_estimate,
             "warnings": result.warnings,
@@ -215,6 +222,14 @@ pub fn print_summary(result: &LayeringResult) -> String {
             result.total_net_count,
             (result.routable_net_count as f64 / result.total_net_count as f64 * 100.0).round()
         ));
+        if result.total_net_count > 0 {
+            lines.push(format!(
+                "走通率(模拟路径) {}/{} 可布（{}%）",
+                result.routable_path_net_count,
+                result.total_net_count,
+                (result.routable_path_net_count as f64 / result.total_net_count as f64 * 100.0).round()
+            ));
+        }
     }
     if result.multi_layer_nets > 0 {
         lines.push(format!(

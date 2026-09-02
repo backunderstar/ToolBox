@@ -227,6 +227,15 @@ pub fn run_once(
     let (routable_net_count, total_net_count, unroutable_nets) =
         pp::routable_nets(&assignment, &wires, &data.keepouts, &pins, cfg);
     let (multi_layer_nets, via_estimate) = pp::net_span_stats(&assignment, &wires);
+    // 里程碑 1：走通率的"模拟路由路径"版（按层 preferred_dir 生成 L/Z 路径）
+    let mut layer_dir: HashMap<i64, String> = HashMap::new();
+    if let Some(s) = data.stack.as_ref() {
+        for l in &s.layers {
+            layer_dir.insert(l.index, l.preferred_dir.clone());
+        }
+    }
+    let (routable_path_net_count, _, unroutable_nets_path) =
+        pp::routable_nets_path(&assignment, &wires, &data.keepouts, &pins, cfg, &layer_dir);
 
     let net_by_id: HashMap<String, Net> = data
         .nets
@@ -340,6 +349,8 @@ pub fn run_once(
         routable_net_count,
         total_net_count,
         unroutable_nets,
+        routable_path_net_count,
+        unroutable_nets_path,
         multi_layer_nets,
         via_estimate,
     })

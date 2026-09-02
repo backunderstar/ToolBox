@@ -334,7 +334,7 @@ mod tests {
             .collect();
         let total_wires: usize = result.layers.iter().map(|l| l.wires.len()).sum();
         eprintln!(
-            "[real-data] 线数={} 信号层={:?} 已分配={} 平面网={} 硬冲突={} 软冲突={} 需人工={} 走通率={}/{} 跨层net={} 估算过孔={} 用时={:.2}s",
+            "[real-data] 线数={} 信号层={:?} 已分配={} 平面网={} 硬冲突={} 软冲突={} 需人工={} 走通率={}/{} 走通率(路径)={}/{} 跨层net={} 估算过孔={} 用时={:.2}s",
             data.wires.len(),
             signal_layers,
             result.assignment.len(),
@@ -343,6 +343,8 @@ mod tests {
             result.soft_conflicts.len(),
             result.manual_route_nets.len(),
             result.routable_net_count,
+            result.total_net_count,
+            result.routable_path_net_count,
             result.total_net_count,
             result.multi_layer_nets,
             result.via_estimate,
