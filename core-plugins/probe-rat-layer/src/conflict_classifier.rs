@@ -73,9 +73,9 @@ pub fn classify_pair(
         0.0
     };
 
-    // 端点(引脚)邻近硬冲突：不同 net 任一端点(pin)对距离 < 0.5×(线宽+间距)（要求半径的一半），
-    // 说明两者在引脚附近的焊盘/走线会重叠（宽度大时此半径随之变大，如 width8 → 约 4.1mm），
-    // 不能放同一层。即使用"整条线间距足够"(gap<=0)、仅引脚靠近的情况也判为硬冲突。
+    // 端点(引脚)邻近：不同 net 任一端点(pin)对距离 < 0.5×(线宽+间距)（要求半径的一半）时，
+    // 引脚附近的焊盘/走线会重叠，**优先**分到不同层。做成**软冲突**（SA 尽量分开，放不下才容忍），
+    // 避免"宽 8 + 密集板"时硬冲突图近全连通、导致大量网进人工（那没有实际意义）。
     let req = 0.5 * geometry::min_allowed_distance(wa, wb);
     let mut ep = f64::INFINITY;
     for p in [wa.start, wa.end] {
@@ -90,7 +90,7 @@ pub fn classify_pair(
         return Conflict {
             wire_a: wa.wire_id.clone(),
             wire_b: wb.wire_id.clone(),
-            level: ConflictLevel::Hard,
+            level: ConflictLevel::Soft,
             intersect_pt: inter_pt,
             clearance_gap: geometry::clearance_gap(wa, wb, ep),
             dist_to_endpoints: (d1, d2),
