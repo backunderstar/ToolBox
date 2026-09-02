@@ -48,6 +48,11 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 - **清理 release 档 dead_code 警告**：移除无调用方的 `save_removed_bundled`（仅在 release 档
   `cfg(dev)` 不生效时触发，CI debug 档不会暴露）；打包前 `cargo clippy --release -D warnings` 归零。
+- **探针卡分层 pin 邻近硬冲突**：新增端点(pin)邻近判定——不同 net 任一端点对距离
+  < `0.5×(线宽+间距)`（`min_allowed_distance` 的一半）时判为**硬冲突**，避免"线宽大时同层出现 pin 靠太近的
+  两个 net"这一不合理结果（如 POWER 线宽 8mm 时半径 ≈ 4.1mm）。宽度 0.2 时半径 ≈ 0.2mm，几乎不影响
+  现有 DC 结果（硬冲突数不变）。实测 width8：**同层 pin 邻近违规 = 0**（不再出现同层过近 pin）；
+  但密集信号数据在 8mm 线宽下本就近乎不可分层（大量进人工，符合物理事实）。
 
 ## [0.3.0] — 2026-09-02
 

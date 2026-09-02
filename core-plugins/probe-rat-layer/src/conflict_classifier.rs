@@ -73,6 +73,33 @@ pub fn classify_pair(
         0.0
     };
 
+    // 端点(引脚)邻近硬冲突：不同 net 任一端点(pin)对距离 < 0.5×(线宽+间距)（要求半径的一半），
+    // 说明两者在引脚附近的焊盘/走线会重叠（宽度大时此半径随之变大，如 width8 → 约 4.1mm），
+    // 不能放同一层。即使用"整条线间距足够"(gap<=0)、仅引脚靠近的情况也判为硬冲突。
+    let req = 0.5 * geometry::min_allowed_distance(wa, wb);
+    let mut ep = f64::INFINITY;
+    for p in [wa.start, wa.end] {
+        for q in [wb.start, wb.end] {
+            let dd = p.dist(q);
+            if dd < ep {
+                ep = dd;
+            }
+        }
+    }
+    if ep < req {
+        return Conflict {
+            wire_a: wa.wire_id.clone(),
+            wire_b: wb.wire_id.clone(),
+            level: ConflictLevel::Hard,
+            intersect_pt: inter_pt,
+            clearance_gap: geometry::clearance_gap(wa, wb, ep),
+            dist_to_endpoints: (d1, d2),
+            keepout_ids: Vec::new(),
+            congestion: occ,
+            reasons: vec!["pin_proximity".to_string()],
+        };
+    }
+
     if gap <= geometry::EPS {
         // 无直线冲突
         if !cfg.keepout_enabled || zones.is_empty() {

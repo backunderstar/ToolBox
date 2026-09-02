@@ -465,6 +465,72 @@ mod tests {
         }
     }
 
+    /// 线宽=8（POWER）时验证 pin 邻近修复：不同 net 任一端点对距离 < min_allowed_distance 的线对
+    /// 不能放同一层（pin_proximity 硬冲突）。应满足同层 pin 邻近违规数为 0。
+    #[test]
+    #[ignore]
+    fn real_data_width8_pin_proximity() {
+        let w = r"D:\ToolBoxData\Project\测试";
+        let data = crate::io::load_input(
+            &format!("{w}\\1.xlsx"),
+            Some(&format!("{w}\\hv_all.lst")),
+            4,
+            8.0,
+            0.2,
+        )
+        .expect("读入应成功");
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+        let hv = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 3, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 8, "balance_length_rounds": 3,
+            "minimize_crossings_passes": 3, "sa_restarts": 1, "sa_seed": 42, "sa_initial_temp": 8,
+            "sa_cooling": 0.9995, "sa_max_steps": 0, "sa_swap_ratio": 0.7, "sa_balance_slack": 2,
+            "via_area_cost": 0.1,
+        });
+        let cfg = default_config().with_overrides(&hv).expect("config 覆盖应成功");
+        let prog = Progress::new(&active, &cancel);
+        let r = pipeline::run_once(&data, &cfg, &prog).expect("pipeline 应成功");
+        let mut violations = 0usize;
+        let wires = &data.wires;
+        for i in 0..wires.len() {
+            for j in (i + 1)..wires.len() {
+                let (a, b) = (&wires[i], &wires[j]);
+                if a.net_id == b.net_id {
+                    continue;
+                }
+                if let (Some(&la), Some(&lb)) = (r.assignment.get(&a.wire_id), r.assignment.get(&b.wire_id)) {
+                    if la == lb {
+                        let req = 0.5 * crate::geometry::min_allowed_distance(a, b);
+                        let mut ep = f64::INFINITY;
+                        for p in [a.start, a.end] {
+                            for q in [b.start, b.end] {
+                                let d = p.dist(q);
+                                if d < ep {
+                                    ep = d;
+                                }
+                            }
+                        }
+                        if ep < req {
+                            violations += 1;
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "[width8] 已分配={} 硬冲突={} 需人工={} 走通率={}/{} 同层pin邻近违规={}",
+            r.assignment.len(),
+            r.hard_conflicts.len(),
+            r.manual_route_nets.len(),
+            r.routable_net_count,
+            r.total_net_count,
+            violations
+        );
+        assert_eq!(violations, 0, "仍存在同层 pin 邻近违规: {violations}");
+    }
+
     fn synthetic_data() -> LoadedData {
         let mut nets: Vec<Net> = Vec::new();
         let mut wires: Vec<Wire> = Vec::new();
