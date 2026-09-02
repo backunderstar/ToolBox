@@ -9,6 +9,9 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 ### 新增
 
+- **探针卡分层新增 AC / POWER 预设**：预设下拉新增「AC（细线 0.1mm / 12 层）」与
+  「POWER（宽线 8mm / 20 层）」，其余参数与 DC 信号预设一致（cell 2.0 / threshold 3.0 / 0.2 间距 /
+  packing + sa）；层数输入上限 16 → 40，以容纳 POWER（20 层）。纯 UI 预设，改线宽+层数后由后端直接生效。
 - **走通率指标（探针卡分层）**：新增 `post_process::routable_nets`——对每条已分配 net，在其被分配层
   内按**直线路径占用峰值 ≤ `layer_capacity`** 判定可布；接入报告 `summary`（`routable_net_count` /
   `total_net_count` / `routable_ratio`）、文本摘要与结果页「走通率」卡片。纯诊断、不影响分层结果。

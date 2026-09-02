@@ -55,7 +55,7 @@ const sectorAngleDeg = ref(45.0);
 
 // 首启默认 DC 信号预设（cell 2.0 / threshold 3.0）——原项目文档明确"默认 0.8/0.5 对 DC/HV 太严"，
 // 默认值若用 probe_layer 原默认会让真实数据大量进人工（实测 1800 线 manual 1758）。
-const presetName = ref<"custom" | "hv" | "full">("hv");
+const presetName = ref<"custom" | "hv" | "full" | "ac" | "power">("hv");
 
 const configOverrides = computed(() => {
   const o: Record<string, unknown> = {
@@ -95,7 +95,7 @@ function collectParams(): Record<string, unknown> {
 function applyParams(v: Record<string, unknown>): void {
   const num = (k: string) => (typeof v[k] === "number" ? (v[k] as number) : undefined);
   const str = (k: string) => (typeof v[k] === "string" ? (v[k] as string) : undefined);
-  if (typeof v.preset === "string") applyPreset(v.preset as "custom" | "hv" | "full");
+  if (typeof v.preset === "string") applyPreset(v.preset as "custom" | "hv" | "full" | "ac" | "power");
   if (num("layers") !== undefined) layers.value = num("layers")!;
   if (num("width") !== undefined) width.value = num("width")!;
   if (num("clearance") !== undefined) clearance.value = num("clearance")!;
@@ -124,7 +124,7 @@ function applyParams(v: Record<string, unknown>): void {
   }
 }
 
-function applyPreset(p: "custom" | "hv" | "full"): void {
+function applyPreset(p: "custom" | "hv" | "full" | "ac" | "power"): void {
   presetName.value = p;
   if (p === "hv") {
     // DC 信号推荐：cell 2.0 / threshold 3.0 + 4 层 + 0.2/0.2（对应原项目 in/hv_config.json + README）
@@ -142,6 +142,24 @@ function applyPreset(p: "custom" | "hv" | "full"): void {
     clearance.value = 0.2;
     congestionGridCell.value = 0.5;
     congestionHardThreshold.value = 0.8;
+    method.value = "packing";
+    optimizer.value = "sa";
+  } else if (p === "ac") {
+    // AC 信号：细线 0.1mm、更多层（12 层）；其余同 DC 预设
+    layers.value = 12;
+    width.value = 0.1;
+    clearance.value = 0.2;
+    congestionGridCell.value = 2.0;
+    congestionHardThreshold.value = 3.0;
+    method.value = "packing";
+    optimizer.value = "sa";
+  } else if (p === "power") {
+    // POWER：宽线 8mm、更多层（20 层）；其余同 DC 预设
+    layers.value = 20;
+    width.value = 8;
+    clearance.value = 0.2;
+    congestionGridCell.value = 2.0;
+    congestionHardThreshold.value = 3.0;
     method.value = "packing";
     optimizer.value = "sa";
   }
@@ -670,6 +688,8 @@ onBeforeUnmount(() => {
             <select v-model="presetName" class="prl-input prl-select" @change="applyPreset(presetName)">
               <option value="custom">自定义</option>
               <option value="hv">DC 信号（cell 2.0 / threshold 3.0 / 4 层 / 0.2mm）</option>
+              <option value="ac">AC（细线 0.1mm / 12 层）</option>
+              <option value="power">POWER（宽线 8mm / 20 层）</option>
               <option value="full">全量（不筛选）</option>
             </select>
           </div>
@@ -677,13 +697,13 @@ onBeforeUnmount(() => {
         <div class="prl-grid3">
           <div class="prl-field">
             <label class="prl-label">层数（xlsx 输入）</label>
-            <input v-model.number="layers" type="number" min="1" max="16" class="prl-input" />
+            <input v-model.number="layers" type="number" min="1" max="40" class="prl-input" />
             <p class="prl-field-hint">信号层数量（Allegro 建层数）；旧 JSON 输入时由文件决定</p>
           </div>
           <div class="prl-field">
-            <label class="prl-label">线宽 mm（HV/DC 0.2，AC 0.1）</label>
+            <label class="prl-label">线宽 mm（DC 0.2 / AC 0.1 / POWER 8）</label>
             <input v-model.number="width" type="number" step="0.05" class="prl-input" />
-            <p class="prl-field-hint">信号线宽：影响走线占用的拥塞估算（HV/DC 用 0.2，AC 用 0.1）</p>
+            <p class="prl-field-hint">信号线宽：影响走线占用的拥塞估算（DC/HV 0.2，AC 0.1，POWER 8）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">线距 mm</label>
