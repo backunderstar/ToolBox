@@ -34,6 +34,10 @@ pub struct LayeringConfig {
     pub capacity_utilization: f64,
     pub via_area_cost: f64,
     pub pin_density_weight: f64,
+    /// 里程碑 2：拥塞平滑代价指数 k（Σ(occupancy)^k）；>0 时启用平滑拥塞代价（默认 2.0，未启用时不生效）。
+    pub congestion_k: f64,
+    /// 里程碑 2：整网 rip-up-and-reroute 迭代轮数；>0 启用（默认 0=关闭，保留现有行为）。
+    pub ripup_rounds: i64,
     // —— 端点容忍（仅报告）——
     pub r_end: f64,
     // —— 禁布区 ——
@@ -77,6 +81,8 @@ impl Default for LayeringConfig {
             capacity_utilization: 0.6,
             via_area_cost: 0.1,
             pin_density_weight: 1.0,
+            congestion_k: 2.0,
+            ripup_rounds: 0,
             r_end: 0.5,
             keepout_enabled: true,
             keepout_margin_factor: 0.5,
@@ -138,6 +144,8 @@ impl LayeringConfig {
             "capacity_utilization" => self.capacity_utilization = f(v)?,
             "via_area_cost" => self.via_area_cost = f(v)?,
             "pin_density_weight" => self.pin_density_weight = f(v)?,
+            "congestion_k" => self.congestion_k = f(v)?,
+            "ripup_rounds" => self.ripup_rounds = i(v)?,
             "r_end" => self.r_end = f(v)?,
             "keepout_margin_factor" => self.keepout_margin_factor = f(v)?,
             "resolve_conflict_rounds" => self.resolve_conflict_rounds = i(v)?,

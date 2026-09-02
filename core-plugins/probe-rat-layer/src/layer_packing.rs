@@ -300,6 +300,49 @@ fn _max_occ(
     max
 }
 
+/// 层 l 的拥塞平滑代价 `Σ_cells (occupancy)^k`（k 越大越惩罚高拥塞格点）。
+fn _layer_cost(
+    demand_of: &HashMap<i64, Array2<f64>>,
+    l: i64,
+    occupable: &Array2<bool>,
+    supply: &Array2<f64>,
+    k: f64,
+) -> f64 {
+    let d = &demand_of[&l];
+    let mut s = 0.0;
+    for r in 0..d.shape()[0] {
+        for c in 0..d.shape()[1] {
+            if occupable[[r, c]] {
+                let o = d[[r, c]] / supply[[r, c]];
+                s += o.powf(k);
+            }
+        }
+    }
+    s
+}
+
+/// 对层 l 应用 ucells（sign=+1 加入、-1 移出）后的代价增量。
+fn _delta_cost_of(
+    demand_of: &HashMap<i64, Array2<f64>>,
+    l: i64,
+    ucells: &HashMap<(usize, usize), f64>,
+    occupable: &Array2<bool>,
+    supply: &Array2<f64>,
+    k: f64,
+    sign: f64,
+) -> f64 {
+    let d = &demand_of[&l];
+    let mut s = 0.0;
+    for ((r, c), v) in ucells {
+        if occupable[[*r, *c]] {
+            let old = d[[*r, *c]] / supply[[*r, *c]];
+            let new = (d[[*r, *c]] + sign * v) / supply[[*r, *c]];
+            s += new.powf(k) - old.powf(k);
+        }
+    }
+    s
+}
+
 /// 单元覆盖的栅格格点及在该格点上的需求增量（各线在该网点累加）。
 /// 只算一次，供 `_enforce_capacity` 做增量的"目标层可行性判定 + 提交更新"，避免整栅格 clone/扫描。
 fn _unit_cells(
@@ -589,6 +632,105 @@ fn _split_stuck_nets(
     Ok(())
 }
 
+/// 里程碑 2：拥塞平滑代价 + 迭代整网 rip-up-and-reroute。
+/// 对每层算拥塞平滑代价 `cost = Σ_cells (occupancy)^k`（k=congestion_k，软目标，避免阈值抖动），
+/// 反复把"留在高拥塞层"的**整单元**搬到更匹配/更低拥塞且无硬冲突的层，使总代价下降；直到无改进
+/// 或达到 `ripup_rounds`。整单元移动（不切层）→ 不引入过孔，与零过孔约束自洽。
+/// 仅在 `cfg.ripup_rounds > 0` 时启用（默认 0=关闭，保留现有行为）。
+fn _reroute_rounds(
+    layer_units: &mut HashMap<i64, Vec<_Unit>>,
+    layers: &[i64],
+    zones: &[KeepoutZone],
+    pins: &[Pin],
+    cfg: &LayeringConfig,
+    graph: &ConflictGraph,
+    cancel: &CancelFlag,
+) -> Result<(), LayeringCancelled> {
+    let all_wires: Vec<Wire> = layer_units
+        .values()
+        .flat_map(|us| us.iter().flat_map(|u| u.wires.clone()))
+        .collect();
+    if all_wires.is_empty() {
+        return Ok(());
+    }
+    let (origin, cell, cols, rows, supply) =
+        crate::congestion::_grid_geometry(&all_wires, zones, pins, cfg);
+    let mut occupable = Array2::from_elem((rows, cols), false);
+    for r in 0..rows {
+        for c in 0..cols {
+            occupable[[r, c]] = supply[[r, c]] > 1e-12;
+        }
+    }
+    let k = cfg.congestion_k.max(1.001);
+    // 每层 demand 数组
+    let mut demand_of: HashMap<i64, Array2<f64>> = HashMap::new();
+    for &l in layers {
+        let mut d = Array2::zeros((rows, cols));
+        if let Some(us) = layer_units.get(&l) {
+            for u in us {
+                for w in &u.wires {
+                    _raster_into(w, origin, cell, rows, cols, &mut d, _demand_value(w, cfg));
+                }
+            }
+        }
+        demand_of.insert(l, d);
+    }
+    for _ in 0..cfg.ripup_rounds.max(0) {
+        check_cancel(cancel)?;
+        let mut order: Vec<i64> = layers.to_vec();
+        order.sort_by(|a, b| {
+            _layer_cost(&demand_of, *b, &occupable, &supply, k)
+                .partial_cmp(&_layer_cost(&demand_of, *a, &occupable, &supply, k))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut moved_any = false;
+        'outer: for &l in &order {
+            let units = layer_units.get(&l).cloned().unwrap_or_default();
+            if units.is_empty() {
+                continue;
+            }
+            let mut uorder: Vec<&_Unit> = units.iter().collect();
+            uorder.sort_by(|a, b| _len(b).partial_cmp(&_len(a)).unwrap_or(std::cmp::Ordering::Equal));
+            for u in uorder {
+                let ucells = _unit_cells(u, origin, cell, rows, cols, cfg);
+                if ucells.is_empty() {
+                    continue;
+                }
+                let mut cands: Vec<i64> = layers
+                    .iter()
+                    .copied()
+                    .filter(|&nl| nl != l && u.allowed.contains(&nl))
+                    .filter(|&nl| !_unit_conflicts_layer_units(u, nl, layer_units, graph))
+                    .collect();
+                // 候选按"移动后方代价增量"从小到大
+                cands.sort_by(|&a, &b| {
+                    _delta_cost_of(&demand_of, a, &ucells, &occupable, &supply, k, 1.0)
+                        .partial_cmp(&_delta_cost_of(&demand_of, b, &ucells, &occupable, &supply, k, 1.0))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                for &nl in &cands {
+                    let total_delta = _delta_cost_of(&demand_of, nl, &ucells, &occupable, &supply, k, 1.0)
+                        + _delta_cost_of(&demand_of, l, &ucells, &occupable, &supply, k, -1.0);
+                    if total_delta < -1e-9 {
+                        for ((r, c), v) in &ucells {
+                            demand_of.get_mut(&l).unwrap()[[*r, *c]] -= v;
+                            demand_of.get_mut(&nl).unwrap()[[*r, *c]] += v;
+                        }
+                        layer_units.get_mut(&l).unwrap().retain(|x| x.uid != u.uid);
+                        layer_units.get_mut(&nl).unwrap().push(u.clone());
+                        moved_any = true;
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        if !moved_any {
+            break;
+        }
+    }
+    Ok(())
+}
+
 fn _pack_units(
     units: Vec<_Unit>,
     layers: &[i64],
@@ -691,6 +833,12 @@ fn _pack_units(
         prog(0.93);
         check_cancel(cancel)?;
         _enforce_capacity(&mut layer_units, layers, zones, pins, cfg, graph, cancel)?;
+    }
+    // 里程碑 2：拥塞平滑代价 + 迭代整网 reroute（默认关，ripup_rounds>0 启用）。
+    if cfg.ripup_rounds > 0 {
+        prog(0.95);
+        check_cancel(cancel)?;
+        _reroute_rounds(&mut layer_units, layers, zones, pins, cfg, graph, cancel)?;
     }
     let mut assignment: HashMap<String, i64> = HashMap::new();
     for (l, us) in &layer_units {

@@ -416,6 +416,55 @@ mod tests {
         }
     }
 
+    /// 里程碑 2：拥塞平滑代价 + 整网 reroute（ripup_rounds>0）对比基线，看最大层占用/走通率是否改善。
+    #[test]
+    #[ignore]
+    fn real_data_milestone2_reroute() {
+        let w = r"D:\ToolBoxData\Project\测试";
+        let data = crate::io::load_input(
+            &format!("{w}\\1.xlsx"),
+            Some(&format!("{w}\\hv_all.lst")),
+            4,
+            0.2,
+            0.2,
+        )
+        .expect("读入应成功");
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+        let hv = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 3, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 8, "balance_length_rounds": 3,
+            "minimize_crossings_passes": 3, "sa_restarts": 1, "sa_seed": 42, "sa_initial_temp": 8,
+            "sa_cooling": 0.9995, "sa_max_steps": 0, "sa_swap_ratio": 0.7, "sa_balance_slack": 2,
+            "via_area_cost": 0.1,
+        });
+        let base = default_config().with_overrides(&hv).expect("config 覆盖应成功");
+        let mut reroute = base.clone();
+        reroute.ripup_rounds = 8;
+        reroute.congestion_k = 2.0;
+        for (label, cfg) in [("基线 无reroute", &base), ("reroute 8轮", &reroute)] {
+            let prog = Progress::new(&active, &cancel);
+            let t = std::time::Instant::now();
+            let r = pipeline::run_once(&data, cfg, &prog).expect("pipeline 应成功");
+            let max_occ = r
+                .layers
+                .iter()
+                .fold(0.0f64, |m, l| if l.max_occupancy > m { l.max_occupancy } else { m });
+            eprintln!(
+                "[M2 {label}] 已分配={} 硬冲突={} 软冲突={} 需人工={} 走通率={}/{} 最大层占用={:.2} 用时={:.2}s",
+                r.assignment.len(),
+                r.hard_conflicts.len(),
+                r.soft_conflicts.len(),
+                r.manual_route_nets.len(),
+                r.routable_net_count,
+                r.total_net_count,
+                max_occ,
+                t.elapsed().as_secs_f64()
+            );
+        }
+    }
+
     fn synthetic_data() -> LoadedData {
         let mut nets: Vec<Net> = Vec::new();
         let mut wires: Vec<Wire> = Vec::new();
