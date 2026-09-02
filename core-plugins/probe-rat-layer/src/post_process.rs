@@ -93,3 +93,61 @@ pub fn max_occupancy_per_layer(
     }
     out
 }
+
+/// 走通率基线：对每条已分配 net，在其**被分配层**内，若**所有** wires 的直线路径占用峰值
+/// ≤ `layer_capacity`，则该 net 可布。返回 `(可布 net 数, 总 net 数, 不可布 net id 列表)`。
+///
+/// 说明：
+/// - 每层占用/供应网格由**该层已分配 wires** 构建（与 `max_occupancy_per_layer` 同源），
+///   因此"该 net 自身 + 同层其他 net"的密度都反映在占用里——这是"该层能否容得下这条 net 的廊道"的
+///   **直线路径占用判定**。
+/// - 这是**基线**版本；走通率随**模拟走线路径**（见"零过孔改进方案"里程碑 1）会更有区分度
+///   （真实路径更长、要绕 keepout，比直线更容易顶到容量）。
+pub fn routable_nets(
+    assignment: &HashMap<String, i64>,
+    wires: &[Wire],
+    zones: &[crate::model::KeepoutZone],
+    pins: &[Pin],
+    cfg: &LayeringConfig,
+) -> (usize, usize, Vec<String>) {
+    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::new();
+    for w in wires {
+        if let Some(&layer) = assignment.get(&w.wire_id) {
+            by_layer.entry(layer).or_default().push(w.clone());
+        }
+    }
+    let mut cmap_of: HashMap<i64, congestion::CongestionMap> = HashMap::new();
+    for (layer, ws) in &by_layer {
+        cmap_of.insert(*layer, congestion::build_congestion_map(ws, zones, pins, cfg));
+    }
+
+    let mut by_net: HashMap<String, Vec<&Wire>> = HashMap::new();
+    for w in wires {
+        if assignment.contains_key(&w.wire_id) {
+            by_net.entry(w.net_id.clone()).or_default().push(w);
+        }
+    }
+
+    let mut total = 0usize;
+    let mut routable = 0usize;
+    let mut unroutable: Vec<String> = Vec::new();
+    for (net_id, ws) in by_net {
+        total += 1;
+        let ok = ws.iter().all(|w| {
+            let Some(&layer) = assignment.get(&w.wire_id) else {
+                return false;
+            };
+            match cmap_of.get(&layer) {
+                Some(cmap) => congestion::occupancy_along(w, cmap) <= cfg.layer_capacity,
+                None => true,
+            }
+        });
+        if ok {
+            routable += 1;
+        } else {
+            unroutable.push(net_id.clone());
+        }
+    }
+    unroutable.sort();
+    (routable, total, unroutable)
+}

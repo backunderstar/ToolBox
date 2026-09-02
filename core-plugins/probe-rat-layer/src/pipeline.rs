@@ -224,6 +224,8 @@ pub fn run_once(
     let soft_per_layer = pp::soft_conflicts_per_layer(&assignment, &conflicts);
     let (detour, via) = pp::collect_layer_marks(&wires, &assignment, &conflicts, &data.keepouts, cfg);
     let occ_per_layer = pp::max_occupancy_per_layer(&assignment, &wires, &data.keepouts, &pins, cfg);
+    let (routable_net_count, total_net_count, unroutable_nets) =
+        pp::routable_nets(&assignment, &wires, &data.keepouts, &pins, cfg);
 
     let net_by_id: HashMap<String, Net> = data
         .nets
@@ -334,6 +336,9 @@ pub fn run_once(
         capacity_lower_bound: lb,
         warnings,
         manual_route_nets: manual_nets,
+        routable_net_count,
+        total_net_count,
+        unroutable_nets,
     })
 }
 

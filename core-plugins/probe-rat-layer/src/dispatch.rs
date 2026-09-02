@@ -753,6 +753,14 @@ fn summary_json(r: &LayeringResult) -> Value {
         "soft_conflict_count": r.soft_conflicts.len(),
         "manual_route_net_count": r.manual_route_nets.len(),
         "manual_route_nets": r.manual_route_nets,
+        "routable_net_count": r.routable_net_count,
+        "total_net_count": r.total_net_count,
+        "routable_ratio": if r.total_net_count > 0 {
+            (r.routable_net_count as f64 / r.total_net_count as f64 * 10000.0).round() / 10000.0
+        } else {
+            0.0
+        },
+        "unroutable_nets": r.unroutable_nets,
         "iterations_used": r.iterations_used,
         "warnings": r.warnings,
         "capacity_lower_bound": r.capacity_lower_bound,

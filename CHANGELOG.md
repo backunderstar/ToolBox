@@ -7,6 +7,15 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### 新增
+
+- **走通率指标（探针卡分层）**：新增 `post_process::routable_nets`——对每条已分配 net，在其被分配层
+  内按**直线路径占用峰值 ≤ `layer_capacity`** 判定可布；接入报告 `summary`（`routable_net_count` /
+  `total_net_count` / `routable_ratio`）、文本摘要与结果页「走通率」卡片。纯诊断、不影响分层结果。
+  实测（`hv` 预设，1800 网，release）：**走通率 1462/1798 ≈ 81.3%**，且暴露层 2 占用率 1.78 > 容量 1.0
+  这一**残留拥塞**信号（为后续"模拟走线路径"版走通率与更好分层打底）。见
+  [零过孔改进方案 §5](docs/探针卡分层-可布线零过孔改进方案.md)。
+
 ### 变更
 
 - **发布流程文档重写**：[docs/发布流程.md](docs/发布流程.md) 区分「CI 全自动（路径 A：tag 触发

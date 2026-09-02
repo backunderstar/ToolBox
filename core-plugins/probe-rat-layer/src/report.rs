@@ -50,6 +50,14 @@ pub fn build_report(result: &LayeringResult, cfg: &LayeringConfig) -> Value {
             "soft_conflict_count": result.soft_conflicts.len(),
             "manual_route_net_count": result.manual_route_nets.len(),
             "manual_route_nets": result.manual_route_nets,
+            "routable_net_count": result.routable_net_count,
+            "total_net_count": result.total_net_count,
+            "routable_ratio": if result.total_net_count > 0 {
+                round4(result.routable_net_count as f64 / result.total_net_count as f64)
+            } else {
+                0.0
+            },
+            "unroutable_nets": result.unroutable_nets,
             "warnings": result.warnings,
         },
         "plane_nets": result.plane_nets,
@@ -196,6 +204,14 @@ pub fn print_summary(result: &LayeringResult) -> String {
         lines.push(format!(
             "需人工 route: {} 条（manual_route.lst）",
             result.manual_route_nets.len()
+        ));
+    }
+    if result.total_net_count > 0 {
+        lines.push(format!(
+            "走通率 {}/{} 可布（{}%）",
+            result.routable_net_count,
+            result.total_net_count,
+            (result.routable_net_count as f64 / result.total_net_count as f64 * 100.0).round()
         ));
     }
     if !result.capacity_lower_bound.is_empty() {

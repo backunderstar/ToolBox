@@ -347,4 +347,10 @@ pub struct LayeringResult {
     pub capacity_lower_bound: HashMap<String, f64>,
     pub warnings: Vec<String>,
     pub manual_route_nets: Vec<String>,
+    /// 走通率：已分配 net 中被判定为可布的数量（见 `post_process::routable_nets`）。
+    pub routable_net_count: usize,
+    /// 走通率：已分配 net 总数。
+    pub total_net_count: usize,
+    /// 走通率：被判定不可布的 net id（均来自已分配 net）。
+    pub unroutable_nets: Vec<String>,
 }
