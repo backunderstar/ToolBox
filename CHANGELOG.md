@@ -5,7 +5,10 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 > 详细的开发记录见 [HANDOVER.md](HANDOVER.md)；里程碑规划见 [PLAN.md](PLAN.md)。
 
-## [Unreleased]
+## [0.4.0] — 2026-09-03
+
+探针卡分层可布性度量（走通率）+ 三种新预设（AC/POWER）+ 里程碑 0/1/2（配置化/诊断）
++ pin 邻近硬约束。
 
 ### 新增
 

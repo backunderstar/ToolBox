@@ -1,6 +1,6 @@
 [package]
 name = "tb-sdk"
-version = "0.3.0"
+version = "0.4.0"
 description = "ToolBox 核心插件 SDK：宿主 ↔ 插件 C ABI 契约与开发样板"
 edition = "2021"
 

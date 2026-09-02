@@ -1,6 +1,6 @@
 [package]
 name = "tb-probe-rat-layer"
-version = "0.3.0"
+version = "0.4.0"
 description = "探针卡飞线分层核心插件（native cdylib）：Allegro pin 表 + 筛选文件 → 扇区轮询/贪心/模拟退火分层 → layer_N.lst 供 Allegro 导入。"
 edition = "2021"
 
