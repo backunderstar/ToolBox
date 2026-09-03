@@ -95,41 +95,46 @@ impl LayerState {
             .map(|rd| rd.flatten().filter_map(|e| e.file_name().to_str().map(str::to_string)).collect())
             .unwrap_or_default();
         names.sort();
-        names.reverse();
-        let mut restored: Vec<String> = Vec::new();
-        let mut map = self.jobs.lock().unwrap();
-        for name in names {
-            let mpath = format!("{jobs_dir}/{name}/meta.json");
-            if !std::path::Path::new(&mpath).is_file() {
-                continue;
+        names.reverse(); // 最新在前
+        // 只保留最新一组结果：删除其余历史 job 目录，避免累积
+        // （用户要求"一个配置应对应一组结果，而不是把所有跑过的都留着"）
+        if names.len() > 1 {
+            for name in &names[1..] {
+                let _ = std::fs::remove_dir_all(format!("{jobs_dir}/{name}"));
             }
-            let Ok(content) = std::fs::read_to_string(&mpath) else { continue };
-            let Ok(meta) = serde_json::from_str::<Value>(&content) else { continue };
-            map.insert(
-                name.clone(),
-                JobRecord {
-                    summary: meta.get("summary").cloned(),
-                    layers_detail: meta
-                        .get("layers_detail")
-                        .and_then(|v| v.as_array())
-                        .map(|a| a.to_vec())
-                        .unwrap_or_default(),
-                    out_dir: meta.get("out_dir").and_then(|v| v.as_str()).map(str::to_string),
-                    files: meta
-                        .get("files")
-                        .and_then(|v| v.as_array())
-                        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
-                        .unwrap_or_default(),
-                },
-            );
-            restored.push(name);
         }
-        drop(map);
-        if let Some(first) = restored.first() {
-            let job_id = first.clone();
+        // 恢复最新那一条（无 meta.json → 视为损坏/未完成，丢弃）
+        let mut restored: Vec<String> = Vec::new();
+        if let Some(latest) = names.first() {
+            let mpath = format!("{jobs_dir}/{latest}/meta.json");
+            if let Ok(content) = std::fs::read_to_string(&mpath) {
+                if let Ok(meta) = serde_json::from_str::<Value>(&content) {
+                    let mut map = self.jobs.lock().unwrap();
+                    map.insert(
+                        latest.clone(),
+                        JobRecord {
+                            summary: meta.get("summary").cloned(),
+                            layers_detail: meta
+                                .get("layers_detail")
+                                .and_then(|v| v.as_array())
+                                .map(|a| a.to_vec())
+                                .unwrap_or_default(),
+                            out_dir: meta.get("out_dir").and_then(|v| v.as_str()).map(str::to_string),
+                            files: meta
+                                .get("files")
+                                .and_then(|v| v.as_array())
+                                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                                .unwrap_or_default(),
+                        },
+                    );
+                    restored.push(latest.clone());
+                }
+            }
+        }
+        if let Some(job_id) = restored.first() {
             self.set_active("done", "完成", 100.0, "完成", None);
             if let Ok(mut s) = self.active.lock() {
-                s.job_id = Some(job_id);
+                s.job_id = Some(job_id.clone());
             }
         }
     }
@@ -230,37 +235,78 @@ fn clamp_to_roots(workspace: &str, input_dir: &str, p: &str) -> String {
     workspace.to_string()
 }
 
-/// 路径是否落在工作区内（用于命令校验；工作区未配置时放行，便于开发/旧数据）。
-fn within_workspace(workspace: &str, p: &str) -> bool {
-    if workspace.is_empty() {
+/// 去掉 Windows `\\?\` / `\\?\UNC\` verbatim 前缀，保证与普通绝对路径可比。
+fn strip_verbatim(p: &std::path::Path) -> std::path::PathBuf {
+    let s = p.to_string_lossy();
+    let s = if let Some(r) = s.strip_prefix(r"\\?\UNC\") {
+        format!("\\\\{r}")
+    } else {
+        s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
+    };
+    std::path::PathBuf::from(s)
+}
+
+/// 规范化路径用于作用域比较：存在 → canonicalize；**不存在（如用户手输、尚未创建的输出目录）**
+/// → 对**最近存在的祖先** canonicalize，再追加剩余组件，并去掉 `\\?\` 前缀。这样不存在的
+/// 子路径也能得到与根一致的前缀，可比。Windows 下另做大小写不敏感比较。
+fn norm_abs(p: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(p);
+    if let Ok(c) = path.canonicalize() {
+        return strip_verbatim(&c);
+    }
+    let mut cur = path.to_path_buf();
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    while !cur.exists() {
+        let Some(name) = cur.file_name().map(|n| n.to_os_string()) else { break; };
+        tail.push(name);
+        if !cur.pop() {
+            break;
+        }
+    }
+    let mut out = cur
+        .canonicalize()
+        .map(|c| strip_verbatim(&c))
+        .unwrap_or_else(|_| cur);
+    for part in tail.iter().rev() {
+        out.push(part);
+    }
+    out
+}
+
+/// `p` 是否落在 `root` 内（root/p 均规范化为可比较的词法绝对路径；Windows 大小写不敏感）。
+/// 用字符串 + 组件边界判定：`q` 以 `r` 为前缀且随后是"分隔符或结尾"，避免 `测试2` 误判为 `测试` 内。
+fn path_within(root: &str, p: &str) -> bool {
+    if root.is_empty() {
         return true;
     }
-    let ws = std::fs::canonicalize(workspace).unwrap_or_else(|_| std::path::PathBuf::from(workspace));
-    let joined = if std::path::Path::new(p).is_absolute() {
-        std::path::PathBuf::from(p)
-    } else {
-        std::path::Path::new(workspace).join(p)
-    };
-    let ab = std::fs::canonicalize(&joined).unwrap_or(joined);
-    ab == ws || ab.starts_with(&ws)
+    let r = norm_abs(root).to_string_lossy().to_string();
+    let q = norm_abs(p).to_string_lossy().to_string();
+    #[cfg(target_os = "windows")]
+    {
+        let rl = r.to_lowercase();
+        let ql = q.to_lowercase();
+        ql == rl || (ql.starts_with(&rl) && boundary(&ql[rl.len()..]))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        q == r || (q.starts_with(&r) && boundary(&q[r.len()..]))
+    }
+}
+
+/// 前缀之后的剩余部分是否为空或紧接路径分隔符（保证"组件级"前缀，而非字符串级）。
+fn boundary(rest: &str) -> bool {
+    rest.is_empty() || rest.starts_with(['\\', '/'])
+}
+
+/// 路径是否落在工作区内（用于命令校验；工作区未配置时放行，便于开发/旧数据）。
+fn within_workspace(workspace: &str, p: &str) -> bool {
+    path_within(workspace, p)
 }
 
 /// 路径是否落在**可读根集合**内（工作区 或 文件输入目录）。输入只读、输出限工作区：
 /// `_run_job` 据此校验 input（可读根）与 out_dir（仅工作区，`within_workspace`）。
 fn within_read(workspace: &str, input_dir: &str, p: &str) -> bool {
-    within_workspace(workspace, p)
-        || if input_dir.is_empty() {
-            false
-        } else {
-            let root = std::fs::canonicalize(input_dir).unwrap_or_else(|_| std::path::PathBuf::from(input_dir));
-            let joined = if std::path::Path::new(p).is_absolute() {
-                std::path::PathBuf::from(p)
-            } else {
-                std::path::Path::new(input_dir).join(p)
-            };
-            let ab = std::fs::canonicalize(&joined).unwrap_or(joined);
-            ab == root || ab.starts_with(&root)
-        }
+    path_within(workspace, p) || path_within(input_dir, p)
 }
 
 fn cmd_list_dir(workspace: &str, input_dir: &str, path: Option<&str>) -> Result<Value, String> {
@@ -331,6 +377,9 @@ fn cmd_run(state: &mut LayerState, host: TbHostApi, ctx: *mut std::ffi::c_void, 
         return Err("已有任务在运行，请先等待或取消".to_string());
     }
     drop(state_lock);
+    // 只保留最新一组结果：清掉历史 job 目录与内存条目，避免累积（一个配置对应一组结果）
+    prune_jobs(&state.plugin_dir);
+    state.jobs.lock().unwrap().clear();
     let job_id = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
     state.set_active("running", "启动", 0.0, "启动", None);
     // 关键：`layer.status` 返回 `active.job_id`，必须同步为当前任务。
@@ -341,6 +390,17 @@ fn cmd_run(state: &mut LayerState, host: TbHostApi, ctx: *mut std::ffi::c_void, 
     state.jobs.lock().unwrap().insert(job_id.clone(), JobRecord::default());
     state.spawn_run(host, ctx, job_id.clone(), args.clone());
     Ok(json!({"jobId": job_id}))
+}
+
+/// 删除插件工作目录下所有历史 job 子目录（最新一次运行前调用，保证只留一组结果）。
+fn prune_jobs(plugin_dir: &str) {
+    let jobs_dir = format!("{plugin_dir}/jobs");
+    let Ok(rd) = std::fs::read_dir(&jobs_dir) else { return; };
+    for e in rd.flatten() {
+        if e.path().is_dir() {
+            let _ = std::fs::remove_dir_all(e.path());
+        }
+    }
 }
 
 fn cmd_status(state: &LayerState) -> Result<Value, String> {
@@ -830,5 +890,52 @@ fn set_int_field(cfg: &mut LayeringConfig, field: &str, v: i64) {
         "minimize_crossings_passes" => cfg.minimize_crossings_passes = v,
         "sa_restarts" => cfg.sa_restarts = v,
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// prune_jobs：只清空 jobs/ 下的历史 job 子目录，其他不动。
+    #[test]
+    fn prune_jobs_removes_all_job_dirs() {
+        let dir = std::env::temp_dir().join(format!("tb-prl-prune-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let jobs = dir.join("jobs");
+        std::fs::create_dir_all(jobs.join("a")).unwrap();
+        std::fs::create_dir_all(jobs.join("b")).unwrap();
+        std::fs::write(jobs.join("a/meta.json"), "{}").unwrap();
+        std::fs::write(dir.join("keep.txt"), "x").unwrap();
+        prune_jobs(&dir.to_string_lossy());
+        assert!(!jobs.join("a").exists(), "历史 job a 应被清理");
+        assert!(!jobs.join("b").exists(), "历史 job b 应被清理");
+        assert!(dir.join("keep.txt").exists(), "非 job 文件不应被清");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// within_workspace：**尚不存在**的工作区子路径(如用户手输、未创建的输出目录)也应判定在作用域内；
+    /// 越界(../)与外部路径应拒绝。
+    #[test]
+    fn within_workspace_accepts_nonexistent_descendant() {
+        let ws = std::env::temp_dir().join(format!("tb-prl-scope-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&ws);
+        std::fs::create_dir_all(ws.join("a")).unwrap();
+        let ws_str = ws.to_string_lossy().to_string();
+
+        // 已存在子路径
+        assert!(within_workspace(&ws_str, &format!("{ws_str}/a")));
+        // 尚不存在的后代(输出目录未创建)
+        assert!(
+            within_workspace(&ws_str, &format!("{ws_str}/a/nonexistent")),
+            "不存在的后代应仍在工作区内"
+        );
+        // 越界
+        assert!(!within_workspace(&ws_str, &format!("{ws_str}/../outside")));
+        // 完全不同根
+        let other = ws.parent().unwrap().join("other-root");
+        assert!(!within_workspace(&ws_str, &other.to_string_lossy().to_string()));
+
+        let _ = std::fs::remove_dir_all(&ws);
     }
 }

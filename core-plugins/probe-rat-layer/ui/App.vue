@@ -56,6 +56,8 @@ const layerCapacity = ref(1.0);
 const capacityUtilization = ref(0.6);
 const viaAreaCost = ref(0.1);
 const sectorAngleDeg = ref(45.0);
+const shortSegmentLen = ref(0.0);              // 短线长度阈值(mm)；0=关闭短线容忍(默认,保持现状)
+const shortSegmentCrossingFactor = ref(1.0);   // 短线交叉硬冲突阈值放大系数；1=不放大(默认)
 
 // 首启默认 DC 信号预设（cell 2.0 / threshold 3.0）——原项目文档明确"默认 0.8/0.5 对 DC/HV 太严"，
 // 默认值若用 probe_layer 原默认会让真实数据大量进人工（实测 1800 线 manual 1758）。
@@ -80,6 +82,8 @@ const configOverrides = computed(() => {
     capacity_utilization: capacityUtilization.value,
     via_area_cost: viaAreaCost.value,
     sector_angle_deg: sectorAngleDeg.value,
+    short_segment_len: shortSegmentLen.value,
+    short_segment_crossing_factor: shortSegmentCrossingFactor.value,
   };
   return o;
 });
@@ -121,6 +125,8 @@ function applyParams(v: Record<string, unknown>): void {
     ["capacity_utilization", (n) => (capacityUtilization.value = n)],
     ["via_area_cost", (n) => (viaAreaCost.value = n)],
     ["sector_angle_deg", (n) => (sectorAngleDeg.value = n)],
+    ["short_segment_len", (n) => (shortSegmentLen.value = n)],
+    ["short_segment_crossing_factor", (n) => (shortSegmentCrossingFactor.value = n)],
   ];
   for (const [k, set] of map) {
     const n = num(k);
@@ -179,26 +185,30 @@ const manualRatio = computed(() => {
 
 /** 走通率（%）：可布 net / 已分配 net；summary 里由后端起算（routable_ratio），缺省回退计算 */
 function routableRatio(s: any): string {
-  if (!s) return "0%";
+  if (!s) return "—";
   if (typeof s.routable_ratio === "number") return `${Math.round(s.routable_ratio * 100)}%`;
   const t = s.total_net_count, r = s.routable_net_count;
-  return t > 0 ? `${Math.round((r / t) * 100)}%` : "0%";
+  if (typeof r !== "number" || !(t > 0)) return "—";
+  return `${Math.round((r / t) * 100)}%`;
 }
 
 /** 走通率（模拟路径版，%）：summary 的 routable_path_ratio；缺省回退计算 */
 function routableRatioPath(s: any): string {
-  if (!s) return "0%";
+  if (!s) return "—";
   if (typeof s.routable_path_ratio === "number") return `${Math.round(s.routable_path_ratio * 100)}%`;
   const t = s.total_net_count, r = s.routable_path_net_count;
-  return t > 0 ? `${Math.round((r / t) * 100)}%` : "0%";
+  if (typeof r !== "number" || !(t > 0)) return "—";
+  return `${Math.round((r / t) * 100)}%`;
 }
 
 /** 走通率（**真实可布**·连通分量洪泛，%）：层内"容量内可走"连通区是否贯穿；比直线/路径更诚实 */
 function routableRatioFlood(s: any): string {
-  if (!s) return "0%";
+  if (!s) return "—";
   if (typeof s.routable_flood_ratio === "number") return `${Math.round(s.routable_flood_ratio * 100)}%`;
   const t = s.total_net_count, r = s.routable_flood_net_count;
-  return t > 0 ? `${Math.round((r / t) * 100)}%` : "0%";
+  // 旧版本/旧任务 summary 无洪泛字段时显示「—」，避免 NaN
+  if (typeof r !== "number" || !(t > 0)) return "—";
+  return `${Math.round((r / t) * 100)}%`;
 }
 
 /* ---------- 内置文件浏览器（layer.listDir；从当前工作区开始，限定在工作区内） ---------- */
@@ -754,7 +764,10 @@ onBeforeUnmount(() => {
             <button class="prl-btn" @click="openBrowser('file', '选择筛选文件', '')">浏览</button>
             <button class="prl-btn" @click="filterPath = ''">清除</button>
           </div>
-          <p class="prl-hint">不在筛选文件里的 net 全部不要；筛选应均匀覆盖圆各扇区（只圈一个扇区会全挤圆心）</p>
+          <p class="prl-hint">
+            不在筛选文件里的 net 全部不要；建议均匀覆盖圆各扇区（只圈一个扇区会全挤圆心）。
+            想控制规模/提速可先抽样导出一份筛选用 lst。
+          </p>
         </div>
         <div class="prl-field">
           <label class="prl-label">输出目录（必填，强制指定）</label>
@@ -762,6 +775,7 @@ onBeforeUnmount(() => {
             <input v-model="outDir" class="prl-input" placeholder="D:\...\out_demo" />
             <button class="prl-btn" @click="openBrowser('dir', '选择输出目录', '')">浏览</button>
           </div>
+          <p class="prl-hint">必须在当前工作区内；未创建会自动创建。产出 report.json / layer_N.lst / csv 等</p>
         </div>
         <div class="prl-field">
           <label class="prl-label">预设</label>
@@ -774,22 +788,23 @@ onBeforeUnmount(() => {
               <option value="full">全量（不筛选）</option>
             </select>
           </div>
+          <p class="prl-hint">预设=一组推荐的层数/线宽/线距/拥塞参数，一键套用；选「自定义」再逐项微调下面的参数</p>
         </div>
         <div class="prl-grid3">
           <div class="prl-field">
             <label class="prl-label">层数（xlsx 输入）</label>
             <input v-model.number="layers" type="number" min="1" max="40" class="prl-input" />
-            <p class="prl-field-hint">信号层数量（Allegro 建层数）；旧 JSON 输入时由文件决定</p>
+            <p class="prl-field-hint">信号层数（Allegro 建层数）。越多每层越不挤、越散，但超过实际层数无用。推荐：DC/HV 4、AC 12、POWER 20（预设已带）；旧 JSON 输入由文件决定</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">线宽 mm（DC 0.2 / AC 0.1 / POWER 8）</label>
             <input v-model.number="width" type="number" step="0.05" class="prl-input" />
-            <p class="prl-field-hint">信号线宽：影响走线占用的拥塞估算（DC/HV 0.2，AC 0.1，POWER 8）</p>
+            <p class="prl-field-hint">信号线宽 mm，直接影响每层占用（越宽越挤、越易判硬冲突）。推荐：DC/HV 0.2、AC 0.1、POWER 8（预设已带，保持与真实板一致）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">线距 mm</label>
             <input v-model.number="clearance" type="number" step="0.05" class="prl-input" />
-            <p class="prl-field-hint">线与线的间距：参与拥塞网格的占用估算</p>
+            <p class="prl-field-hint">线与线最小间距 mm，参与拥塞占用估算：越大占用越大、越易判冲突。推荐 0.2（与板子实际一致）</p>
           </div>
         </div>
       </div>
@@ -802,6 +817,18 @@ onBeforeUnmount(() => {
     <!-- ═══ Tab 2 分层参数 ═══ -->
     <section v-show="activeTab === 'params'" class="prl-pane">
       <div class="prl-card">
+        <div class="prl-card-head"><h3>参数速查（先看这里）</h3></div>
+        <p class="prl-hint">
+          三块参数分别控制：<strong>方法/迭代</strong>＝怎么分层；<strong>SA</strong>＝分层后的精修质量；
+          <strong>拥塞估计</strong>＝判定哪些交叉算"硬冲突"（决定走人工）。<br />
+          <strong>质量 vs 速度</strong>：所有"轮数/步数/多起点"越大 → 质量越好、越慢（推荐先用预设默认，不满意再加）。<br />
+          <strong>最关键的旋钮</strong>：<code>硬冲突阈值</code>——<u>越大越宽松</u>（硬冲突、需人工越少，但同层交叉更多）；
+          <code>层容量</code>——越大每层塞得越多、层数越少（建议 ≤1.0，勿 &gt;1）。<br />
+          <strong>推荐路径</strong>：先选「输入设置→预设」，再回来微调；DC/HV 用 cell 2.0 + threshold 3.0，
+          AC 12 层 / POWER 20 层（预设已带）。
+        </p>
+      </div>
+      <div class="prl-card">
         <div class="prl-card-head">
           <h3>分层方法与迭代</h3>
           <code class="prl-cmd">LayeringConfig 字段</code>
@@ -813,7 +840,10 @@ onBeforeUnmount(() => {
               <option value="packing">packing（扇区轮询，默认）</option>
               <option value="dsatur">dsatur（图着色基线）</option>
             </select>
-            <p class="prl-field-hint">分层算法：packing 按扇区轮询分配（默认，效果好）；dsatur 图着色（基线对比用）</p>
+            <p class="prl-field-hint">
+              分层算法：<strong>packing</strong>（扇区轮询，默认，效果好）；<strong>dsatur</strong>（图着色，只作基线对比）。
+              推荐 packing。
+            </p>
           </div>
           <div class="prl-field">
             <label class="prl-label">精修 optimizer</label>
@@ -822,32 +852,32 @@ onBeforeUnmount(() => {
               <option value="greedy">greedy（只贪心）</option>
               <option value="none">none（关精修）</option>
             </select>
-            <p class="prl-field-hint">packing 后的多目标精修：sa 全局搜索（默认）；greedy 只做局部贪心；none 关闭精修（最快但最差）</p>
+            <p class="prl-field-hint">packing 后的精修：<strong>sa</strong>（模拟退火，默认，质量最好但慢）；<strong>greedy</strong>（只局部贪心）；<strong>none</strong>（关精修，最快但质量差）。推荐 sa</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">迭代① 硬冲突微调轮数</label>
             <input v-model.number="resolveConflictRounds" type="number" min="0" class="prl-input" />
-            <p class="prl-field-hint">同层硬冲突（交点拥塞超阈值）的微调轮数，越大冲突越少、越慢</p>
+            <p class="prl-field-hint">同层硬冲突（交点拥塞超阈值）的微调轮数：越大硬冲突越少、越慢。默认 8，推荐 8–15</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">迭代② 长短均衡轮数</label>
             <input v-model.number="balanceLengthRounds" type="number" min="0" class="prl-input" />
-            <p class="prl-field-hint">各层线长均衡的交换轮数，避免某层线特别长/短</p>
+            <p class="prl-field-hint">各层线长均衡的交换轮数：越大各层线长越均衡、越慢。默认 3，推荐 3–6</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">迭代③ 贪心交叉轮数</label>
             <input v-model.number="minimizeCrossingsPasses" type="number" min="0" class="prl-input" />
-            <p class="prl-field-hint">贪心最小化软冲突（线对交叉）的轮数，每轮扫全部软冲突对</p>
+            <p class="prl-field-hint">贪心最小化软冲突（线对交叉）的轮数：越大软冲突越少、越慢。默认 3，推荐 3–6</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">迭代④ SA 多起点（耗时 ×N）</label>
             <input v-model.number="saRestarts" type="number" min="1" class="prl-input" />
-            <p class="prl-field-hint">模拟退火多起点次数：&gt;1 时多次退火取最优，结果更稳但耗时按倍数增加</p>
+            <p class="prl-field-hint">SA 多起点次数：&gt;1 时多次退火取最优，结果更稳但耗时按倍数增加。默认 1 够用；追求更稳再 3–5</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">扇区角 sector_angle_deg（360/45=8 扇区）</label>
             <input v-model.number="sectorAngleDeg" type="number" min="5" step="5" class="prl-input" />
-            <p class="prl-field-hint">把圆按角度分成几个扇区轮询分配（45°=8 扇区；越小扇区越多、层间更均匀）</p>
+            <p class="prl-field-hint">把圆按角度分成扇区轮询：360/45=8 扇区。默认 45°；越小扇区越多、层间更均匀但更碎。推荐 30–60°</p>
           </div>
         </div>
       </div>
@@ -861,27 +891,27 @@ onBeforeUnmount(() => {
           <div class="prl-field">
             <label class="prl-label">初始温度</label>
             <input v-model.number="saInitialTemp" type="number" step="0.5" class="prl-input" />
-            <p class="prl-field-hint">退火起始温度（软冲突对数尺度）：越高初期越敢接受恶化、探索越广</p>
+            <p class="prl-field-hint">退火起始温度（软冲突对数尺度）：越高初期越敢接受恶化、探索越广。默认 8，推荐 5–12</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">降温系数</label>
             <input v-model.number="saCooling" type="number" step="0.0001" class="prl-input" />
-            <p class="prl-field-hint">每步温度乘数（慢降温探索充分）：越接近 1 越慢越充分，耗时越长</p>
+            <p class="prl-field-hint">每步温度乘数（慢降温探索充分）：越接近 1 越慢越充分、耗时越长。默认 0.9995（接近 1，建议保持）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">步数（0=自动 max(4000, 30×线数)）</label>
             <input v-model.number="saMaxSteps" type="number" min="0" class="prl-input" />
-            <p class="prl-field-hint">退火总步数：0 自动按线数估算；越大搜索越充分、越慢</p>
+            <p class="prl-field-hint">退火总步数：0=自动（max(4000, 30×线数)）。越大搜索越充分、越慢。推荐 0（自动）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">交换移动占比</label>
             <input v-model.number="saSwapRatio" type="number" min="0" max="1" step="0.1" class="prl-input" />
-            <p class="prl-field-hint">每步移动中"交换两线归属"的比例，其余为"单线换层"</p>
+            <p class="prl-field-hint">每步移动中"交换两线归属"的比例（其余为"单线换层"）。默认 0.7，推荐 0.5–0.8</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">均衡护栏 slack</label>
             <input v-model.number="saBalanceSlack" type="number" min="1" step="0.1" class="prl-input" />
-            <p class="prl-field-hint">均衡护栏：允许目标值恶化到初始值的倍数（防过度破坏线长均衡）</p>
+            <p class="prl-field-hint">均衡护栏：允许目标值恶化到初始值的倍数（防过度破坏线长均衡）。默认 2，推荐 1.5–3</p>
           </div>
         </div>
       </div>
@@ -895,30 +925,40 @@ onBeforeUnmount(() => {
           <div class="prl-field">
             <label class="prl-label">拥塞网格 cell mm（HV 用 2.0）</label>
             <input v-model.number="congestionGridCell" type="number" step="0.5" class="prl-input" />
-            <p class="prl-field-hint">拥塞网格边长 mm（绕行邻域 ≈ 数个走线节距）：越小判得越细、越容易判冲突</p>
+            <p class="prl-field-hint">拥塞网格边长 mm：越小判得越细、但越易判冲突（更严）。默认 0.5（偏严）；DC/HV 推荐 2.0，全量 0.5</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">硬冲突阈值（HV 用 3.0）</label>
             <input v-model.number="congestionHardThreshold" type="number" step="0.1" class="prl-input" />
-            <p class="prl-field-hint">交点拥塞超过此值判硬冲突（走线可弯折所以可放宽）：越大层越少、人工线越多</p>
+            <p class="prl-field-hint">交点拥塞超过该值判<strong>硬冲突</strong>。<u>越大越宽松</u>（硬冲突、需人工越少，但同层交叉更多）。默认 0.8 太严；DC/HV 推荐 3.0，全量 0.8</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">层容量（勿 >1）</label>
             <input v-model.number="layerCapacity" type="number" step="0.05" class="prl-input" />
-            <p class="prl-field-hint">每层 occupancy 上限（布线容量，满=1.0）：越大每层塞得越多、层数越少</p>
+            <p class="prl-field-hint">每层 occupancy 上限（布线容量，满=1.0）：越大每层塞得越多、层数越少。默认 1.0；建议 ≤1.0（勿 &gt;1）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">容量利用率</label>
             <input v-model.number="capacityUtilization" type="number" min="0" max="1" step="0.1" class="prl-input" />
-            <p class="prl-field-hint">目标容量利用率（低于 100% 留余量）：越小越保守、层数越多</p>
+            <p class="prl-field-hint">目标容量利用率（低于 100% 留余量）：越小越保守、层数越多。默认 0.6，推荐 0.5–0.7</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">过孔预留比例</label>
             <input v-model.number="viaAreaCost" type="number" step="0.05" class="prl-input" />
-            <p class="prl-field-hint">过孔占用面积的折算成本：越大越避免线挤在过孔密集区</p>
+            <p class="prl-field-hint">过孔占用面积的折算成本：越大越避免线挤在过孔密集区。默认 0.1</p>
+          </div>
+          <div class="prl-field">
+            <label class="prl-label">短线长度阈值 mm（0=关闭短线容忍）</label>
+            <input v-model.number="shortSegmentLen" type="number" min="0" step="0.5" class="prl-input" />
+            <p class="prl-field-hint">长度 ≤ 该值的段视为"短线"，其交叉更受宽容（见下一项）。默认 0=关闭（现状）；想容忍短线交叉再设 5–10mm</p>
+          </div>
+          <div class="prl-field">
+            <label class="prl-label">短线交叉硬阈值放大（1=不放大）</label>
+            <input v-model.number="shortSegmentCrossingFactor" type="number" min="1" step="0.5" class="prl-input" />
+            <p class="prl-field-hint">短线交叉需交点拥塞 ≥ 硬冲突阈值×本系数才判硬，否则按<strong>软</strong>。越大短线交叉越易同层（更宽容）；默认 1=不放大，推荐 1.5–3</p>
           </div>
         </div>
-        <p class="prl-hint">阈值越大层越少、人工线越多；参数未列出的字段用 probe_layer 默认值</p>
+        <p class="prl-hint">「硬冲突阈值」越大越宽松（硬冲突、需人工越少，但同层交叉更多）；其余参数未列出的字段用 probe_layer 默认值。短线容忍默认关闭，行为与现状一致</p>
       </div>
 
       <div class="prl-actions">

@@ -5,6 +5,46 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 > 详细的开发记录见 [HANDOVER.md](HANDOVER.md)；里程碑规划见 [PLAN.md](PLAN.md)。
 
+## [0.4.1] — 2026-09-03
+
+文件输入(Inbox) 目录 + 探针卡首次配置向导；走通率升级为"真实可布"（连通分量洪泛）指标；
+短线容忍可配置（默认=现状）；结果只保留最新一组；输出目录自动创建 + 走通率显示健壮性；
+全部配置项说明完善（参数速查卡 + 效果/推荐范围）。
+
+### 新增
+
+- **文件输入(Inbox) 目录**：数据根下新增 `Input/` 作为统一"输入/收件"目录（`TB_INBOX` 注入插件
+  进程），支持拖拽导入/建目录/重命名/移动/删除/打开；`input_*` 命令接入，输入文件可作为分层源。
+- **探针卡分层首次配置向导**：插件首次打开时引导设置数据根/工作区（`settings.configured` 门控），
+  避免未配置即计算报错。
+- **走通率"真实可布"指标**：新增 `post_process::routable_nets_flood`——按层在"容量内可走"栅格
+  （supply>0 且 occupancy≤layer_capacity）做 4 邻接连通分量洪泛，判定每条 net 的线端是否落在
+  **同一连通可布区**，比直线/路径占用峰值更诚实（走直线即使超容，只要层内存在容量内绕行通道就算可布）；
+  接入报告/摘要/结果页 `routable_flood_net_count/ratio/unroutable_nets_flood`。纯诊断、不改分层。
+- **算法深化基线（hv 1800 网，release）**：直线 77% / 路径 80% / **洪泛 98%**，层占用峰值 1.78（>1.0）。
+  结论：分层本体可行（98% 网可在容量内绕行），瓶颈是**圆心/内枢拥塞**——后续算法改进均以此为 A/B 基准。
+- **短线容忍可配置项**：`config.rs` 新增 `short_segment_len`（mm，长度 ≤ 该值视为短线，默认 0=关闭）
+  与 `short_segment_crossing_factor`（短线交叉的硬冲突阈值放大系数，默认 1=不放大）；
+  `conflict_classifier` 在硬阈值检查前判 `is_short` 并按系数放大阈值，硬判 reason 记为
+  `crossing_hotspot_short`。**默认值=现状，不改分层结果**。
+
+### 变更
+
+- **结果只保留最新一组**：`dispatch.rs` `cmd_run` 运行前 `prune_jobs`（删光历史 job 目录）+ 清空 jobs
+  map；`restore_jobs` 只保留最新一条 job。用户成果物（report/lst/csv）不受影响（覆盖写，不清理）。
+- **全部配置项说明完善**：`ui/App.vue` 所有参数 hint 重写为"效果 + 推荐范围 + 默认值"，新增「参数速查」
+  总览卡（质量vs速度、最关键旋钮、推荐路径）；修正"硬冲突阈值越大层越少/人工线越多"→
+  **越大越宽松（硬冲突/需人工越少，但同层交叉更多）**。
+
+### 修复
+
+- **输出目录未创建被拒**：`within_workspace`/`within_read` 改用新建 `path_within`（`norm_abs`：存在则
+  canonicalize、不存在则对最近存在祖先 canonicalize 再追加剩余组件；去 `\\?\` 前缀 + 大小写/组件边界判定），
+  使不存在的子路径正确判在作用域内，`create_dir_all` 自动创建输出目录。
+- **走通率显示健壮性**：三个 `routableRatio*` 对缺失字段返回「—」而非 `NaN`。
+- **CI 资源占位**：`build-release.yml`/`ci.yml` 在 `cargo test` 前创建 `resources/_core`、
+  `resources/bundled-plugins` 占位目录，修复 `resource path resources\bundled-plugins doesn't exist`。
+
 ## [0.4.0] — 2026-09-03
 
 探针卡分层可布性度量（走通率）+ 三种新预设（AC/POWER）+ 里程碑 0/1/2（配置化/诊断）

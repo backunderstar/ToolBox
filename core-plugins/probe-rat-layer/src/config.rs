@@ -40,6 +40,11 @@ pub struct LayeringConfig {
     pub ripup_rounds: i64,
     // —— 端点容忍（仅报告）——
     pub r_end: f64,
+    /// 短线容忍：长度 ≤ 该值(mm)的段视为"短线"。0 = 不启用短线容忍（默认=现状，不做特殊处理）。
+    pub short_segment_len: f64,
+    /// 短线交叉的硬冲突阈值放大系数：任一段为短线时，交点拥塞需 ≥ congestion_hard_threshold ×
+    /// 本系数才判硬冲突，否则按软处理。1.0 = 不放大（默认=现状）；>1 时短线交叉更易判软（更宽容）。
+    pub short_segment_crossing_factor: f64,
     // —— 禁布区 ——
     pub keepout_enabled: bool,
     pub keepout_margin_factor: f64,
@@ -84,6 +89,8 @@ impl Default for LayeringConfig {
             congestion_k: 2.0,
             ripup_rounds: 0,
             r_end: 0.5,
+            short_segment_len: 0.0,
+            short_segment_crossing_factor: 1.0,
             keepout_enabled: true,
             keepout_margin_factor: 0.5,
             plane_nets_excluded: true,
@@ -147,6 +154,8 @@ impl LayeringConfig {
             "congestion_k" => self.congestion_k = f(v)?,
             "ripup_rounds" => self.ripup_rounds = i(v)?,
             "r_end" => self.r_end = f(v)?,
+            "short_segment_len" => self.short_segment_len = f(v)?,
+            "short_segment_crossing_factor" => self.short_segment_crossing_factor = f(v)?,
             "keepout_margin_factor" => self.keepout_margin_factor = f(v)?,
             "resolve_conflict_rounds" => self.resolve_conflict_rounds = i(v)?,
             "balance_length_rounds" => self.balance_length_rounds = i(v)?,

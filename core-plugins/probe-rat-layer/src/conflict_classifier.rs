@@ -212,7 +212,17 @@ pub fn classify_pair(
             }
         }
     }
-    if occ >= cfg.congestion_hard_threshold {
+    // 短线容忍：任一段为短线（长度 ≤ `short_segment_len`）时，放宽"硬冲突"阈值——交点拥塞需
+    // ≥ congestion_hard_threshold × short_segment_crossing_factor 才判硬，否则降为软。
+    // `short_segment_len`=0（默认）不启用，保持现状。
+    let is_short = cfg.short_segment_len > 0.0
+        && (wa.length() <= cfg.short_segment_len || wb.length() <= cfg.short_segment_len);
+    let hard_thr = if is_short {
+        cfg.congestion_hard_threshold * cfg.short_segment_crossing_factor.max(1.0)
+    } else {
+        cfg.congestion_hard_threshold
+    };
+    if occ >= hard_thr {
         return Conflict {
             wire_a: wa.wire_id.clone(),
             wire_b: wb.wire_id.clone(),
@@ -222,7 +232,11 @@ pub fn classify_pair(
             dist_to_endpoints: (d1, d2),
             keepout_ids: shared,
             congestion: occ,
-            reasons: vec!["crossing_hotspot".to_string()],
+            reasons: if is_short {
+                vec!["crossing_hotspot_short".to_string()]
+            } else {
+                vec!["crossing_hotspot".to_string()]
+            },
         };
     }
     if d1 <= cfg.r_end || d2 <= cfg.r_end {
@@ -286,4 +300,50 @@ pub fn build_hard_graph(conflicts: &[Conflict]) -> ConflictGraph {
         }
     }
     graph
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::default_config;
+    use crate::congestion::CongestionMap;
+    use crate::model::{Point, Wire};
+    use ndarray::Array2;
+
+    /// 构造一条短线段 wa 与一条长线段 wb 在 (2,0) 相交，交点所在格占用 1.0。
+    fn crossing_scenario() -> (Wire, Wire, CongestionMap) {
+        let wa = Wire::new("wa".into(), "a".into(), Point::new(0.0, 0.0), Point::new(5.0, 0.0), 0.2, 0.2);
+        let wb = Wire::new("wb".into(), "b".into(), Point::new(2.0, -5.0), Point::new(2.0, 5.0), 0.2, 0.2);
+        let cmap = CongestionMap {
+            cell: 1.0,
+            origin: (0.0, 0.0),
+            width: 12,
+            height: 12,
+            demand: Array2::zeros((12, 12)),
+            supply: Array2::from_elem((12, 12), 1.0),
+            occupancy: Array2::from_elem((12, 12), 1.0), // 交点占用 1.0
+        };
+        (wa, wb, cmap)
+    }
+
+    /// 默认（short_segment_len=0）不启用短线容忍：交点占用 1.0 ≥ 硬阈值(0.8) → 硬（热点交叉）。
+    #[test]
+    fn short_tolerance_off_keeps_hotspot_hard() {
+        let (wa, wb, cmap) = crossing_scenario();
+        let cfg = default_config();
+        assert!(cfg.short_segment_len == 0.0, "默认应关闭短线容忍");
+        let c = classify_pair(&wa, &wb, &[], &cfg, Some(&cmap));
+        assert_eq!(c.level, ConflictLevel::Hard, "默认下热点交叉应硬: {:?}", c.reasons);
+    }
+
+    /// 启用短线容忍（wa 长 5 ≤ 10，factor 2.0）→ 硬阈值升到 1.6 > 占用 1.0 → 降到软。
+    #[test]
+    fn short_tolerance_downgrades_hotspot_to_soft() {
+        let (wa, wb, cmap) = crossing_scenario();
+        let mut cfg = default_config();
+        cfg.short_segment_len = 10.0;
+        cfg.short_segment_crossing_factor = 2.0;
+        let c = classify_pair(&wa, &wb, &[], &cfg, Some(&cmap));
+        assert_eq!(c.level, ConflictLevel::Soft, "短线交叉应降为软: {:?}", c.reasons);
+    }
 }

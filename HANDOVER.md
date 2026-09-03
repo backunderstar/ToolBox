@@ -515,6 +515,61 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   容量内绕行），瓶颈是**圆心/内枢拥塞**（层占用 1.78，超容核心区困住 35 条不可布 net）——印证
   "圆心/内枢拥塞优化"方向。**后续算法改进均以此为 A/B 基准**。
 
+### 1.17 增量（2026-09：探针卡"结果只保留最新一组" + 走通率显示健壮性）
+
+- **结果只保留一组**（用户要求"一个配置应对应一组结果，而不是把所有跑过的都留着"）：
+  - `dispatch.rs` `cmd_run`：每次运行前 `prune_jobs`（删光 `jobs/` 下历史 job 目录）+ 清空内存
+    `jobs` map → 只留最新一次运行。
+  - `dispatch.rs` `restore_jobs`：插件加载（`state_from_cfg`）时只**保留最新一条** job、删除其余
+    历史 job 目录（顺带清理升级前累积的旧 job），有 meta.json 才恢复（损坏/未完成丢弃）。
+  - 用户实际成果物（out_dir 的 report/lst/csv）**不受影响**（不清理，覆盖写）；只清理应用内部的
+    `jobs/<id>` 渲染/恢复缓存。
+  - 新增单测 `dispatch::tests::prune_jobs_removes_all_job_dirs`。
+- **走通率显示健壮性**：`ui/App.vue` 三个 `routableRatio*` 对缺失字段（旧 DLL/旧任务 summary 无
+  `routable_flood_*` 等）返回「—」而非 `NaN`。
+- 验证：`cargo test -p tb-probe-rat-layer` 14（10 过 + 4 ignored）/ `clippy -p` 0 告警；
+  `pnpm build:core` 部署（DLL 22:25, UI 133.39kB）。**native DLL 热替换需全量重启**——部署前
+  被运行中的应用锁定（EIO Access denied),需先结束 toolbox.exe 再 build:core。
+- **修输出目录未创建被拒**（用户反馈：输出目录 D:\...\测试\output 没建，报错）：`within_workspace`/
+  `within_read` 对**尚不存在**的路径用 `canonicalize(workspace)`（Windows 返回 `\\?\` 前缀）与未
+  规范化目标 `starts_with` 比对 → 前缀不一致误判"越出工作区"，发生在 `create_dir_all` 之前。
+  修复：新增 `path_within`（`norm_abs`：存在则 canonicalize，不存在则对**最近存在祖先** canonicalize
+  再追加剩余组件，并去 `\\?\` 前缀；Windows 大小写不敏感 + 组件边界判定，避免 `测试2` 误判在 `测试` 内），
+  `within_workspace`/`within_read` 改用之 → 不存在的子路径正确判在作用域内，`create_dir_all` 自动创建
+  输出目录。新增单测 `within_workspace_accepts_nonexistent_descendant`。
+
+### 1.18 增量（2026-09：探针卡"短线容忍"可配置项，默认=现状不改结果）
+
+- **需求**：用户看到短线跟多个线段交叉，想加"短线容忍"配置项 + 说明，且**提供当前参数为默认值**。
+- **新增配置**（`config.rs`，默认=现状）：
+  - `short_segment_len`（f64, mm）：长度 ≤ 该值的段视为"短线"。**默认 0.0 = 不启用**（现状，无特殊处理）。
+  - `short_segment_crossing_factor`（f64）：短线交叉的**硬冲突阈值放大系数**——任一段为短线时，交点
+    拥塞需 ≥ `congestion_hard_threshold × 本系数` 才判硬，否则按软。**默认 1.0 = 不放大**（现状）。
+- **算法**（`conflict_classifier::classify_pair`）：硬阈值检查前判定 `is_short`（`short_segment_len>0`
+  且某段长度 ≤ 它），按 `short_segment_crossing_factor.max(1.0)` 放大硬阈值；硬判时 reason 记为
+  `crossing_hotspot_short`（便于诊断）。`short_segment_len=0` → `is_short=false` → 行为与现状完全一致。
+- **UI**（`ui/App.vue` Tab 2→拥塞估计）：新增「短线长度阈值 mm（0=关闭）」「短线交叉硬阈值放大（1=不放大）」
+  两字段 + 说明；入 `configOverrides`/`applyParams`（持久化恢复）。
+- **测试**：`short_tolerance_off_keeps_hotspot_hard`、`short_tolerance_downgrades_hotspot_to_soft`
+  （同热点交叉：默认硬、启用短线容忍后软）；`cargo test -p tb-probe-rat-layer` 13 过 + 4 ignored、`clippy` 0。
+- ⚠️ 默认关闭 → **不改变现有分层结果**；真的想"短线交叉更容忍/同层"时再把 `short_segment_len` 设 >0、
+  `short_segment_crossing_factor` 设 >1，并用走通率(洪泛)/需人工 做 A/B 校验。
+- **配置项说明全面完善**（用户要求"改动会怎样 + 推荐范围"）：`ui/App.vue` 所有参数 hint 重写为
+  "效果 + 推荐范围 + 默认值"，并新增「参数速查」总览卡（质量vs速度、最关键旋钮、推荐路径）。
+  修正：原"硬冲突阈值越大层越少/人工线越多"→ **越大越宽松（硬冲突/需人工越少，但同层交叉更多）**。
+  未在界面暴露的高级/M0·M2 里程碑字段仍用 probe_layer 默认值（底部 hint 说明）。
+
+### 1.19 增量（2026-09-03：版本 0.4.1 发布 + 推送门禁本地全绿）
+
+汇总前述 §1.16–1.18 改动发布为 **v0.4.1**，并跑通推送门禁全部本地验证：
+- **版本单源**：`package.json` → `pnpm version:sync` 同步 tauri.conf.json / `src/core/version.ts` /
+  `src-tauri` + `tb-sdk` + `example` + `probe-rat-layer` 共 6 处 Cargo.toml；CHANGELOG 补 `[0.4.1]`。
+- **推送门禁本地验证（2026-09-03 全绿）**：`pnpm lint` 0 警告（79 文件）· `pnpm build` ✓ ·
+  `pnpm test` 41（4 文件）· **`cargo test --workspace` 78**（toolbox/宿主 60 + tb-sdk 3 + example 2 +
+  probe-rat-layer 13 + 4 ignored）· `cargo clippy --workspace --all-targets --no-deps -- -D warnings`
+  （dev + **release** 档）0 告警 · `pnpm build:core` ✓（probe-rat-layer UI 137.00 kB + DLL 自检通过）。
+- 注：版本号只动版本与文档，**不改分层算法行为**（短线容忍默认关、输出目录/走通率修复纯健壮性）。
+
 ---
 
 ## 2. 项目一句话
