@@ -236,6 +236,9 @@ pub fn run_once(
     }
     let (routable_path_net_count, _, unroutable_nets_path) =
         pp::routable_nets_path(&assignment, &wires, &data.keepouts, &pins, cfg, &layer_dir);
+    // 走通率（真实可布版）：层内"容量内可走"连通区洪泛——比直线/路径占用判定更诚实（可绕行）。
+    let (routable_flood_net_count, _, unroutable_nets_flood) =
+        pp::routable_nets_flood(&assignment, &wires, &data.keepouts, &pins, cfg);
 
     let net_by_id: HashMap<String, Net> = data
         .nets
@@ -351,6 +354,8 @@ pub fn run_once(
         unroutable_nets,
         routable_path_net_count,
         unroutable_nets_path,
+        routable_flood_net_count,
+        unroutable_nets_flood,
         multi_layer_nets,
         via_estimate,
     })

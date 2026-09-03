@@ -357,6 +357,11 @@ pub struct LayeringResult {
     pub routable_path_net_count: usize,
     /// 走通率（模拟路由路径版）：被判定不可布的 net id。
     pub unroutable_nets_path: Vec<String>,
+    /// 走通率（**真实可布版**，连通分量洪泛）：层内"容量内可走"连通区能贯穿该 net 全部线段的
+    /// 已分配 net 数（比直线/路径占用判定更诚实，见 `post_process::routable_nets_flood`）。
+    pub routable_flood_net_count: usize,
+    /// 走通率（真实可布版）：被判定不可布的 net id。
+    pub unroutable_nets_flood: Vec<String>,
     /// 少过孔度量：跨层（分布在 >1 层）的 net 数。
     pub multi_layer_nets: usize,
     /// 少过孔度量：估算"net 内跨层边界数"总和（≈需新增过孔数的下界；仅信号线）。

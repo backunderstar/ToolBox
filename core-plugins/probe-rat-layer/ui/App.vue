@@ -193,6 +193,14 @@ function routableRatioPath(s: any): string {
   return t > 0 ? `${Math.round((r / t) * 100)}%` : "0%";
 }
 
+/** 走通率（**真实可布**·连通分量洪泛，%）：层内"容量内可走"连通区是否贯穿；比直线/路径更诚实 */
+function routableRatioFlood(s: any): string {
+  if (!s) return "0%";
+  if (typeof s.routable_flood_ratio === "number") return `${Math.round(s.routable_flood_ratio * 100)}%`;
+  const t = s.total_net_count, r = s.routable_flood_net_count;
+  return t > 0 ? `${Math.round((r / t) * 100)}%` : "0%";
+}
+
 /* ---------- 内置文件浏览器（layer.listDir；从当前工作区开始，限定在工作区内） ---------- */
 const browserOpen = ref(false);
 const browserMode = ref<"file" | "dir">("file");
@@ -981,6 +989,7 @@ onBeforeUnmount(() => {
             <div class="prl-stat"><span class="prl-stat-num">{{ result.summary.manual_route_net_count }}</span><span>人工 route</span></div>
             <div class="prl-stat"><span class="prl-stat-num">{{ routableRatio(result.summary) }}</span><span>走通率(直线)</span></div>
             <div class="prl-stat"><span class="prl-stat-num">{{ routableRatioPath(result.summary) }}</span><span>走通率(路径)</span></div>
+            <div class="prl-stat"><span class="prl-stat-num">{{ routableRatioFlood(result.summary) }}</span><span>走通率(真实可布)</span></div>
             <div class="prl-stat"><span class="prl-stat-num">{{ result.summary.elapsed_sec }}s</span><span>耗时</span></div>
           </div>
           <p v-if="result.summary.warnings.length" class="prl-meta">

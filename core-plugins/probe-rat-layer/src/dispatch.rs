@@ -800,6 +800,13 @@ fn summary_json(r: &LayeringResult) -> Value {
             0.0
         },
         "unroutable_nets_path": r.unroutable_nets_path,
+        "routable_flood_net_count": r.routable_flood_net_count,
+        "routable_flood_ratio": if r.total_net_count > 0 {
+            (r.routable_flood_net_count as f64 / r.total_net_count as f64 * 10000.0).round() / 10000.0
+        } else {
+            0.0
+        },
+        "unroutable_nets_flood": r.unroutable_nets_flood,
         "multi_layer_nets": r.multi_layer_nets,
         "via_estimate": r.via_estimate,
         "iterations_used": r.iterations_used,
