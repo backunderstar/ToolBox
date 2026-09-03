@@ -116,6 +116,14 @@ pub fn run() {
             core::files::files_rename,
             core::files::files_move,
             core::files::files_copy,
+            // 文件输入（Inbox，数据根/Input）：列/导入/归位/删除/打开（见 core/input.rs）
+            core::input::input_list,
+            core::input::input_import,
+            core::input::input_to_workspace,
+            core::input::input_delete,
+            core::input::input_mkdir,
+            core::input::input_rename,
+            core::input::input_open,
             // 插件命令在 plugins::commands 定义（tauri 宏在定义模块生成
             // __cmd__* 辅助项，路径需指向定义模块；非命令项仍走 plugins::*）
             plugins::commands::plugins_list,

@@ -175,6 +175,27 @@ export const fsMove = (vault: string, from: string, to: string) =>
 export const fsCopy = (vault: string, from: string, to: string) =>
   invoke<void>("files_copy", { vault, from, to });
 
+/* ---- 文件输入（Inbox，数据根/Input）：列目录 / 导入（拖入）/ 归位（移入工作区）/ 删除 / 打开 ---- */
+export const inputList = (dir = "") =>
+  invoke<{ dir: string; entries: FileEntry[] }>("input_list", { dir });
+/** 把外部文件/文件夹移入 Input（拖拽落点；返回导入的文件名与错误） */
+export const inputImport = (paths: string[]) =>
+  invoke<{ imported: string[]; errors: string[]; dir: string }>("input_import", { paths });
+/** 把 Input 下选中项移入当前工作区（分类归位；返回移入的文件名与目标） */
+export const inputToWorkspace = (names: string[]) =>
+  invoke<{ moved: string[]; errors: string[]; target: string }>("input_to_workspace", { names });
+/** 把 Input 下选中项移入回收站（可恢复） */
+export const inputDelete = (names: string[]) =>
+  invoke<{ deleted: string[]; errors: string[] }>("input_delete", { names });
+/** 在 Input 下新建子文件夹（自动创建父链；已存在拒绝） */
+export const inputMkdir = (name: string) => invoke<void>("input_mkdir", { name });
+/** 重命名 Input 下某项（目标已存在拒绝） */
+export const inputRename = (from: string, to: string) =>
+  invoke<void>("input_rename", { from, to });
+/** 系统默认应用打开 Input 下某项（name 为空 = 打开 Input 目录） */
+export const inputOpen = (name?: string) =>
+  invoke<void>("input_open", { name: name ?? undefined });
+
 /** 聚合搜索：文件全文 + 启用的搜索提供者插件命中（source 字段标记来源） */
 export const searchAll = (vault: string, query: string) =>
   invoke<SearchHit[]>("search_all", { vault, query });

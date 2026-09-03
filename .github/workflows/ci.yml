@@ -38,12 +38,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # tauri 构建脚本编译期校验 bundle.resources 路径（resources/python 与
-      # resources/bundled-plugins 已加入配置）；CI 测试用系统 Python（windows-latest
+      # tauri 构建脚本编译期校验 bundle.resources 路径（resources/_core、resources/python
+      # 与 resources/bundled-plugins 已加入配置）；CI 测试用系统 Python（windows-latest
       # 自带），只需占位目录即可通过编译，无需下载 47MB 捆绑运行时（release 流程
       # 才真实 fetch/构建，见 build-release.yml / bundle:plugins）。
       - name: Create bundled resource placeholders
-        run: New-Item -ItemType Directory -Force src-tauri/resources/python, src-tauri/resources/bundled-plugins | Out-Null
+        run: New-Item -ItemType Directory -Force src-tauri/resources/_core, src-tauri/resources/python, src-tauri/resources/bundled-plugins | Out-Null
 
       - name: Lint (oxlint)
         run: pnpm lint

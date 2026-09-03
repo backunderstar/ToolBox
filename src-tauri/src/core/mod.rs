@@ -18,6 +18,7 @@ pub mod app;
 pub mod backup;
 pub mod config;
 pub mod files;
+pub mod input;
 pub mod log;
 pub mod path;
 pub mod search;

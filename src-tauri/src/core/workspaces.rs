@@ -63,6 +63,9 @@ pub struct WorkspaceInfo {
 
 /// 数据根下的大项目录名（应用只管理 Project/）。
 pub const PROJECTS_DIR: &str = "Project";
+/// 数据根下的「文件输入」（Inbox）目录名：未知/待分类文件的暂存区
+/// （与 Project/Plugin/Config 平级；工作区/插件可只读它，见输入视图与 TB_INBOX）。
+pub const INPUTS_DIR: &str = "Input";
 /// 工作区内的隐藏元数据目录（搜索索引/备份/描述；文件视图隐藏）。
 pub const WS_META_DIR: &str = ".toolbox";
 /// 工作区元数据文件名（.toolbox/workspace.json）。
@@ -105,6 +108,15 @@ pub fn current_workspace_path(app: &tauri::AppHandle) -> Result<Option<String>, 
         }
     }
     Ok(None)
+}
+
+/// 数据根下的「文件输入」（Inbox）目录绝对路径：数据根/Input。
+/// 未配置数据根 → Err；目录不存在则自动创建（首次访问/设根时落地）。
+pub fn input_dir_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let root = read_root(app).ok_or("未配置数据根目录（请先完成引导）")?;
+    let d = PathBuf::from(root).join(INPUTS_DIR);
+    std::fs::create_dir_all(&d).map_err(|e| format!("创建文件输入目录失败: {e}"))?;
+    Ok(d)
 }
 
 /// 读取当前工作区名（root.json 之外的 current 状态仍存 root.json？——统一存 root.json）。
@@ -234,6 +246,9 @@ pub fn workspace_set_root(app: tauri::AppHandle, path: String) -> Result<Workspa
     }
     let proj = dir.join(PROJECTS_DIR);
     std::fs::create_dir_all(&proj).map_err(|e| format!("创建 Project/ 目录失败: {e}"))?;
+    // 文件输入（Inbox）目录：数据根/Input（未知/待分类文件的暂存区）
+    let input = dir.join(INPUTS_DIR);
+    std::fs::create_dir_all(&input).map_err(|e| format!("创建 Input/ 目录失败: {e}"))?;
     let current = list_workspaces(&proj)
         .into_iter()
         .map(|i| i.name)

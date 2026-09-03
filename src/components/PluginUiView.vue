@@ -57,6 +57,11 @@ async function load(): Promise<void> {
       go: (view: string) => nav.go(view),
     },
     context: {
+      // 文件输入（Inbox，数据根/Input）目录：插件 UI 可只读浏览/选待处理文件；
+      // 与 Rust 侧 INPUTS_DIR 常量同名（Input）
+      get inputDir() {
+        return vault.state.root ? `${vault.state.root}/Input` : null;
+      },
       get activePath() {
         return vault.state.activePath;
       },

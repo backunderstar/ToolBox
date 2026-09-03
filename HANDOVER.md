@@ -454,6 +454,52 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   `cargo test --workspace` 全过（57 宿主 + 8 probe-rat-layer + 3 sdk + 2 example）·
   `pnpm lint` 0 · `pnpm build` ✓ · `pnpm test` 40 · 真实数据回归（`--ignored`）通过。
 
+### 1.15 增量（2026-09：文件输入(Inbox)目录 + 探针卡分层首次配置向导，用户确认方案）
+
+- **文件输入（Inbox，`数据根/Input`）**（用户需求 2，方案确认后实施）：
+  - 数据根下新增受管顶层目录 `Input/`（与 Project/Plugin/Config 平级）；`workspace_set_root`
+    时自动创建；`workspaces::input_dir_path(app)` 返回其绝对路径（未配置根 → Err）。
+  - **新增命令**（`core/input.rs`，lib.rs 注册，api.ts 封装）：`input_list`（列目录，可导航
+    子目录，复用 `files::list`）、`input_import`（**移入**外部文件/文件夹：rename，跨卷复制+删源，
+    同名冲突加时间戳）、`input_to_workspace`（把 Input 选中项**移入当前工作区**=分类归位）、
+    `input_delete`（回收站）、`input_mkdir`（新建子文件夹）、`input_rename`（重命名）、
+    `input_open`（系统默认打开；名空 = 打开 Input 目录）。命令都只作用
+    于 `数据根/Input`（宿主控制路径），无 vault 校验；归位目标 = 当前工作区。
+  - **入口**：新增侧边栏菜单项「文件输入」+ 独立视图 `src/views/InputView.vue`（加入
+    RESERVED_VIEW_IDS、navDefs、App.vue 路由；view id `input`）。支持：列表/子目录导航、
+    **拖拽移入**（`getCurrentWebview().onDragDropEvent`，宿主 dragDropEnabled 默认开）、
+    新建子文件夹/重命名、**移入当前工作区前确认**（弹确认框 + 显示目标工作区名）、选中批量
+    「移入当前工作区/删除」、行内打开(文件夹在资源管理器打开)/重命名/删除、
+    API 封装映射测试（api.test.ts 新增 input_* 断言，共 11 用例）。
+  - **跨读（只读）**：插件进程 spawn 注入 `TB_INBOX`（process）与 native 配置 `input_dir`；
+    process 插件 `fs.readText/listDir` 允许其下**绝对路径**（`resolve_read`：相对→vault、绝对→仅
+    Input 内放行；写仍限 vault）；native 插件（probe-rat-layer）`layer.listDir` 与 `_run_job` 的
+    输入校验放宽到「工作区 ∪ Input」（`clamp_to_roots`/`within_read`），输出仍限工作区。
+    ⚠️ 宿主 `files.rs`/search/backup 未改（仍只作用当前工作区）；跨读 Input 走「Input 视图 +
+    插件 TB_INBOX」，避免全局放宽破坏 S1c 语义。
+  - 插件 UI 上下文注入 `inputDir`（`api.context.inputDir` = root/Input，PluginUiView.vue）。
+- **探针卡分层首次配置向导**（用户需求 1，方案确认后实施）：
+  - `ui/App.vue` 挂载读 `layer.config get`，`settings.configured` 为真才显示 4 页签；否则显示
+    全屏向导「首次使用：配置分层输入」——强制选 **Allegro pin 表数据文件**（必填），完成后
+    `layer.config set {configured:true, lastInput,...}` → 进页签。「其他待定」输入后续按同一
+    列表扩展（向导项=输入设置页字段）。
+  - pin 表选择器浏览范围=「当前工作区 ∪ Input」：文件浏览器弹层加「工作区/文件输入」根切换
+    （`browserSource`），`layer.listDir` 后端 `clamp_to_roots` 双根钳制。
+- **验证**：`cargo test --workspace` 全过（含 `core::input` 新增 3 单测：unique_target/move_into/
+  resolve_name 拒越界）· `cargo check --workspace --tests` ✓ · `pnpm lint` 0（79 文件）·
+  `pnpm test` 40 · `pnpm build:core` ✓（probe-rat-layer index.js 132.93 kB / gzip 49.93 kB，
+  已部署 `D:\ToolBoxData\plugins\_core`）· UI 拖拽/向导交互留待用户验收（tauri dev 冒烟）。
+- ⚠️ **native 插件热更需全量重启**（§1.14 同款）：本轮探针卡 UI/逻辑改动经 build:core 已部署
+  到 `_core`，应用内需重启才生效；`input_dir` 由宿主注入，重启后插件才拿到 Input 路径。
+- **CI 资源占位修复（2026-09）**：`build-release.yml` 在 `cargo test --workspace`（fetch:python
+  之后、tauri build 之前）会触发 tauri-build 校验 `bundle.resources`，而 `resources/_core` 与
+  `resources/bundled-plugins` 要等 tauri build 的 beforeBuildCommand（build:core:release /
+  bundle:plugins）才生成 → 报 `resource path resources\bundled-plugins (或 _core) doesn't exist`。
+  修复：build-release.yml 在 cargo test 前加 "Create bundled resource placeholders"（建
+  `_core` + `bundled-plugins` 空占位；python 由 fetch:python 生成）；ci.yml 占位同步补
+  `_core`。**本地验证不受影响**（这三目录在源码树本就被 .gitignore，本地由 build:core/
+  bundle:plugins 生成）。
+
 ---
 
 ## 2. 项目一句话

@@ -39,6 +39,9 @@ struct JobRecord {
 
 pub struct LayerState {
     vault: String,
+    /// 文件输入（Inbox，数据根/Input）目录：插件可**只读**它（浏览/读入 pin 表等）；
+    /// 输出仍限当前工作区。空串 = 未配置数据根。
+    input_dir: String,
     /// 插件自己的工作目录（jobs/cache/settings 落地处）= config_dir/probe-rat-layer
     plugin_dir: String,
     active: Arc<Mutex<ActiveStateData>>,
@@ -73,10 +76,11 @@ impl LayerState {
         let jobs = Arc::clone(&self.jobs);
         let plugin_dir = self.plugin_dir.clone();
         let workspace = self.vault.clone();
+        let input_dir = self.input_dir.clone();
         let eh = EmitHandle { host, ctx };
         let handle = std::thread::Builder::new()
             .spawn(move || {
-                _run_job(eh, &plugin_dir, &workspace, job_id, args, &active, &cancel, &jobs);
+                _run_job(eh, &plugin_dir, &workspace, &input_dir, job_id, args, &active, &cancel, &jobs);
             })
             .ok();
         *self.running.lock().unwrap() = handle;
@@ -143,6 +147,7 @@ impl Drop for LayerState {
 
 pub fn state_from_cfg(cfg: &Value) -> Result<LayerState, String> {
     let vault = cfg.get("vault").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let input_dir = cfg.get("input_dir").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let config_dir = cfg.get("config_dir").and_then(|v| v.as_str()).unwrap_or("").to_string();
     // 容忍空 vault：与 Python 版一致——插件启动不受工作区配置影响，需要工作区的命令在
     // 调用期报"工作区目录无效"。jobs/cache/settings 落在 config_dir/probe-rat-layer。
@@ -150,6 +155,7 @@ pub fn state_from_cfg(cfg: &Value) -> Result<LayerState, String> {
     let _ = std::fs::create_dir_all(&plugin_dir);
     let state = LayerState {
         vault,
+        input_dir,
         plugin_dir,
         active: Arc::new(Mutex::new(ActiveStateData::default())),
         cancel: new_cancel(),
@@ -169,7 +175,11 @@ pub fn call(
 ) -> Result<Value, String> {
     // native 插件契约：`method` = 命令名（layer.render 等），`params` = 该命令的参数对象。
     match method {
-        "layer.listDir" => cmd_list_dir(&state.vault, params.get("path").and_then(|v| v.as_str())),
+        "layer.listDir" => cmd_list_dir(
+            &state.vault,
+            &state.input_dir,
+            params.get("path").and_then(|v| v.as_str()),
+        ),
         "layer.config" => cmd_config(state, &params),
         "layer.run" => cmd_run(state, host, ctx, &params),
         "layer.status" => cmd_status(state),
@@ -187,9 +197,11 @@ pub fn call(
 
 // ---------- 文件浏览 / 设置 ----------
 
-/// 把请求路径钳制到工作区内的绝对路径：空路径/越界路径 → 工作区根；否则返回工作区内的绝对路径。
-/// 工作区外的路径一律拒绝（文件操作只允许在当前工作区内，见用户要求）。
-fn clamp_to_workspace(workspace: &str, p: &str) -> String {
+/// 把请求路径钳制到**可读根集合**内的绝对路径：空路径/越界路径 → 工作区根；否则
+/// 返回落在工作区或文件输入（Input）目录内的绝对路径。工作区外的路径一律拒绝
+/// （文件操作只允许在当前工作区内；文件输入目录仅作为**只读**根，供浏览/读入待处理
+/// 文件，如 Allegro pin 表）。两个根都空（未配置）→ 空串，由调用方报"未配置"。
+fn clamp_to_roots(workspace: &str, input_dir: &str, p: &str) -> String {
     let p = p.trim();
     if p.is_empty() {
         return workspace.to_string();
@@ -199,23 +211,23 @@ fn clamp_to_workspace(workspace: &str, p: &str) -> String {
     } else {
         std::path::Path::new(workspace).join(p).to_string_lossy().to_string()
     };
-    let ws = std::fs::canonicalize(workspace).ok();
-    let ab = std::fs::canonicalize(&abs).ok();
-    match (ws, ab) {
-        (Some(ws), Some(ab)) => {
+    for root in [workspace, input_dir] {
+        if root.is_empty() {
+            continue;
+        }
+        let ws = std::fs::canonicalize(root).ok();
+        let ab = std::fs::canonicalize(&abs).ok();
+        if let (Some(ws), Some(ab)) = (ws, ab) {
             if ab == ws || ab.starts_with(&ws) {
-                abs
-            } else {
-                ws.to_string_lossy().to_string()
+                return abs;
             }
         }
-        (Some(ws), None) => {
-            // 目标不存在（如正待选目录）：仍按其绝对形式，交由调用方报"目录不存在"
-            let _ = ws;
-            abs
-        }
-        _ => workspace.to_string(),
     }
+    // 目标不存在（如正待选目录）：仍按其绝对形式，交由调用方报"目录不存在"
+    if std::fs::canonicalize(&abs).is_err() {
+        return abs;
+    }
+    workspace.to_string()
 }
 
 /// 路径是否落在工作区内（用于命令校验；工作区未配置时放行，便于开发/旧数据）。
@@ -233,11 +245,29 @@ fn within_workspace(workspace: &str, p: &str) -> bool {
     ab == ws || ab.starts_with(&ws)
 }
 
-fn cmd_list_dir(workspace: &str, path: Option<&str>) -> Result<Value, String> {
-    if workspace.is_empty() {
-        return Err("未配置工作区（请先在设置页选择/新建工作区）".to_string());
+/// 路径是否落在**可读根集合**内（工作区 或 文件输入目录）。输入只读、输出限工作区：
+/// `_run_job` 据此校验 input（可读根）与 out_dir（仅工作区，`within_workspace`）。
+fn within_read(workspace: &str, input_dir: &str, p: &str) -> bool {
+    within_workspace(workspace, p)
+        || if input_dir.is_empty() {
+            false
+        } else {
+            let root = std::fs::canonicalize(input_dir).unwrap_or_else(|_| std::path::PathBuf::from(input_dir));
+            let joined = if std::path::Path::new(p).is_absolute() {
+                std::path::PathBuf::from(p)
+            } else {
+                std::path::Path::new(input_dir).join(p)
+            };
+            let ab = std::fs::canonicalize(&joined).unwrap_or(joined);
+            ab == root || ab.starts_with(&root)
+        }
+}
+
+fn cmd_list_dir(workspace: &str, input_dir: &str, path: Option<&str>) -> Result<Value, String> {
+    let target = clamp_to_roots(workspace, input_dir, path.unwrap_or(""));
+    if target.is_empty() {
+        return Err("未配置工作区/文件输入目录（请先在设置页选择/新建工作区）".to_string());
     }
-    let target = clamp_to_workspace(workspace, path.unwrap_or(""));
     if !std::path::Path::new(&target).is_dir() {
         return Err(format!("目录不存在: {target}"));
     }
@@ -341,6 +371,7 @@ fn _run_job(
     eh: EmitHandle,
     plugin_dir: &str,
     workspace: &str,
+    input_dir: &str,
     job_id: String,
     args: Value,
     active: &Arc<Mutex<ActiveStateData>>,
@@ -357,12 +388,13 @@ fn _run_job(
         let input = args.get("input").and_then(|v| v.as_str()).unwrap_or("");
         let filter = args.get("filter").and_then(|v| v.as_str()).map(str::to_string);
         let out_dir = args.get("outDir").and_then(|v| v.as_str()).unwrap_or("");
-        // 文件操作限定在当前工作区内（用户要求）：越界路径直接拒绝，而非钳制。
-        if !within_workspace(workspace, input) {
-            return Err("输入文件越出工作区（文件操作限定在当前工作区内）".to_string());
+        // 文件操作：输入限**可读根**（当前工作区 或 文件输入目录），输出限当前工作区
+        // （用户要求：输出落地在工作区；输入可从 Input 读待处理文件，如 Allegro pin 表）。
+        if !within_read(workspace, input_dir, input) {
+            return Err("输入文件越出可读范围（需在当前工作区或文件输入目录内）".to_string());
         }
         if !within_workspace(workspace, out_dir) {
-            return Err("输出目录越出工作区（文件操作限定在当前工作区内）".to_string());
+            return Err("输出目录越出工作区（文件输出限定在当前工作区内）".to_string());
         }
         if input.is_empty() || !std::path::Path::new(input).is_file() {
             return Err(format!("输入文件不存在: {input}"));

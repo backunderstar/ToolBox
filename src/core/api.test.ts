@@ -25,6 +25,13 @@ import {
   fsRead,
   fsRename,
   fsWrite,
+  inputDelete,
+  inputImport,
+  inputList,
+  inputMkdir,
+  inputOpen,
+  inputRename,
+  inputToWorkspace,
   logLevelSet,
   logsClear,
   logsPath,
@@ -117,6 +124,27 @@ describe("api IPC 映射（invoke 命令名与参数）", () => {
       from: "a.md",
       to: "c.md",
     });
+  });
+
+  it("文件输入（Inbox，数据根/Input）", async () => {
+    await inputList();
+    expect(mockInvoke).toHaveBeenCalledWith("input_list", { dir: "" });
+    await inputList("sub");
+    expect(mockInvoke).toHaveBeenCalledWith("input_list", { dir: "sub" });
+    await inputImport(["C:/tmp/a.xlsx"]);
+    expect(mockInvoke).toHaveBeenCalledWith("input_import", { paths: ["C:/tmp/a.xlsx"] });
+    await inputToWorkspace(["a.xlsx"]);
+    expect(mockInvoke).toHaveBeenCalledWith("input_to_workspace", { names: ["a.xlsx"] });
+    await inputDelete(["a.xlsx", "b"]);
+    expect(mockInvoke).toHaveBeenCalledWith("input_delete", { names: ["a.xlsx", "b"] });
+    await inputMkdir("归档");
+    expect(mockInvoke).toHaveBeenCalledWith("input_mkdir", { name: "归档" });
+    await inputRename("a.xlsx", "b.xlsx");
+    expect(mockInvoke).toHaveBeenCalledWith("input_rename", { from: "a.xlsx", to: "b.xlsx" });
+    await inputOpen();
+    expect(mockInvoke).toHaveBeenCalledWith("input_open", { name: undefined });
+    await inputOpen("a.xlsx");
+    expect(mockInvoke).toHaveBeenCalledWith("input_open", { name: "a.xlsx" });
   });
 
   it("搜索", async () => {

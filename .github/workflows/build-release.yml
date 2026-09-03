@@ -60,6 +60,14 @@ jobs:
       - name: Fetch bundled Python runtime
         run: pnpm fetch:python
 
+      # resources/bundled-plugins 与 resources/_core 由 tauri build 的 beforeBuildCommand
+      # （bundle:plugins / build:core:release）才真实生成；此步先建空占位目录，否则下面
+      # cargo test 编译期 tauri-build 校验 bundle.resources 时会报
+      # "resource path resources\bundled-plugins (或 _core) doesn't exist"
+      # （resources/python 由上面 fetch:python 生成）。加载/打包时再填充真实内容。
+      - name: Create bundled resource placeholders
+        run: New-Item -ItemType Directory -Force src-tauri/resources/_core, src-tauri/resources/bundled-plugins | Out-Null
+
       - name: Rust tests (workspace)
         run: cargo test --workspace
 

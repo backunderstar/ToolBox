@@ -25,6 +25,10 @@ const tabs = [
 ] as const;
 const activeTab = ref<(typeof tabs)[number]["id"]>("input");
 
+/* ---------- 首次配置向导 ---------- */
+/** 是否已完成路径配置（settings.json 的 configured；未配置 → 显示配置向导而非页签） */
+const configured = ref(false);
+
 /* ---------- 输入设置 ---------- */
 const inputPath = ref("");
 const filterPath = ref("");
@@ -199,12 +203,20 @@ const browserBusy = ref(false);
 const browserSelected = ref<string | null>(null);
 /* 当前工作区（宿主注入）：文件操作只允许在这个根目录下进行 */
 const workspaceRoot = props.api.context.vault ?? "";
+/* 文件输入（Inbox，数据根/Input）：待处理文件（如 Allegro pin 表）可只读浏览 */
+const inputDir = (props.api.context.inputDir as string | undefined) ?? "";
+/* 浏览根来源：工作区 或 文件输入（pin 表向导可在两者间切换） */
+type BrowseSource = "workspace" | "input";
+const browserSource = ref<BrowseSource>("workspace");
+const sourceRoot = computed(() => (browserSource.value === "input" ? inputDir : workspaceRoot));
+const hasInputRoot = computed(() => !!inputDir);
 
 async function openBrowser(mode: "file" | "dir", title: string, startPath: string): Promise<void> {
   browserMode.value = mode;
   browserTitle.value = title;
   browserOpen.value = true;
   browserSelected.value = null;
+  browserSource.value = "workspace";
   await navigateBrowser(startPath || workspaceRoot);
 }
 
@@ -222,14 +234,22 @@ async function navigateBrowser(path: string): Promise<void> {
   }
 }
 
-/* 上一级：取当前路径的父目录；已在工作区根则禁用（插件亦会钳制，双保险） */
+/* 上一级：取当前路径的父目录；已在当前浏览根（工作区/文件输入）则禁用（插件亦会钳制，双保险） */
 function goUp(): void {
-  if (browserPath.value === workspaceRoot) return;
+  const root = sourceRoot.value;
+  if (browserPath.value === root) return;
   const p = browserPath.value.replace(/[\\/]+$/, "");
   const idx = Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/"));
   if (idx < 0) return;
-  const parent = p.slice(0, idx) || workspaceRoot;
+  const parent = p.slice(0, idx) || root;
   void navigateBrowser(parent);
+}
+
+/** 切换浏览根（工作区 ↔ 文件输入），用于 pin 表等待处理文件的定位 */
+function switchSource(src: BrowseSource): void {
+  if (src === browserSource.value) return;
+  browserSource.value = src;
+  void navigateBrowser(sourceRoot.value);
 }
 
 function enterDir(entry: DirEntry): void {
@@ -263,6 +283,31 @@ function confirmBrowser(): void {
     outDir.value = browserPath.value;
   }
   browserOpen.value = false;
+}
+
+/** 完成首次配置：记录 configured=true 并持久化，进入现有页签 */
+async function completeSetup(): Promise<void> {
+  inputError.value = null;
+  if (!inputPath.value.trim()) {
+    inputError.value = "请先选择 Allegro pin 表数据文件（必填）";
+    return;
+  }
+  try {
+    await props.api.call("layer.config", {
+      action: "set",
+      patch: {
+        configured: true,
+        lastInput: inputPath.value.trim(),
+        lastFilter: filterPath.value.trim(),
+        lastOutDir: outDir.value.trim(),
+        ...collectParams(),
+      },
+    });
+    configured.value = true;
+    activeTab.value = "input";
+  } catch (e) {
+    inputError.value = `保存配置失败: ${e}`;
+  }
 }
 
 /* ---------- 运行 ---------- */
@@ -552,6 +597,7 @@ void (async () => {
       settings: Record<string, unknown>;
     };
     const s = r.settings;
+    configured.value = !!(s && typeof s === "object" && s.configured === true);
     if (typeof s.lastInput === "string" && s.lastInput) inputPath.value = s.lastInput;
     if (typeof s.lastFilter === "string" && s.lastFilter) filterPath.value = s.lastFilter;
     if (typeof s.lastOutDir === "string" && s.lastOutDir) outDir.value = s.lastOutDir;
@@ -632,8 +678,35 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="prl-ui">
+    <!-- ═══ 首次配置向导：未完成路径配置时替代页签 ═══ -->
+    <section v-if="!configured" class="prl-setup">
+      <div class="prl-setup-head">
+        <h2>首次使用：配置分层输入</h2>
+        <p>从 Allegro 导出的 <strong>pin 表数据文件</strong>出发；配置好即可进入分层。之后可在「输入设置」随时修改。</p>
+      </div>
+      <div v-if="inputError" class="prl-error" role="alert">{{ inputError }}</div>
+      <div class="prl-card">
+        <div class="prl-field">
+          <label class="prl-label">Allegro pin 表数据文件（.xls/.xlsx，兼容旧 JSON）— 必填</label>
+          <div class="prl-row">
+            <input v-model="inputPath" class="prl-input" placeholder="如 D:\...\in\1.xlsx" />
+            <button class="prl-btn" @click="openBrowser('file', '选择输入文件', '')">浏览</button>
+          </div>
+          <p class="prl-hint">
+            文件可在当前工作区或「文件输入」目录中浏览选择——通常 Allegro 导出的文件先放到
+            文件输入（Inbox），再在这里选中开始分层。
+          </p>
+        </div>
+      </div>
+      <div class="prl-actions">
+        <button class="prl-btn prl-btn-primary" :disabled="!inputPath.trim()" @click="completeSetup">
+          完成配置，开始使用
+        </button>
+      </div>
+    </section>
+
     <!-- 页签：固定不随内容滚动（内容在 prl-body 内独立滚动） -->
-    <nav class="prl-tabs" role="tablist">
+    <nav v-if="configured" class="prl-tabs" role="tablist">
       <button
         v-for="t in tabs"
         :key="t.id"
@@ -647,7 +720,7 @@ onBeforeUnmount(() => {
       </button>
     </nav>
 
-    <div class="prl-body">
+    <div v-if="configured" class="prl-body">
       <!-- ═══ Tab 1 输入设置 ═══ -->
       <section v-show="activeTab === 'input'" class="prl-pane">
       <div v-if="inputError" class="prl-error" role="alert">{{ inputError }}</div>
@@ -1009,8 +1082,18 @@ onBeforeUnmount(() => {
           <button class="prl-btn prl-btn-sm" @click="browserOpen = false">关闭</button>
         </div>
         <div class="prl-row prl-breadcrumb">
-          <button class="prl-btn prl-btn-sm" @click="navigateBrowser(workspaceRoot)">根（工作区）</button>
-          <button class="prl-btn prl-btn-sm" :disabled="browserPath === workspaceRoot" @click="goUp">上一级</button>
+          <button
+            class="prl-btn prl-btn-sm"
+            :class="{ 'prl-btn-primary': browserSource === 'workspace' }"
+            @click="switchSource('workspace')"
+          >工作区</button>
+          <button
+            v-if="hasInputRoot"
+            class="prl-btn prl-btn-sm"
+            :class="{ 'prl-btn-primary': browserSource === 'input' }"
+            @click="switchSource('input')"
+          >文件输入</button>
+          <button class="prl-btn prl-btn-sm" :disabled="browserPath === sourceRoot" @click="goUp">上一级</button>
           <span class="prl-path">{{ browserPath || "（工作区根）" }}</span>
         </div>
         <div class="prl-browser">
@@ -1056,6 +1139,33 @@ onBeforeUnmount(() => {
   height: 100%;
   box-sizing: border-box;
   overflow: hidden;
+}
+/* 首次配置向导：居中卡片流，替代页签 */
+.prl-setup {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-4);
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-8);
+  box-sizing: border-box;
+}
+.prl-setup-head h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.prl-setup-head p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
 }
 .prl-tabs {
   flex: none;

@@ -97,6 +97,9 @@ pub struct PluginManager {
     /// 曾因持有 AppHandle 触发测试二进制加载崩溃（0xC0000139，见 events.rs 注释）；
     /// 解释器解析只需要 %APPDATA% 与资源目录的路径，拿到即缓存，不再持有 AppHandle。
     pub(crate) bundled_python: Option<PathBuf>,
+    /// 文件输入（Inbox，数据根/Input）目录缓存（refresh 时用 AppHandle 解析后存纯路径）。
+    /// 与 bundled_python 同约束：数据对象不存 tauri 类型；插件进程经 TB_INBOX 注入。
+    pub(crate) input_dir: Option<PathBuf>,
 }
 
 
@@ -632,6 +635,8 @@ impl PluginManager {
         self.vault = Some(vault.to_path_buf());
         // 捆绑 Python 解释器目录：此时有 AppHandle，解析后缓存纯路径（勿存 AppHandle 本体）
         self.bundled_python = super::pyruntime::bundled_python_dir(app);
+        // 文件输入（Inbox，数据根/Input）目录：与 bundled_python 同约束，缓存纯路径
+        self.input_dir = crate::core::workspaces::input_dir_path(app).ok();
         self.config_dir = app
             .path()
             .app_config_dir()
@@ -1383,6 +1388,7 @@ impl PluginManager {
             &cmd[1..],
             &dir,
             &vault,
+            self.input_dir.as_deref(),
             perms,
             event_tx,
         ) {
@@ -1469,9 +1475,11 @@ impl PluginManager {
         }
         let vault = vault.ok_or("vault 未设置")?;
         let config_dir = self.config_dir.clone().unwrap_or_default();
+        let input_dir = self.input_dir.clone().map(|p| p.to_string_lossy().to_string());
         let config = serde_json::json!({
             "vault": vault.to_string_lossy(),
             "config_dir": config_dir,
+            "input_dir": input_dir,
         })
         .to_string();
         let plugin = NativePlugin::load(&dir.join(&cmd[0]), &id, &config)?;

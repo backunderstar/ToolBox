@@ -437,6 +437,7 @@ mod tests {
             &cmd[1..],
             &plugin_dir,
             &vault,
+            None,
             perms,
             dummy_event_tx(),
         )
@@ -488,6 +489,7 @@ mod tests {
             &cmd[1..],
             &plugin_dir,
             &vault,
+            None,
             m.permissions.clone(),
             event_tx,
         )
@@ -534,6 +536,7 @@ mod tests {
             &cmd[1..],
             &plugin_dir,
             &vault,
+            None,
             perms,
             dummy_event_tx(),
         )
@@ -560,6 +563,7 @@ mod tests {
             &["-c".to_string(), "import time; time.sleep(5)".to_string()],
             &vault,
             &vault,
+            None,
             vec![],
             dummy_event_tx(),
         )
@@ -584,6 +588,7 @@ mod tests {
             ],
             &vault,
             &vault,
+            None,
             vec![],
             dummy_event_tx(),
         )

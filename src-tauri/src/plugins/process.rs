@@ -58,6 +58,9 @@ pub struct ProcessPlugin {
     rx: Mutex<Receiver<Incoming>>,
     next_id: u64,
     vault: PathBuf,
+    /// 文件输入（Inbox，数据根/Input）目录：插件可**只读**它（fs.readText/listDir 允许
+    /// 其下的绝对路径；写操作仍限 vault）。None = 未配置数据根。
+    inbox: Option<PathBuf>,
     /// 插件声明的权限（execute_core_api 据此放行核心 API）
     permissions: Vec<String>,
     pub plugin_id: String,
@@ -72,20 +75,27 @@ pub struct ProcessPlugin {
 impl ProcessPlugin {
     /// 启动插件进程（cwd = 插件目录，便于脚本用相对路径）。
     /// 注入 `TB_WORKSPACE` 环境变量 = 当前工作区路径：多工作区模式下插件
-    /// 进程无需感知切换，读 env 即可按"当前工作区"读写文件（见插件开发指南）。
+    /// 进程无需感知切换，读 env 即可按"当前工作区"读写文件（见插件开发指南）；
+    /// `inbox` = 文件输入（Inbox）目录（可只读，经 `TB_INBOX` 注入），None = 未配置数据根。
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         plugin_id: &str,
         program: &str,
         args: &[String],
         plugin_dir: &Path,
         vault: &Path,
+        inbox: Option<&Path>,
         permissions: Vec<String>,
         event_tx: SyncSender<PluginEvent>,
     ) -> Result<Self, String> {
-        let mut child = Command::new(program)
-            .args(args)
+        let mut cmd = Command::new(program);
+        cmd.args(args)
             .current_dir(plugin_dir)
-            .env("TB_WORKSPACE", vault)
+            .env("TB_WORKSPACE", vault);
+        if let Some(inbox) = inbox {
+            cmd.env("TB_INBOX", inbox);
+        }
+        let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped()) // 捕获：读线程转发日志 + 保留末尾，init 失败时回显
@@ -109,6 +119,7 @@ impl ProcessPlugin {
             rx: Mutex::new(rx),
             next_id: 0,
             vault: vault.to_path_buf(),
+            inbox: inbox.map(|p| p.to_path_buf()),
             permissions,
             plugin_id: plugin_id.to_string(),
             event_tx,
@@ -239,6 +250,27 @@ impl ProcessPlugin {
         self.send_timeout(&msg, Duration::from_secs(2))
     }
 
+    /// 解析核心 API **读**路径：相对路径 → vault 下；绝对路径 → 仅当落在 Input（Inbox）
+    /// 内才放行（工作区/插件可**只读**文件输入目录）。写操作（fs.writeText）不走此函数，
+    /// 保持仅限 vault。空路径 / `..` / 越界与 resolve_safe 同规则拒绝。
+    fn resolve_read(&self, path: &str) -> Result<PathBuf, String> {
+        let pb = PathBuf::from(path);
+        if pb.is_absolute() {
+            let Some(inbox) = &self.inbox else {
+                return Err("绝对路径仅支持文件输入（Input）目录".to_string());
+            };
+            let inb = std::fs::canonicalize(inbox).unwrap_or_else(|_| inbox.to_path_buf());
+            let abs = std::fs::canonicalize(&pb).unwrap_or(pb);
+            if abs == inb || abs.starts_with(&inb) {
+                Ok(abs)
+            } else {
+                Err(format!("路径越出文件输入（Input）目录: {path}"))
+            }
+        } else {
+            resolve_safe(&self.vault.to_string_lossy(), path)
+        }
+    }
+
     fn execute_core_api(&self, method: &str, params: &Value) -> Result<Value, String> {
         match method {
             "fs.readText" => {
@@ -246,7 +278,7 @@ impl ProcessPlugin {
                     .get("path")
                     .and_then(|v| v.as_str())
                     .ok_or("缺少 path 参数")?;
-                let p = resolve_safe(&self.vault.to_string_lossy(), rel)?;
+                let p = self.resolve_read(rel)?;
                 let text = std::fs::read_to_string(&p)
                     .map_err(|e| format!("读取失败: {e}"))?;
                 Ok(json!(text))
@@ -274,7 +306,7 @@ impl ProcessPlugin {
                 let p = if dir.is_empty() {
                     PathBuf::from(&self.vault)
                 } else {
-                    resolve_safe(&self.vault.to_string_lossy(), dir)?
+                    self.resolve_read(dir)?
                 };
                 if !p.is_dir() {
                     return Err(format!("目录不存在: {dir}"));
