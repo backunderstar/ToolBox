@@ -404,6 +404,56 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
 - **v0.2.0 发布**：tag 已推送（2a8d4c4），CI build-release.yml 自动构建/签名/发布中
   （用户指示不需要等 action 结果）。
 
+### 1.14 增量（2026-09-03：探针卡分层 Rust 化(方案 A) + 算法量化 + AC/POWER 预设 + pin 邻近 + v0.3/v0.4 发布 + 文档体系）
+
+> ⚠️ **本节 supersedes §1.12 底层**：`probe-rat-layer` 已从 **Python process 插件重写为
+> **Rust native cdylib 核心插件**（`core-plugins/probe-rat-layer/`，方案 A）。§1.12 的
+> Python/main.py/vendor 内容仅作历史参考，仓库已无 `plugins/probe-rat-layer/`（Python 版）。
+
+- **✅ Rust 化（方案 A，v0.3.0 发布）**：计算核心 Python(+130MB vendor) → Rust cdylib 核心插件
+  `tb_probe_rat_layer.dll`（release 2.5MB，随包分发）。宿主仍用 `libloading + C ABI`
+  （`tb_plugin!`/`tb_sdk`）加载；命令/事件/前端契约不变。模块全移植
+  （model/config/geometry/keepout/congestion/conflict_classifier/layer_packing/optimizer(SA)/
+  graph_coloring/layer_stack/metrics/post_process/pipeline/report/io(calamine 读 xlsx、
+  serde 读 allegro_json、wire_gen MST)/viz(plotters)/dispatch(后台任务/取消/进度/状态恢复)。
+  jobs/cache/settings 落 `%APPDATA%/com.toolbox.desktop/probe-rat-layer/`。设计/决策记录见
+  `docs/改造方案-探针卡分层Rust化.md`。
+- **✅ 算法提速提质（方案 B，v0.3.0）**：`_resolve_conflicts` 边驱动 O(线²)→O(边+坏单元×邻接度)、
+  `_enforce_capacity` 增量更新、初始 MFPS + `preferred_dir` 方向感知、SA `hard_conflict_in` 邻接表化。
+  实测（hv，1800 网，release）：**73.6s → 1.74s（~42×）**，已分配 1781→1798、需人工 19→2、
+  硬/软冲突持平。复测：`cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture`。
+- **✅ 走通率指标（诊断，不改分层）**：`post_process::routable_nets`（直线路径占用峰值 ≤
+  `layer_capacity`）与 `routable_nets_path`（曼哈顿 L/Z 模拟路径版）；结果页「走通率(直线/路径)」
+  卡片 + 报告/摘要 `routable_net_count/routable_ratio/(path)`。实测 hv 约 **80%**，且暴露层占用
+  1.78 > 容量 1.0 的残留拥塞。基线走通率是后续所有改进的**对比基准**。
+- **✅ 里程碑 0/1/2（配置化/诊断，默认关=基线不变）**：
+  - M0 `same_net_via_penalty`(λ)：先整网、放不下按段拆（`_split_stuck_nets`）；`net_span_stats`
+    产 `multi_layer_nets/via_estimate`。
+  - M1 `geometry::estimate_route` + `routable_nets_path`：走通率的"模拟路径"版。
+  - M2 `congestion_k`/`ripup_rounds`：拥塞平滑代价 + `_reroute_rounds` 整网迭代搬移。
+  - **⚠️ 数据发现**：当前真实数据 `1.xlsx+hv_all.lst` 为 **100% 2-pin 网 + 放射状**（0 多段网），
+    三里程碑的"少过孔/路径感知/拥塞平滑"在此数据上**均无法体现价值**（跨层恒 0、路径≈直线、
+    reroute 未降占用且轻微劣化）。需**含多段网/keepout 真实板**验证（用户已决定暂不造测试板）。
+- **✅ AC / POWER 预设**（纯 UI）：`App.vue` 新增「AC（细线 0.1mm / 12 层）」「POWER（宽线 8mm /
+  20 层）」，其余与 DC 预设一致；层数输入上限 16→40。
+- **✅ pin 邻近硬约束（不同 net 的 pin 不能放同层）**：`conflict_classifier::classify_pair`
+  端点(pin)对距离 < **max(线宽_a,线宽_b)（线径）** → 硬冲突；`pair_candidates` bbox 各向膨胀
+  `expansion_radius`，**保证"原始 bbox 不交但引脚邻近"的线对也入候选**（否则漏判）。实测 width8/20层：
+  **同层 pin 邻近违规=0**，需人工 58（线径 4.1mm）→255（线径 8mm，密板物理放不下）；width0.2 基线不变。
+- **✅ 文档体系**：新增 `docs/README.md` 文档索引（定位/状态/交叉引用/阅读路径）；
+  `docs/改造方案-探针卡分层Rust化.md` 状态改为**已实施**；新增 `docs/探针卡分层-可布线零过孔改进方案.md`
+  （走通率 vs 零过孔的里程碑规划稿）；`docs/发布流程.md` 重写（区分 CI 全自动路径 A / 本地签名路径 B，
+  含 GitHub Secrets 配置、clippy `--no-deps` + release 档提示）；操作手册/插件开发指南补 native 核心插件。
+- **✅ 发布**：v0.3.0（本地签名，`pnpm tauri build`，未打 tag）、v0.4.0（本地签名，未打 tag）。
+  均升级到 0.4.0 时同步全部版本文件 + CHANGELOG `[0.4.0]`。**2026-09-03 用户已在仓库配上
+  `TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD` secrets** → 下次打 `v*` tag 即可走 CI 自动发布。
+- **⚠️ native 插件部署**：核心插件 DLL 换盘需**全量重启应用**才生效；build:core 只写
+  `src-tauri/resources/_core/`，应用实际用的是 `plugins_dir`（本机 `D:\ToolBoxData\plugins\_core\`）
+  ——改代码后需 `build:core:release` + 复制 DLL 到应用目录 + 重启。
+- **验证**：cargo clippy `--workspace --all-targets --no-deps -- -D warnings`（dev+release）0 告警 ·
+  `cargo test --workspace` 全过（57 宿主 + 8 probe-rat-layer + 3 sdk + 2 example）·
+  `pnpm lint` 0 · `pnpm build` ✓ · `pnpm test` 40 · 真实数据回归（`--ignored`）通过。
+
 ---
 
 ## 2. 项目一句话
@@ -640,10 +690,14 @@ cargo test --workspace                 # Rust 测试（当前 62）
 
 ## 8. 待办（除 §1 进行中的工作外）
 
-- **🔄 v0.2.0 发布中（2026-09-02）**：v0.2.0 tag 已推送（2a8d4c4）→ build-release.yml
-  自动构建/签名/发布（**用户指示不需要等 action 结果**）。下次续：确认 Release 已出
-  （exe 应为 `ToolBox_0.2.0_x64-setup.exe`，含随包插件约 40MB；updater 自动指向
-  latest.json）。若失败，先看 §1.13d 记录的已知坑（secret 换行已 trim、NSIS 配置层级）。
+- **✅ 已发布（CI 自动）**：v0.1.0 · v0.2.0（见 §1.13d，两版经 build-release.yml 自动
+  构建/签名/发布，updater 自动指向 latest.json）。
+- **✅ 已发布（本地签名，未打 tag）**：v0.3.0 · v0.4.0——均 `pnpm tauri build` 本地产出
+  `ToolBox_0.x.0_x64-setup.exe` + `.sig`。**2026-09-03 用户已在仓库配上
+  `TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD`** → 顶起为正式自动更新链路：打 `v0.4.0` tag 推送
+  即触发 build-release.yml 发布 Release + latest.json（应用内"检查更新"生效）。
+  （若 v0.4.0 未打 tag，则应用内更新仍指向旧的 latest.json=v0.2.0。）
+- **🔄 复查 pending**：ac/power 预设、pin 邻近线径阈值等是否需在真实 POWER 板复测（§1.14）。
 - **✅ 已推送（2026-09-01 首次发布）**：全部本地提交（含教学基线收敛以来 62 个）已 push
   `origin/main`，远程 HEAD = 本地 HEAD（0f1073b）。此前"未推送累积 56 个"已清零。
   网络情况：本机 **github.com:443 HTTPS 直连恢复可连**（此前被墙 `Connection reset`；
@@ -685,12 +739,12 @@ cargo test --workspace                 # Rust 测试（当前 62）
 > 教训：8/31 发布轮连续 4 个 run 靠 CI 才发现问题（search 目录签名时序、secret 换行、
 > env 覆盖），每次 20+ 分钟；其中 search 时序问题是本地多跑几遍就能暴露的偶发测试。
 
-`pnpm lint` 0 警告（76 文件）· `pnpm test` 40（4 文件）· `pnpm build` ✓ ·
-**`cargo test --workspace` 62**（宿主 57 + pyruntime 3 + core-example 2，含 native DLL 集成测试、插件导出 zip 往返、随包插件部署与 workspaces 单测）·
-`pnpm build:core`（core-example 1 插件 + DLL 自检，自动清理旧随包插件）·
-`pnpm bundle:plugins`（probe-rat-layer 随包资源：production ui + vendor，自检 plugin.json/main.py/ui）·
-`pnpm tauri dev` 冒烟：5 个 process 插件全部使用捆绑解释器、core-example 部署无异常 ·
-打包版冒烟（无 Python PATH 跑 exe：部署捆绑运行时 + 核心插件 + 插件用捆绑解释器）。
+`pnpm lint` 0 警告（78 文件）· `pnpm test` 40（4 文件）· `pnpm build` ✓ ·
+**`cargo test --workspace` 70**（宿主 57 + pyruntime 3 + core-example 2 + probe-rat-layer 8，
+含 native DLL 集成测试、插件导出 zip 往返、随包插件部署与 workspaces 单测）·
+`cargo clippy --workspace --all-targets --no-deps -- -D warnings`（dev + **release** 档）0 告警 ·
+探针卡真实数据回归 `cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture`（hv 1800 网，1.7s）·
+`pnpm build:core:release`（核心插件 DLL + UI 自检）· `pnpm tauri build`（本地签名，产出 exe + .sig）。
 改动后请跑对应子集。
 
 > 注：8/28 的 0xC0000139 加载崩溃已修复（见 §6.1 坑 5）；8/29 完成 dev 冒烟 + 打包版冒烟 +
@@ -704,17 +758,18 @@ cargo test --workspace                 # Rust 测试（当前 62）
 |---|---|---|---|
 | `hello-tb` | webview | 命令注册式最小示例（指南 §1 五分钟跑通的仓库实体） | 无 |
 | `py-tools` | process | 协议 + 事件推送 + 搜索提供者 + 核心 API（call_core fs.listDir）+ **自带前端界面**（指南 §3.8：侧边栏「文本工具」，api.call 调命令 / api.on 收事件） | 按钮/vendor（方案 A） |
-| `probe-rat-layer` | process | **异步任务实例**（30s 超时规避）：后台线程分层 + `layer.status` 轮询进度 + 按需渲染 PNG + 内置文件浏览器 + **文件上下文动作**（初始化项目结构/归档批次）；真实算法工具（探针卡飞线分层，vendored probe_layer 副本 + 进度/取消钩子），见 §1.12 与插件 README | 按钮/vendor（方案 A） |
+| `probe-rat-layer` | **native**（核心插件，`core-plugins/probe-rat-layer/`） | **真实算法工具**：探针卡飞线分层；后台任务/进度/取消/状态恢复/按需 PNG 渲染 + 内置文件浏览器 + 文件上下文动作；**已于 2026-09-03 由 Python process 重写为 Rust cdylib**（见 §1.14）——**仓库已无 `plugins/probe-rat-layer/`（Python 版）** | 无（Rust core 插件，随包分发） |
 | `theme-maple` | 皮肤插件 | 主题包示例（指南 §6） | 无 |
 | `theme-midnight` | 皮肤插件 | 主题包示例（指南 §6） | 无 |
 
 要点：
 
-- **默认启用状态（2026-09 release 收尾，用户决策"现阶段只启用探针卡分层插件"）**：
-  运行时 `plugins.json`（`%APPDATA%\com.toolbox.desktop\plugins.json`）为
-  `{"disabled":["core-example"],"enabled":["probe-rat-layer"],"plugins_dir":"D:\\ToolBoxData\\plugins"}`——
-  hello-tb / py-tools / theme-* 全部不启用；core-example 是宿主默认启用（system 插件），
-  用 disabled 显式关闭。该文件不入库，重装/换机需手动重建。
+- **默认启用状态（2026-09 release 收尾，用户决策）**：运行时 `plugins.json`
+  （`%APPDATA%\com.toolbox.desktop\plugins.json`）为
+  `{"disabled":["core-example"],"enabled":[],"plugins_dir":"D:\\ToolBoxData\\plugins"}`——
+  **probe-rat-layer 已是 native 核心插件（默认启用，不进 enabled 集合）**；hello-tb / py-tools /
+  theme-* 全部不启用；core-example 是宿主默认启用（system 插件），用 disabled 显式关闭。
+  该文件不入库，重装/换机需手动重建。
 - **已删除的示例（2026-09，用户决策"每种只留典型"）**：csv-tool / py-env / py-files /
   py-jmes / py-venv（仓库 git 删除 + 运行时目录 D:\ToolBoxData\plugins 已清 + plugins.json
   enabled 列表已更新）。协议最小骨架 = 模板 `templates/external-plugin/main.py`（原 csv-tool
