@@ -31,6 +31,9 @@ pub struct LayeringConfig {
     pub congestion_balance: bool,
     /// 后处理"拥塞均衡"最大轮数（每轮做一轮正收益的贪心移动；顺序读取，一轮只做一次判断）。
     pub congestion_balance_passes: i64,
+    /// 后处理"拥塞均衡"里**同层交叉**相对**拥塞溢出**的权重：>0 时移动判据 = 溢出增量 + 本权重×交叉增量，
+    /// 让均衡把线挪到**同时**少拥塞、少同层交叉的层（默认 0.5；越大越优先减交叉，可压低 1.11 峰值下的交叉）。
+    pub congestion_balance_cross_weight: f64,
     // —— 拥塞估计 ——
     pub congestion_grid_cell: f64,
     pub congestion_demand_factor: f64,
@@ -73,10 +76,10 @@ impl Default for LayeringConfig {
             sector_angle_deg: 45.0,
             same_net_same_layer: false,
             same_net_via_penalty: 0.0,
-            resolve_conflict_rounds: 8,
-            balance_length_rounds: 3,
-            minimize_crossings_passes: 3,
-            sa_restarts: 1,
+            resolve_conflict_rounds: 12,
+            balance_length_rounds: 6,
+            minimize_crossings_passes: 6,
+            sa_restarts: 2,
             optimizer: "sa".into(),
             sa_seed: 42,
             sa_initial_temp: 8.0,
@@ -86,6 +89,7 @@ impl Default for LayeringConfig {
             sa_balance_slack: 2.0,
             congestion_balance: false,
             congestion_balance_passes: 20,
+            congestion_balance_cross_weight: 0.5,
             congestion_grid_cell: 0.5,
             congestion_demand_factor: 1.0,
             congestion_hard_threshold: 0.8,
@@ -153,6 +157,7 @@ impl LayeringConfig {
             "sa_balance_slack" => self.sa_balance_slack = f(v)?,
             "congestion_balance" => self.congestion_balance = b(v)?,
             "congestion_balance_passes" => self.congestion_balance_passes = i(v)?,
+            "congestion_balance_cross_weight" => self.congestion_balance_cross_weight = f(v)?,
             "congestion_grid_cell" => self.congestion_grid_cell = f(v)?,
             "congestion_demand_factor" => self.congestion_demand_factor = f(v)?,
             "congestion_hard_threshold" => self.congestion_hard_threshold = f(v)?,

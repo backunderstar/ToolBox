@@ -217,6 +217,11 @@ pub fn run_once(
     // 后处理拥塞均衡（默认关）：把超容层/格点上的线平衡到低拥塞允许层，摊平层占用峰值
     if cfg.congestion_balance {
         prog.log_info("[阶段 后处理拥塞均衡] 开始");
+        let soft_pairs: Vec<(String, String)> = conflicts
+            .iter()
+            .filter(|c| c.level == ConflictLevel::Soft)
+            .map(|c| (c.wire_a.clone(), c.wire_b.clone()))
+            .collect();
         pp::congestion_balance(
             &mut assignment,
             &wires,
@@ -224,6 +229,7 @@ pub fn run_once(
             &pins,
             &hard_graph,
             &allowed,
+            &soft_pairs,
             cfg,
             prog.cancel_flag(),
         )?;

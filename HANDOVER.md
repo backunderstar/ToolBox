@@ -633,6 +633,22 @@ API 后实施/取舍：
 - **验证**：`cargo test -p tb-probe-rat-layer` **16** 过（+1 `congestion_balance` 单测）+ 5 ignored；
   `clippy -p` 0；全量 `cargo test --workspace` **（见 §9 更新）**；`pnpm build:core` ✓。
 
+### 1.23 增量（2026-09-03：拥塞均衡改"拥塞+交叉感知" + 适度调高默认值 + 交叉近下限实情）
+
+用户反馈：2-pin 放射状数据上**残余交叉仍明显**（渲染看得到），效果不够好；并要"把能提高分层质量的默认值调高"。
+- **现状（实测）**：`soft_conflicts`(几何交叉对数)=23824 **固定不变**（所有线在圆心几何交叉，分层消不掉）；
+  `同层交叉`(渲染看到的那层交叉)≈2076–2100，**也近下限**（SA 已最小化到很低；再高投入/更多均衡也压不动）。
+- **调高默认值实测**：`resolve_conflict_rounds 8→12 / balance_length_rounds 3→6 / minimize_crossings_passes 3→6 /
+  sa_restarts 1→2`（**不调 sa_max_steps**——调高反而更差：同层交叉/需人工上升）。用时 1.7s→3.35s（约 2×）。
+  `sa_max_steps` 与"超激进高投入(12/5/16/8)"都确认**会回退**，不入默认。
+- **拥塞均衡改"拥塞+交叉感知"**：`congestion_balance` 增加 `congestion_balance_cross_weight`(默认 0.5)，
+  移动判据 = 溢出增量 + 权重×同层交叉增量（`post_process::count_soft` 统计同层软邻接）。对比旧均衡把
+  同层交叉推到 **2547**，交叉感知版把它压回 **~2095**、同时**占用峰值 1.33**——比旧均衡更优（保占用、防交叉回升）。
+  均衡内改为**确定序**（sorted ids），消除 HashMap 迭代随机。
+- **诚实结论**：残余的"可见交叉"对 2-pin 放射状数据**接近几何下限**（圆心交叉+层数固定），分层类方法（SA/均衡/默认值）
+  都压不动多少；真正大幅减交叉要靠**加层数**（每层网更少）或**布线/过孔级拓扑**。占用峰值与走通率才是分层能显著改善的指标。
+- **验证**：`cargo test -p tb-probe-rat-layer` **16** 过（`congestion_balance` 单测仍过）+ 6 ignored；`clippy` 0。
+
 ---
 
 ## 2. 项目一句话

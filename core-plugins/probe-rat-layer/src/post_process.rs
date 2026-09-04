@@ -350,8 +350,29 @@ fn cell_of(x: f64, y: f64, cmap: &congestion::CongestionMap) -> Option<(usize, u
     }
 }
 
+/// 线 `wid` 在其**软交叉邻接**中有多少个同伴落在 `layer`（同层交叉数；用于拥塞均衡的交叉增量）。
+fn count_soft(
+    wid: &str,
+    layer: i64,
+    layer_wires: &HashMap<i64, std::collections::HashSet<String>>,
+    soft_adj: &HashMap<String, std::collections::HashSet<String>>,
+) -> i64 {
+    let mut n = 0;
+    if let Some(ws) = layer_wires.get(&layer) {
+        if let Some(ns) = soft_adj.get(wid) {
+            for x in ns {
+                if ws.contains(x) {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
+}
+
 /// 分层后拥塞均衡（用户选定的后处理）：把"超容格点/层"上造成溢出的线，贪心移到低拥塞允许层
-/// （不新增硬冲突、不越 allowed 层、只做"正收益"移动——净溢出减小），摊平层占用峰值、减少需人工/硬冲突。
+/// （不新增硬冲突、不越 allowed 层、只做"正收益"移动——净溢出减小）。**拥塞+交叉感知**：
+/// 移动判据 = 溢出增量 + `congestion_balance_cross_weight`×同层交叉增量，让均衡同时减拥塞与同层交叉。
 /// 默认 `cfg.congestion_balance=false` 关闭（保留现有结果）。
 pub fn congestion_balance(
     assignment: &mut HashMap<String, i64>,
@@ -360,6 +381,7 @@ pub fn congestion_balance(
     pins: &[Pin],
     graph: &ConflictGraph,
     allowed: &HashMap<String, std::collections::HashSet<i64>>,
+    soft_pairs: &[(String, String)],
     cfg: &LayeringConfig,
     cancel: &crate::cancel::CancelFlag,
 ) -> Result<(), crate::cancel::LayeringCancelled> {
@@ -408,12 +430,21 @@ pub fn congestion_balance(
     for (wid, l) in assignment.iter() {
         layer_wires.entry(*l).or_default().insert(wid.clone());
     }
+    // 软交叉邻接（同层交叉视为"同层软冲突"）：移动判据同时看拥塞增量 + 交叉增量
+    let mut soft_adj: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
+    for (a, b) in soft_pairs {
+        soft_adj.entry(a.clone()).or_default().insert(b.clone());
+        soft_adj.entry(b.clone()).or_default().insert(a.clone());
+    }
+    let cross_weight = cfg.congestion_balance_cross_weight.max(0.0);
 
     let passes = cfg.congestion_balance_passes.max(1) as usize;
     for _ in 0..passes {
         check_cancel(cancel)?;
         let mut moved_any = false;
-        let ids: Vec<String> = assignment.keys().cloned().collect();
+        // 确定序（避免 HashMap 迭代序导致每次结果不同）
+        let mut ids: Vec<String> = assignment.keys().cloned().collect();
+        ids.sort();
         for wid in ids {
             let Some(&la) = assignment.get(&wid) else { continue; };
             let cells = match cells_cache.get(&wid) { Some(c) => c, None => continue };
@@ -424,9 +455,11 @@ pub fn congestion_balance(
                 .get(&wid)
                 .map(|s| s.iter().copied().filter(|l| *l != la).collect())
                 .unwrap_or_default();
+            // wid 在 la / lb 层上的软交叉邻居数（同层交叉；拥塞均衡"交叉感知"）
+            let soft_on_la = count_soft(&wid, la, &layer_wires, &soft_adj);
 
             let mut best_lb: Option<i64> = None;
-            let mut best_delta: f64 = 0.0;
+            let mut best_score: f64 = 0.0;
             for lb in allowed_layers {
                 // 硬冲突检查：目标层已有该线的硬冲突邻接线则跳过
                 if let Some(ws) = layer_wires.get(&lb) {
@@ -445,13 +478,16 @@ pub fn congestion_balance(
                     let d_lb = demand.get(&lb).map(|g| g[[r, c]]).unwrap_or(0.0);
                     delta += over((d_lb + d) / s) - over(d_lb / s) + over((d_la - d) / s) - over(d_la / s);
                 }
-                if delta < best_delta {
-                    best_delta = delta;
+                // 同层交叉增量：移去 lb 后与 lb 上软邻接数的差减去 la 上软邻接数
+                let d_cross = (count_soft(&wid, lb, &layer_wires, &soft_adj) - soft_on_la) as f64;
+                let score = delta + cross_weight * d_cross;
+                if score < best_score {
+                    best_score = score;
                     best_lb = Some(lb);
                 }
             }
             if let Some(lb) = best_lb {
-                if best_delta < -1e-6 {
+                if best_score < -1e-6 {
                     for &(r, c) in cells {
                         demand.get_mut(&la).unwrap()[[r, c]] -= d;
                         demand.entry(lb).or_insert_with(|| Array2::zeros((rows, cols)))[[r, c]] += d;
@@ -554,6 +590,7 @@ mod tests {
             &[],
             &graph,
             &allowed,
+            &[],
             &cfg,
             &cancel,
         )
