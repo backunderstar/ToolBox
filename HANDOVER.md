@@ -664,6 +664,19 @@ API 后实施/取舍：
 - 新增依赖：`rustc-hash`（core-plugins/probe-rat-layer/Cargo.toml + 根 Cargo.lock）。
 - **验证**：`cargo test -p tb-probe-rat-layer` **16** 过 + 6 ignored；`clippy -p` 0；`workspace` 83 过。
 
+### 1.25 增量（2026-09-03：代码整理 + 学习导言，行为不变）
+
+用户要"整理代码、增加可读性、完善注释，便于学习"。**只在注释/说明/布局层面**做，不改任何逻辑/签名/默认值。
+- **两份学习导言**（挂在 docs/README.md 索引 + 阅读路径）：
+  - `docs/探针卡分层算法-学习导言.md`：整条分层流水线、模块地图、核心概念(occupancy=demand/supply、硬·软冲突、
+    走通率三种、拥塞均衡、几何下限)、旋钮表、坑、建议阅读顺序。
+  - `docs/宿主架构-学习导言.md`：Tauri 2 + Vue 3 + 插件系统(webview/process/native 三种运行时 + C ABI 协议) +
+    核心服务 + 命令流 + 建议阅读顺序。
+- **关键函数补"为什么"注释**（难点学习价值最高）：`optimizer.rs::optimize_layering`（SA 代价/邻域/接受/参数与
+  `sa_max_steps` 反例）、`layer_packing.rs::pack_layers`（扇区轮询/确定序/方向感知）、
+  `congestion.rs::build_congestion_map`（occupancy 单位与为何与层占用同一套语义）。
+- **验证**：`cargo check -p tb-probe-rat-layer` / `clippy -p` 0（doc-la y 已清）；仅注释，行为不变。
+
 ---
 
 ## 2. 项目一句话

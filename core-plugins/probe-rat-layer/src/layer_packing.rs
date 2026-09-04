@@ -852,6 +852,12 @@ fn _pack_units(
     Ok(assignment)
 }
 
+/// 初始分层（主算法）：把每条线放进其"允许层"之一。
+/// - 先求全体允许层集合并**排序**（确定序，避免结果抖动）。
+/// - 按层 `preferred_dir`(H/V/any) 做**方向感知铺层**；无 stack 时默认 "any"。
+/// - 内部 `_make_units` 把线按"同 net/互斥"聚成单元，`_pack_units` 做**扇区轮询贪心**：
+///   尽量满足硬冲突约束（`graph`、`allowed`）与层容量（`zones/pins/cfg`），返回 wire → 层 的 assignment。
+/// - `progress`(0..1) 回报进度；`cancel` 检查取消。
 pub fn pack_layers(
     wires: &[Wire],
     allowed: &HashMap<String, HashSet<i64>>,

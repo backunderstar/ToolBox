@@ -176,7 +176,19 @@ impl<'a> Sa<'a> {
     }
 }
 
-/// 在 assignment 上做模拟退火，返回（更优或等价的）分层。
+/// 模拟退火精修：在给定 assignment 上做局部搜索，返回（更优或等价的）分层。
+///
+/// **为什么用 SA**：层分配是离散组合优化，贪心初解容易停在局部最优；SA 用"接受更差解"来跳出。
+/// - **代价**：`soft_crossings`（同层软交叉数）+ **层均衡护栏**（count/长度/扇区不均衡 ≤ `sa_balance_slack`，
+///   `within_guardrail`）。注意：代价**不直接管拥塞**（拥塞由初始 `pack_layers` 定），所以 1.78 的圆心
+///   占用峰值 SA 不主动压它（要靠 `congestion_balance`）。
+/// - **邻域**：`try_swap`（交换两根线的层）+ `try_move`（挪一根线到别的允许层），移动前先查目标层
+///   硬冲突（`hard_conflict_in`，O(deg) 邻接表），硬冲突则拒绝该移动。
+/// - **接受**：`_accept`（metropolis）：更优必接受，更劣按 `exp(-Δ/t)` 概率接受；t 从 `sa_initial_temp`
+///   按 `sa_cooling` 降温。
+/// - **参数**：`sa_restarts`(多起点)、`sa_swap_ratio`(换 vs 挪 概率)、`sa_max_steps`(0=自动)。
+///   ⚠️ `sa_max_steps` 调大反而更差（易陷入更差局部、需人工变多），勿拉满。
+/// - 确定性：`rng` 用 `Pcg64Mcg::seed_from_u64(cfg.sa_seed)`，且容器用 `FxHashMap` → 同配置结果稳定。
 pub fn optimize_layering(
     assignment: &HashMap<String, i64>,
     wires: &[Wire],

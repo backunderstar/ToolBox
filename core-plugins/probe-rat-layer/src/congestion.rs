@@ -139,6 +139,13 @@ fn point2(x: f64, y: f64) -> crate::model::Point {
     crate::model::Point::new(x, y)
 }
 
+/// 构建拥塞网格：`occupancy = demand / supply`（`> layer_capacity` 即超容）。
+/// - `demand`：每条线用 `_wire_cells` 栅格化到格点，累加 `(线宽+线距) × congestion_demand_factor`。
+/// - `supply`：基础为 `cell`，再扣**禁布区**(keepout→0)、**过孔预留**(×`1-via_area_cost`)、
+///   **引脚密度**(pin 处 ×`1/pin_density_weight`)。
+///
+/// 被 `layer_routable`、`max_occupancy_per_layer`、`routable_nets*`、`congestion_balance` 共用——
+/// 与"层占用峰值/走通率"是同一套语义，所以分层算法的 A/B 都用它作基准。
 pub fn build_congestion_map(
     wires: &[Wire],
     zones: &[KeepoutZone],
