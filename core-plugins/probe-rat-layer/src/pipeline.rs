@@ -13,7 +13,7 @@ use crate::{
     conflict_classifier as cc, congestion, graph_coloring as coloring, layer_stack as lstack,
     metrics, post_process as pp,
 };
-use std::collections::{HashMap, HashSet};
+use crate::collections::{HashMap, HashSet};
 
 fn _usable_area(wires: &[Wire], keepouts: &[KeepoutZone]) -> f64 {
     if wires.is_empty() {
@@ -138,7 +138,7 @@ pub fn run_once(
             Ok(a) => a,
             Err(e) => {
                 warnings.push(e.0);
-                HashMap::new()
+                HashMap::default()
             }
         };
     } else {
@@ -239,18 +239,18 @@ pub fn run_once(
     prog.set("后处理与人工兜底", 90.0, "后处理与人工兜底");
     let viol = pp::verify_hard_free(&assignment, &hard_graph);
     let mut manual_nets: Vec<String> = Vec::new();
-    let mut manual_wires: HashSet<String> = HashSet::new();
+    let mut manual_wires: HashSet<String> = HashSet::default();
     if !viol.is_empty() {
         for (a, b) in &viol {
             manual_wires.insert(a.clone());
             manual_wires.insert(b.clone());
         }
-        let mut netset: HashSet<String> = wires
+        let netset: HashSet<String> = wires
             .iter()
             .filter(|w| manual_wires.contains(&w.wire_id))
             .map(|w| w.net_id.clone())
             .collect();
-        let mut mn: Vec<String> = netset.drain().collect();
+        let mut mn: Vec<String> = netset.into_iter().collect();
         mn.sort();
         manual_nets = mn;
         for w in &manual_wires {
@@ -274,7 +274,7 @@ pub fn run_once(
         pp::routable_nets(&assignment, &wires, &data.keepouts, &pins, cfg);
     let (multi_layer_nets, via_estimate) = pp::net_span_stats(&assignment, &wires);
     // 里程碑 1：走通率的"模拟路由路径"版（按层 preferred_dir 生成 L/Z 路径）
-    let mut layer_dir: HashMap<i64, String> = HashMap::new();
+    let mut layer_dir: HashMap<i64, String> = HashMap::default();
     if let Some(s) = data.stack.as_ref() {
         for l in &s.layers {
             layer_dir.insert(l.index, l.preferred_dir.clone());
@@ -292,7 +292,7 @@ pub fn run_once(
         .map(|n| (n.net_id.clone(), n.clone()))
         .collect();
 
-    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::new();
+    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::default();
     for w in &wires {
         if let Some(&l) = assignment.get(&w.wire_id) {
             by_layer.entry(l).or_default().push(w.clone());

@@ -10,7 +10,7 @@ use crate::model::{ConflictGraph, Wire};
 use rand::Rng;
 use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
-use std::collections::{HashMap, HashSet};
+use crate::collections::{HashMap, HashSet};
 
 fn _accept(cur_soft: i64, new_soft: i64, t: f64, rng: &mut Pcg64Mcg) -> bool {
     if new_soft <= cur_soft {
@@ -190,7 +190,7 @@ pub fn optimize_layering(
     if assignment.is_empty() {
         return Ok(assignment.clone());
     }
-    let mut layer_set: HashSet<i64> = HashSet::new();
+    let mut layer_set: HashSet<i64> = HashSet::default();
     for s in allowed.values() {
         for l in s {
             layer_set.insert(*l);
@@ -208,17 +208,17 @@ pub fn optimize_layering(
         .filter(|(a, b)| assignment.contains_key(a) && assignment.contains_key(b))
         .cloned()
         .collect();
-    let mut soft_adj: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut soft_adj: HashMap<String, HashSet<String>> = HashMap::default();
     for (a, b) in &pairs {
         soft_adj.entry(a.clone()).or_default().insert(b.clone());
         soft_adj.entry(b.clone()).or_default().insert(a.clone());
     }
 
     let mut layer_wires: HashMap<i64, HashSet<String>> =
-        layers.iter().map(|&l| (l, HashSet::new())).collect();
+        layers.iter().map(|&l| (l, HashSet::default())).collect();
     let mut layer_len: HashMap<i64, f64> = layers.iter().map(|&l| (l, 0.0)).collect();
     let mut layer_sector: HashMap<i64, HashMap<i64, i64>> =
-        layers.iter().map(|&l| (l, HashMap::new())).collect();
+        layers.iter().map(|&l| (l, HashMap::default())).collect();
     for (wid, l) in assignment {
         layer_wires.entry(*l).or_default().insert(wid.clone());
         let w = wire_by_id[wid];

@@ -33,6 +33,8 @@ csv = "1"
 plotters = "0.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.22"
+# 确定性哈希容器（HashMap/HashSet 的固定种子替代，迭代序跨运行稳定；见 collections.rs）
+rustc-hash = "1"
 
 [dev-dependencies]
 # FFI 冒烟测试用：直接加载 cdylib DLL，复刻宿主 native.rs 的 libloading 加载路径

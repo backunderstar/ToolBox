@@ -2,7 +2,7 @@
 //!
 //! 单位统一为 mm（内部计算）。`ConflictGraph` 为可变结构；其余为不可变值类型。
 
-use std::collections::{HashMap, HashSet};
+use crate::collections::{HashMap, HashSet};
 
 /// 二维点。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -296,7 +296,7 @@ impl ConflictGraph {
         self.adjacency.keys().cloned().collect()
     }
     pub fn edges(&self) -> Vec<(String, String)> {
-        let mut seen: HashSet<(String, String)> = HashSet::new();
+        let mut seen: HashSet<(String, String)> = HashSet::default();
         let mut out = Vec::new();
         let mut keys: Vec<&String> = self.adjacency.keys().collect();
         keys.sort();

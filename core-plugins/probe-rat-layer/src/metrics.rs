@@ -1,6 +1,6 @@
 //! 分层质量指标：软冲突 + 数量/长短/扇区均衡（移植自 Python `core/metrics.py`）。
 
-use std::collections::HashMap;
+use crate::collections::HashMap;
 
 /// 极角 [0,360) → 扇区号 [0, n)。n = round(360 / sector_angle_deg)。
 pub fn sector_index(angle_deg: f64, sector_angle_deg: f64) -> i64 {
@@ -66,7 +66,7 @@ pub fn length_imbalance(layer_lengths: &HashMap<i64, f64>, layer_counts: &HashMa
 
 /// 各层扇区覆盖不均衡度，只统计实际有线经过的扇区。
 pub fn sector_imbalance(layer_sectors: &HashMap<i64, HashMap<i64, i64>>, total_wires: i64) -> f64 {
-    let mut populated: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let mut populated: crate::collections::HashSet<i64> = crate::collections::HashSet::default();
     for c in layer_sectors.values() {
         for k in c.keys() {
             populated.insert(*k);

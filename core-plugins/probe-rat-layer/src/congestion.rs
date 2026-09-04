@@ -4,7 +4,7 @@ use crate::config::LayeringConfig;
 use crate::geometry;
 use crate::model::{KeepoutZone, Pin, Wire};
 use ndarray::Array2;
-use std::collections::HashSet;
+use crate::collections::HashSet;
 
 #[derive(Debug)]
 pub struct CongestionMap {
@@ -26,7 +26,7 @@ pub(crate) fn _wire_cells(
 ) -> HashSet<(usize, usize)> {
     let n = (w.length() / cell * 2.0) as usize + 1;
     let n = n.max(2);
-    let mut cells: HashSet<(usize, usize)> = HashSet::new();
+    let mut cells: HashSet<(usize, usize)> = HashSet::default();
     for i in 0..n {
         let t = i as f64 / (n as f64 - 1.0);
         let x = w.start.x + (w.end.x - w.start.x) * t;

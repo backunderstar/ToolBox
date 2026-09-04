@@ -4,7 +4,7 @@ use crate::config::LayeringConfig;
 use crate::congestion;
 use crate::keepout;
 use crate::model::{Conflict, ConflictGraph, ConflictLevel, Pin, Wire};
-use std::collections::HashMap;
+use crate::collections::HashMap;
 
 pub fn verify_hard_free(
     assignment: &HashMap<String, i64>,
@@ -25,7 +25,7 @@ pub fn soft_conflicts_per_layer(
     assignment: &HashMap<String, i64>,
     conflicts: &[Conflict],
 ) -> HashMap<i64, i64> {
-    let mut d: HashMap<i64, i64> = HashMap::new();
+    let mut d: HashMap<i64, i64> = HashMap::default();
     for c in conflicts {
         if c.level == ConflictLevel::Soft {
             if let (Some(&la), Some(&lb)) = (assignment.get(&c.wire_a), assignment.get(&c.wire_b)) {
@@ -45,9 +45,9 @@ pub fn collect_layer_marks(
     conflicts: &[Conflict],
     zones: &[crate::model::KeepoutZone],
     cfg: &LayeringConfig,
-) -> (HashMap<i64, std::collections::HashSet<String>>, HashMap<i64, std::collections::HashSet<String>>) {
-    let mut detour: HashMap<i64, std::collections::HashSet<String>> = HashMap::new();
-    let mut via: HashMap<i64, std::collections::HashSet<String>> = HashMap::new();
+) -> (HashMap<i64, crate::collections::HashSet<String>>, HashMap<i64, crate::collections::HashSet<String>>) {
+    let mut detour: HashMap<i64, crate::collections::HashSet<String>> = HashMap::default();
+    let mut via: HashMap<i64, crate::collections::HashSet<String>> = HashMap::default();
 
     if cfg.keepout_enabled && !zones.is_empty() {
         for w in wires {
@@ -80,13 +80,13 @@ pub fn max_occupancy_per_layer(
     pins: &[Pin],
     cfg: &LayeringConfig,
 ) -> HashMap<i64, f64> {
-    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::new();
+    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::default();
     for w in wires {
         if let Some(&layer) = assignment.get(&w.wire_id) {
             by_layer.entry(layer).or_default().push(w.clone());
         }
     }
-    let mut out = HashMap::new();
+    let mut out = HashMap::default();
     for (layer, ws) in by_layer {
         let cmap = congestion::build_congestion_map(&ws, zones, pins, cfg);
         out.insert(layer, congestion::max_occupancy(&cmap));
@@ -110,18 +110,18 @@ pub fn routable_nets(
     pins: &[Pin],
     cfg: &LayeringConfig,
 ) -> (usize, usize, Vec<String>) {
-    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::new();
+    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::default();
     for w in wires {
         if let Some(&layer) = assignment.get(&w.wire_id) {
             by_layer.entry(layer).or_default().push(w.clone());
         }
     }
-    let mut cmap_of: HashMap<i64, congestion::CongestionMap> = HashMap::new();
+    let mut cmap_of: HashMap<i64, congestion::CongestionMap> = HashMap::default();
     for (layer, ws) in &by_layer {
         cmap_of.insert(*layer, congestion::build_congestion_map(ws, zones, pins, cfg));
     }
 
-    let mut by_net: HashMap<String, Vec<&Wire>> = HashMap::new();
+    let mut by_net: HashMap<String, Vec<&Wire>> = HashMap::default();
     for w in wires {
         if assignment.contains_key(&w.wire_id) {
             by_net.entry(w.net_id.clone()).or_default().push(w);
@@ -163,17 +163,17 @@ pub fn routable_nets_path(
     cfg: &LayeringConfig,
     layer_dir: &HashMap<i64, String>,
 ) -> (usize, usize, Vec<String>) {
-    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::new();
+    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::default();
     for w in wires {
         if let Some(&layer) = assignment.get(&w.wire_id) {
             by_layer.entry(layer).or_default().push(w.clone());
         }
     }
-    let mut cmap_of: HashMap<i64, congestion::CongestionMap> = HashMap::new();
+    let mut cmap_of: HashMap<i64, congestion::CongestionMap> = HashMap::default();
     for (layer, ws) in &by_layer {
         cmap_of.insert(*layer, congestion::build_congestion_map(ws, zones, pins, cfg));
     }
-    let mut by_net: HashMap<String, Vec<&Wire>> = HashMap::new();
+    let mut by_net: HashMap<String, Vec<&Wire>> = HashMap::default();
     for w in wires {
         if assignment.contains_key(&w.wire_id) {
             by_net.entry(w.net_id.clone()).or_default().push(w);
@@ -213,7 +213,7 @@ pub fn net_span_stats(
     assignment: &HashMap<String, i64>,
     wires: &[Wire],
 ) -> (usize, usize) {
-    let mut net_layers: HashMap<String, std::collections::HashSet<i64>> = HashMap::new();
+    let mut net_layers: HashMap<String, crate::collections::HashSet<i64>> = HashMap::default();
     for w in wires {
         if let Some(&layer) = assignment.get(&w.wire_id) {
             net_layers.entry(w.net_id.clone()).or_default().insert(layer);
@@ -241,15 +241,15 @@ pub fn routable_nets_flood(
     pins: &[Pin],
     cfg: &LayeringConfig,
 ) -> (usize, usize, Vec<String>) {
-    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::new();
+    let mut by_layer: HashMap<i64, Vec<Wire>> = HashMap::default();
     for w in wires {
         if let Some(&layer) = assignment.get(&w.wire_id) {
             by_layer.entry(layer).or_default().push(w.clone());
         }
     }
     // 每层预计算：连通分量 + 栅格几何（供 net 端点映射到格）
-    let mut layer_comp: HashMap<i64, ndarray::Array2<i32>> = HashMap::new();
-    let mut layer_cmap: HashMap<i64, congestion::CongestionMap> = HashMap::new();
+    let mut layer_comp: HashMap<i64, ndarray::Array2<i32>> = HashMap::default();
+    let mut layer_cmap: HashMap<i64, congestion::CongestionMap> = HashMap::default();
     for (layer, ws) in &by_layer {
         let cmap = congestion::build_congestion_map(ws, zones, pins, cfg);
         let comp = flood_components(&cmap, cfg.layer_capacity);
@@ -260,7 +260,7 @@ pub fn routable_nets_flood(
     // 已分配 net 的 distinct id（一个 net 可能多段分布在多层；按 net 粒度去重）
     let mut net_ids: Vec<String> = Vec::new();
     {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = crate::collections::HashSet::default();
         for w in wires {
             if assignment.contains_key(&w.wire_id) && seen.insert(w.net_id.clone()) {
                 net_ids.push(w.net_id.clone());
@@ -354,8 +354,8 @@ fn cell_of(x: f64, y: f64, cmap: &congestion::CongestionMap) -> Option<(usize, u
 fn count_soft(
     wid: &str,
     layer: i64,
-    layer_wires: &HashMap<i64, std::collections::HashSet<String>>,
-    soft_adj: &HashMap<String, std::collections::HashSet<String>>,
+    layer_wires: &HashMap<i64, crate::collections::HashSet<String>>,
+    soft_adj: &HashMap<String, crate::collections::HashSet<String>>,
 ) -> i64 {
     let mut n = 0;
     if let Some(ws) = layer_wires.get(&layer) {
@@ -380,7 +380,7 @@ pub fn congestion_balance(
     keepouts: &[crate::model::KeepoutZone],
     pins: &[Pin],
     graph: &ConflictGraph,
-    allowed: &HashMap<String, std::collections::HashSet<i64>>,
+    allowed: &HashMap<String, crate::collections::HashSet<i64>>,
     soft_pairs: &[(String, String)],
     cfg: &LayeringConfig,
     cancel: &crate::cancel::CancelFlag,
@@ -412,11 +412,11 @@ pub fn congestion_balance(
     let mut layers: Vec<i64> = assignment.values().copied().collect();
     layers.sort();
     layers.dedup();
-    let mut demand: HashMap<i64, Array2<f64>> = HashMap::new();
+    let mut demand: HashMap<i64, Array2<f64>> = HashMap::default();
     for l in &layers {
         demand.insert(*l, Array2::zeros((rows, cols)));
     }
-    let mut cells_cache: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
+    let mut cells_cache: HashMap<String, Vec<(usize, usize)>> = HashMap::default();
     for (wid, l) in assignment.iter() {
         let w: &Wire = wire_by_id.get(wid.as_str()).copied().unwrap();
         let cells: Vec<(usize, usize)> = _wire_cells(w, origin, cell, rows, cols).into_iter().collect();
@@ -426,12 +426,12 @@ pub fn congestion_balance(
         }
         cells_cache.insert(wid.clone(), cells);
     }
-    let mut layer_wires: HashMap<i64, std::collections::HashSet<String>> = HashMap::new();
+    let mut layer_wires: HashMap<i64, crate::collections::HashSet<String>> = HashMap::default();
     for (wid, l) in assignment.iter() {
         layer_wires.entry(*l).or_default().insert(wid.clone());
     }
     // 软交叉邻接（同层交叉视为"同层软冲突"）：移动判据同时看拥塞增量 + 交叉增量
-    let mut soft_adj: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
+    let mut soft_adj: HashMap<String, crate::collections::HashSet<String>> = HashMap::default();
     for (a, b) in soft_pairs {
         soft_adj.entry(a.clone()).or_default().insert(b.clone());
         soft_adj.entry(b.clone()).or_default().insert(a.clone());
@@ -569,9 +569,9 @@ mod tests {
                 )
             })
             .collect();
-        let allowed: HashMap<String, std::collections::HashSet<i64>> = wires
+        let allowed: HashMap<String, crate::collections::HashSet<i64>> = wires
             .iter()
-            .map(|w| (w.wire_id.clone(), std::collections::HashSet::from([1i64, 2])))
+            .map(|w| (w.wire_id.clone(), [1i64, 2].into_iter().collect::<crate::collections::HashSet<i64>>()))
             .collect();
         let mut assignment: HashMap<String, i64> =
             wires.iter().map(|w| (w.wire_id.clone(), 1i64)).collect();
@@ -596,7 +596,7 @@ mod tests {
         )
         .unwrap();
 
-        let layers_used: std::collections::HashSet<i64> = assignment.values().copied().collect();
+        let layers_used: crate::collections::HashSet<i64> = assignment.values().copied().collect();
         let peak_after = max_occupancy_per_layer(&assignment, &wires, &[], &[], &cfg)
             .values()
             .cloned()

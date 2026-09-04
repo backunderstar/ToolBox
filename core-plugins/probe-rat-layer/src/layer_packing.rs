@@ -5,7 +5,7 @@ use crate::cancel::{check_cancel, CancelFlag, LayeringCancelled};
 use crate::config::LayeringConfig;
 use crate::model::{ConflictGraph, KeepoutZone, LayerStack, Pin, Wire};
 use ndarray::Array2;
-use std::collections::{HashMap, HashSet};
+use crate::collections::{HashMap, HashSet};
 
 /// 一条 wire 的扇区角度：靠外 pin 相对圆心 (0,0) 的极角 [0,360)。圆心定死 (0,0)。
 pub fn wire_dir_angle(w: &Wire) -> f64 {
@@ -50,13 +50,13 @@ fn _make_units(
             })
             .collect();
     }
-    let mut by_net: HashMap<String, Vec<Wire>> = HashMap::new();
+    let mut by_net: HashMap<String, Vec<Wire>> = HashMap::default();
     for w in wires {
         by_net.entry(w.net_id.clone()).or_default().push(w.clone());
     }
     let mut units = Vec::new();
     for (net_id, ws) in by_net {
-        let mut allow: HashSet<i64> = HashSet::new();
+        let mut allow: HashSet<i64> = HashSet::default();
         for w in &ws {
             if let Some(a) = allowed.get(&w.wire_id) {
                 allow.extend(a.iter().copied());
@@ -123,9 +123,9 @@ fn _resolve_conflicts(
     for _ in 0..rounds {
         check_cancel(cancel)?;
         // wire -> (layer, unit_uid)；层 -> 该层所有 wire 集合。每轮重建（O(n)）。
-        let mut wire_loc: HashMap<String, (i64, String)> = HashMap::new();
+        let mut wire_loc: HashMap<String, (i64, String)> = HashMap::default();
         let mut layer_wires: HashMap<i64, HashSet<String>> =
-            layers.iter().map(|&l| (l, HashSet::new())).collect();
+            layers.iter().map(|&l| (l, HashSet::default())).collect();
         for (l, us) in layer_units.iter() {
             for u in us {
                 for w in &u.wires {
@@ -135,7 +135,7 @@ fn _resolve_conflicts(
             }
         }
         // 坏单元 = 同层且不同单元且存在硬冲突边（边驱动，替代两两扫描）
-        let mut bad: HashSet<String> = HashSet::new();
+        let mut bad: HashSet<String> = HashSet::default();
         for (a, b) in &edges {
             if let (Some((la, ua)), Some((lb, ub))) = (wire_loc.get(a), wire_loc.get(b)) {
                 if ua != ub && la == lb {
@@ -265,7 +265,7 @@ fn _raster_into(
     value: f64,
 ) {
     let n = ((w.length() / cell * 2.0) as usize + 1).max(2);
-    let mut cells: HashSet<(usize, usize)> = HashSet::new();
+    let mut cells: HashSet<(usize, usize)> = HashSet::default();
     for i in 0..n {
         let t = if n > 1 { i as f64 / (n as f64 - 1.0) } else { 0.0 };
         let x = w.start.x + (w.end.x - w.start.x) * t;
@@ -353,11 +353,11 @@ fn _unit_cells(
     cols: usize,
     cfg: &LayeringConfig,
 ) -> HashMap<(usize, usize), f64> {
-    let mut cells: HashMap<(usize, usize), f64> = HashMap::new();
+    let mut cells: HashMap<(usize, usize), f64> = HashMap::default();
     for w in &u.wires {
         let value = _demand_value(w, cfg);
         let n = ((w.length() / cell * 2.0) as usize + 1).max(2);
-        let mut seen: HashSet<(usize, usize)> = HashSet::new();
+        let mut seen: HashSet<(usize, usize)> = HashSet::default();
         for i in 0..n {
             let t = if n > 1 { i as f64 / (n as f64 - 1.0) } else { 0.0 };
             let x = w.start.x + (w.end.x - w.start.x) * t;
@@ -400,8 +400,8 @@ fn _enforce_capacity(
         }
     }
 
-    let mut layer_demand: HashMap<i64, Array2<f64>> = HashMap::new();
-    let mut layer_max: HashMap<i64, f64> = HashMap::new();
+    let mut layer_demand: HashMap<i64, Array2<f64>> = HashMap::default();
+    let mut layer_max: HashMap<i64, f64> = HashMap::default();
     for &l in layers {
         let mut d = Array2::zeros((rows, cols));
         if let Some(us) = layer_units.get(&l) {
@@ -570,7 +570,7 @@ fn _split_stuck_nets(
 ) -> Result<(), LayeringCancelled> {
     check_cancel(cancel)?;
     // wire -> (layer, unit_uid)
-    let mut wire_loc: HashMap<String, (i64, String)> = HashMap::new();
+    let mut wire_loc: HashMap<String, (i64, String)> = HashMap::default();
     for (l, us) in layer_units.iter() {
         for u in us {
             for w in &u.wires {
@@ -579,7 +579,7 @@ fn _split_stuck_nets(
         }
     }
     // 顽固单元：与**别的单元**在同一层且存在硬冲突边（即冲突消除没挪走的整网）
-    let mut stuck: HashSet<String> = HashSet::new();
+    let mut stuck: HashSet<String> = HashSet::default();
     for (a, b) in graph.edges() {
         if let (Some((la, ua)), Some((lb, ub))) = (wire_loc.get(&a), wire_loc.get(&b)) {
             if la == lb && ua != ub {
@@ -663,7 +663,7 @@ fn _reroute_rounds(
     }
     let k = cfg.congestion_k.max(1.001);
     // 每层 demand 数组
-    let mut demand_of: HashMap<i64, Array2<f64>> = HashMap::new();
+    let mut demand_of: HashMap<i64, Array2<f64>> = HashMap::default();
     for &l in layers {
         let mut d = Array2::zeros((rows, cols));
         if let Some(us) = layer_units.get(&l) {
@@ -750,7 +750,7 @@ fn _pack_units(
     };
     prog(0.1);
     // 单元冲突度 = 相邻（有硬冲突边）的单元数，用于"最难优先"排序（借成熟网络排序思想）
-    let mut wire_unit: HashMap<&str, &str> = HashMap::new();
+    let mut wire_unit: HashMap<&str, &str> = HashMap::default();
     for u in &units {
         for w in &u.wires {
             wire_unit.insert(w.wire_id.as_str(), u.uid.as_str());
@@ -758,7 +758,7 @@ fn _pack_units(
     }
     let mut unit_deg: HashMap<&str, usize> =
         units.iter().map(|u| (u.uid.as_str(), 0usize)).collect();
-    let mut pairs: HashSet<(String, String)> = HashSet::new();
+    let mut pairs: HashSet<(String, String)> = HashSet::default();
     for (a, b) in graph.edges() {
         if let (Some(ua), Some(ub)) = (wire_unit.get(a.as_str()), wire_unit.get(b.as_str())) {
             if ua != ub {
@@ -840,7 +840,7 @@ fn _pack_units(
         check_cancel(cancel)?;
         _reroute_rounds(&mut layer_units, layers, zones, pins, cfg, graph, cancel)?;
     }
-    let mut assignment: HashMap<String, i64> = HashMap::new();
+    let mut assignment: HashMap<String, i64> = HashMap::default();
     for (l, us) in &layer_units {
         for u in us {
             for w in &u.wires {
@@ -863,7 +863,7 @@ pub fn pack_layers(
     progress: Option<&mut dyn FnMut(f64)>,
     cancel: &CancelFlag,
 ) -> Result<HashMap<String, i64>, LayeringCancelled> {
-    let mut layer_set: HashSet<i64> = HashSet::new();
+    let mut layer_set: HashSet<i64> = HashSet::default();
     for s in allowed.values() {
         for l in s {
             layer_set.insert(*l);
@@ -872,10 +872,10 @@ pub fn pack_layers(
     let mut layers: Vec<i64> = layer_set.into_iter().collect();
     layers.sort();
     if layers.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(HashMap::default());
     }
     // 逐层 preferred_dir（H/V/any），供方向感知铺层；无 stack 时默认 "any"
-    let mut layer_dir: HashMap<i64, String> = HashMap::new();
+    let mut layer_dir: HashMap<i64, String> = HashMap::default();
     if let Some(s) = stack {
         for l in &s.layers {
             layer_dir.insert(l.index, l.preferred_dir.clone());
@@ -894,12 +894,12 @@ pub fn minimize_crossings(
     max_passes: i64,
     cancel: &CancelFlag,
 ) -> Result<HashMap<String, i64>, LayeringCancelled> {
-    let mut soft_adj: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut soft_adj: HashMap<String, HashSet<String>> = HashMap::default();
     for (a, b) in soft_pairs {
         soft_adj.entry(a.clone()).or_default().insert(b.clone());
         soft_adj.entry(b.clone()).or_default().insert(a.clone());
     }
-    let mut layer_wires: HashMap<i64, HashSet<String>> = layers.iter().map(|&l| (l, HashSet::new())).collect();
+    let mut layer_wires: HashMap<i64, HashSet<String>> = layers.iter().map(|&l| (l, HashSet::default())).collect();
     for (wid, l) in assignment {
         layer_wires.entry(*l).or_default().insert(wid.clone());
     }
@@ -971,7 +971,7 @@ pub fn capacity_lower_bound(
     usable_area: f64,
     cfg: &LayeringConfig,
 ) -> HashMap<String, f64> {
-    let mut total_area: HashMap<String, f64> = HashMap::new();
+    let mut total_area: HashMap<String, f64> = HashMap::default();
     for w in wires {
         let g = group_of
             .get(&w.wire_id)

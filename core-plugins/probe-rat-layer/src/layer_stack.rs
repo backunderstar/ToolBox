@@ -3,7 +3,7 @@
 
 use crate::config::LayeringConfig;
 use crate::model::{LayerStack, Net, NetClass, SignalGroup, Wire};
-use std::collections::{HashMap, HashSet};
+use crate::collections::{HashMap, HashSet};
 
 pub fn signal_layers(stack: Option<&LayerStack>) -> Vec<i64> {
     stack.map(|s| s.signal_layers()).unwrap_or_default()
@@ -57,11 +57,11 @@ pub fn group_wires_by_signal_group(
     wires: &[Wire],
     nets: &[Net],
 ) -> HashMap<Option<String>, Vec<Wire>> {
-    let mut net_to_group = HashMap::new();
+    let mut net_to_group = HashMap::default();
     for n in nets {
         net_to_group.insert(n.net_id.clone(), n.signal_group_id.clone());
     }
-    let mut groups: HashMap<Option<String>, Vec<Wire>> = HashMap::new();
+    let mut groups: HashMap<Option<String>, Vec<Wire>> = HashMap::default();
     for w in wires {
         let g = net_to_group.get(&w.net_id).cloned().flatten();
         groups.entry(g).or_default().push(w.clone());

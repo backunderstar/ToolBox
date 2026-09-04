@@ -5,11 +5,11 @@ use crate::io::LoadedData;
 use crate::io::wire_gen::generate_wires;
 use crate::model::{LayerDef, LayerStack, Net, NetClass, Pin, Point, SignalGroup, Units};
 use calamine::{Data, Reader};
-use std::collections::HashMap;
+use crate::collections::HashMap;
 
 // 列名别名：表头（小写）→ 规范列名
 fn _col_aliases() -> HashMap<&'static str, &'static str> {
-    let mut m = HashMap::new();
+    let mut m = HashMap::default();
     for (k, v) in [
         ("net", "net_name"), ("net_name", "net_name"), ("network", "net_name"), ("网络", "net_name"),
         ("pin_x", "pin_x"), ("x", "pin_x"), ("x坐标", "pin_x"),
@@ -94,9 +94,9 @@ fn _vdigit(u: &str) -> bool {
         .any(|w| w[0] == b'V' && w[1].is_ascii_digit())
 }
 
-fn _read_text_net_list(path: &str) -> Result<std::collections::HashSet<String>, String> {
+fn _read_text_net_list(path: &str) -> Result<crate::collections::HashSet<String>, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("读取筛选文件失败: {e}"))?;
-    let mut names = std::collections::HashSet::new();
+    let mut names = crate::collections::HashSet::default();
     for line in content.lines() {
         let v = line.trim();
         if v.is_empty() || v.starts_with('#') {
@@ -107,9 +107,9 @@ fn _read_text_net_list(path: &str) -> Result<std::collections::HashSet<String>, 
     Ok(names)
 }
 
-fn _read_net_whitelist_table(path: &str) -> Result<std::collections::HashSet<String>, String> {
+fn _read_net_whitelist_table(path: &str) -> Result<crate::collections::HashSet<String>, String> {
     let rows = _read_rows(path)?;
-    let mut names = std::collections::HashSet::new();
+    let mut names = crate::collections::HashSet::default();
     for row in &rows {
         if row.is_empty() {
             continue;
@@ -127,7 +127,7 @@ fn _read_net_whitelist_table(path: &str) -> Result<std::collections::HashSet<Str
 }
 
 /// 读筛选文件：.lst/.txt 按文本（一行一个 net）；.xls/.xlsx 按表格第一列。
-pub fn read_net_filter(path: &str) -> Result<std::collections::HashSet<String>, String> {
+pub fn read_net_filter(path: &str) -> Result<crate::collections::HashSet<String>, String> {
     let lower = path.to_lowercase();
     if lower.ends_with(".lst") || lower.ends_with(".txt") {
         _read_text_net_list(path)
@@ -138,7 +138,7 @@ pub fn read_net_filter(path: &str) -> Result<std::collections::HashSet<String>, 
 
 fn _columns(header_row: &[String]) -> (usize, usize, usize, Option<usize>, Option<usize>) {
     let aliases = _col_aliases();
-    let mut col: HashMap<String, usize> = HashMap::new();
+    let mut col: HashMap<String, usize> = HashMap::default();
     for (i, cell) in header_row.iter().enumerate() {
         if let Some(canonical) = aliases.get(cell.trim().to_lowercase().as_str()) {
             if !col.contains_key(*canonical) {
@@ -177,8 +177,8 @@ pub fn load_xlsx(
     }
     let (net_i, x_i, y_i, ref_i, pin_i) = _columns(&rows[0]);
 
-    let mut net_pins: HashMap<String, Vec<Pin>> = HashMap::new();
-    let mut counter: HashMap<String, i64> = HashMap::new();
+    let mut net_pins: HashMap<String, Vec<Pin>> = HashMap::default();
+    let mut counter: HashMap<String, i64> = HashMap::default();
     for row in &rows[1..] {
         if row.len() <= net_i.max(x_i).max(y_i) {
             continue;

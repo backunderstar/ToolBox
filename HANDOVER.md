@@ -649,6 +649,21 @@ API 后实施/取舍：
   都压不动多少；真正大幅减交叉要靠**加层数**（每层网更少）或**布线/过孔级拓扑**。占用峰值与走通率才是分层能显著改善的指标。
 - **验证**：`cargo test -p tb-probe-rat-layer` **16** 过（`congestion_balance` 单测仍过）+ 6 ignored；`clippy` 0。
 
+### 1.24 增量（2026-09-03：主流程 HashMap 改确定性哈希，结果跨运行稳定可复现）
+
+用户反馈：同一配置每次运行分层结果不同（占用峰值 1.33/1.56/1.78 波动）→ A/B 不可信。根因是算法模块
+用 std `HashMap`/`HashSet`（`RandomState` 每进程随机种子，迭代序不定）。
+- **确定性哈希容器**：新增 `collections.rs`（`FxHashMap`/`FxHashSet`，`rustc-hash` 固定种子哈希），
+  `use std::collections::...` 全部改为 `use crate::collections::...`（15 个文件）；`HashMap/HashSet::new()`
+  → `default()`（Fx 容器无 `new()`；`from([...])` 也不适用，改 `into_iter().collect()`）。
+  - 先试 `BTreeMap/BTreeSet`：drop-in 且天然排序，但**慢 ~2×**（6.4s vs 3.4s）→ 改用 **FxHashMap**
+    （同为固定哈希、迭代序跨运行恒定，O(1) 访问、几乎不掉速，~1.5s）。
+  - `pipeline` 的 `manual_nets` 保留显式 `sort()`（列表稳定）；`pipeline` 里 `netsset.drain()` 改 `into_iter()`。
+- **验证（hv 1800 网，release，同配置跑 2 次）**：两次**指标完全一致**（同层交叉 2128/2128/2121、占用 1.33/1.56）
+  且用时回到 ~1.5s——确定序后 A/B 对比才可信。
+- 新增依赖：`rustc-hash`（core-plugins/probe-rat-layer/Cargo.toml + 根 Cargo.lock）。
+- **验证**：`cargo test -p tb-probe-rat-layer` **16** 过 + 6 ignored；`clippy -p` 0；`workspace` 83 过。
+
 ---
 
 ## 2. 项目一句话

@@ -47,7 +47,7 @@ pub fn render(plugin_dir: &str, job_id: &str, kind: &str) -> Result<Value, Strin
 
     let geom = parse_geom(&geo_json)?;
     let res = parse_res(&res_json);
-    let wire_by_id: std::collections::HashMap<String, Wire> =
+    let wire_by_id: crate::collections::HashMap<String, Wire> =
         geom.wires.iter().map(|w| (w.wire_id.clone(), w.clone())).collect();
 
     let (name, png) = match kind {
@@ -279,7 +279,7 @@ fn draw_keepouts(chart: &mut Ctx<'_, '_>, geom: &Geom) -> Result<(), String> {
 
 // ---------- 各图 ----------
 
-fn render_layer(li: &LayerInfoLite, wire_by_id: &std::collections::HashMap<String, Wire>, geom: &Geom) -> Result<Vec<u8>, String> {
+fn render_layer(li: &LayerInfoLite, wire_by_id: &crate::collections::HashMap<String, Wire>, geom: &Geom) -> Result<Vec<u8>, String> {
     let br = bbox(geom);
     with_root(1200, 960, |root| {
         let mut chart = build_chart(root, br)?;
@@ -295,7 +295,7 @@ fn render_layer(li: &LayerInfoLite, wire_by_id: &std::collections::HashMap<Strin
     })
 }
 
-fn render_overview(geom: &Geom, wire_by_id: &std::collections::HashMap<String, Wire>, res: &Res) -> Result<Vec<u8>, String> {
+fn render_overview(geom: &Geom, wire_by_id: &crate::collections::HashMap<String, Wire>, res: &Res) -> Result<Vec<u8>, String> {
     let br = bbox(geom);
     with_root(1200, 960, |root| {
         let mut chart = build_chart(root, br)?;
@@ -317,7 +317,7 @@ fn render_overview(geom: &Geom, wire_by_id: &std::collections::HashMap<String, W
     })
 }
 
-fn render_rose(geom: &Geom, wire_by_id: &std::collections::HashMap<String, Wire>, res: &Res) -> Result<Vec<u8>, String> {
+fn render_rose(geom: &Geom, wire_by_id: &crate::collections::HashMap<String, Wire>, res: &Res) -> Result<Vec<u8>, String> {
     let layers: Vec<&LayerInfoLite> = res.layers.iter().filter(|l| l.kind != "plane").collect();
     let n = layers.len().max(1);
     let cell_w = 360.0;
@@ -365,7 +365,7 @@ fn render_rose(geom: &Geom, wire_by_id: &std::collections::HashMap<String, Wire>
 }
 
 fn render_manual(geom: &Geom, res: &Res) -> Result<Vec<u8>, String> {
-    let manual: std::collections::HashSet<String> = res.manual_route_nets.iter().cloned().collect();
+    let manual: crate::collections::HashSet<String> = res.manual_route_nets.iter().cloned().collect();
     let wires: Vec<&Wire> = geom
         .wires
         .iter()

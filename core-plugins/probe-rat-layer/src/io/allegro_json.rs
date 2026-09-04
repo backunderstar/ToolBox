@@ -6,15 +6,15 @@ use crate::io::LoadedData;
 use crate::keepout;
 use crate::model::{LayerDef, LayerStack, Net, NetClass, NetGroup, Pin, Point, SignalGroup, Units, Wire};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use crate::collections::{HashMap, HashSet};
 
 fn _parse_nets(
     raw_nets: &Value,
     warnings: &mut Vec<String>,
 ) -> (Vec<Net>, HashMap<String, (f64, f64)>) {
     let mut nets: Vec<Net> = Vec::new();
-    let mut meta: HashMap<String, (f64, f64)> = HashMap::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut meta: HashMap<String, (f64, f64)> = HashMap::default();
+    let mut seen: HashSet<String> = HashSet::default();
     let arr = raw_nets.as_array().cloned().unwrap_or_default();
     for nd in &arr {
         let nid = nd.get("net_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -173,7 +173,7 @@ pub fn load_allegro_json(path: &str) -> Result<LoadedData, String> {
 
     let wires = if let Some(warr) = d.get("wires").and_then(|v| v.as_array()) {
         let mut wires: Vec<Wire> = Vec::new();
-        let mut seen_w: HashSet<String> = HashSet::new();
+        let mut seen_w: HashSet<String> = HashSet::default();
         for w in warr.iter().filter(|w| w.get("wire_id").is_some()) {
             let wid = w["wire_id"].as_str().unwrap_or("").to_string();
             if seen_w.contains(&wid) {

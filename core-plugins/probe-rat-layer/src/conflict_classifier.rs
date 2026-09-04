@@ -132,7 +132,7 @@ pub fn classify_pair(
         let shared = keepout::both_cross_same_zone(wa, wb, zones);
         if !shared.is_empty() {
             let two = [wa.clone(), wb.clone()];
-            let pinch: std::collections::HashSet<String> =
+            let pinch: crate::collections::HashSet<String> =
                 keepout::pinch_zones(&two, zones, cfg).into_iter().collect();
             let hard_zones: Vec<String> =
                 shared.iter().filter(|z| pinch.contains(*z)).cloned().collect();
@@ -188,7 +188,7 @@ pub fn classify_pair(
     };
     if !shared.is_empty() {
         let two = [wa.clone(), wb.clone()];
-        let pinch: std::collections::HashSet<String> =
+        let pinch: crate::collections::HashSet<String> =
             keepout::pinch_zones(&two, zones, cfg).into_iter().collect();
         let hard_zones: Vec<String> =
             shared.iter().filter(|z| pinch.contains(*z)).cloned().collect();

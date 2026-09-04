@@ -13,7 +13,7 @@ use crate::report;
 use crate::state::{ActiveStateData, Progress};
 use crate::viz;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use crate::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use tb_sdk::TbHostApi;
@@ -164,7 +164,7 @@ pub fn state_from_cfg(cfg: &Value) -> Result<LayerState, String> {
         plugin_dir,
         active: Arc::new(Mutex::new(ActiveStateData::default())),
         cancel: new_cancel(),
-        jobs: Arc::new(Mutex::new(HashMap::new())),
+        jobs: Arc::new(Mutex::new(HashMap::default())),
         running: Arc::new(Mutex::new(None)),
     };
     state.restore_jobs();

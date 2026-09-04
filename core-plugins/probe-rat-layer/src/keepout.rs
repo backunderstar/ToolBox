@@ -79,9 +79,9 @@ pub fn zones_crossed_by(w: &Wire, zones: &[KeepoutZone], margin: f64) -> Vec<Str
 }
 
 pub fn both_cross_same_zone(wa: &Wire, wb: &Wire, zones: &[KeepoutZone]) -> Vec<String> {
-    let a: std::collections::HashSet<String> =
+    let a: crate::collections::HashSet<String> =
         zones_crossed_by(wa, zones, 0.0).into_iter().collect();
-    let b: std::collections::HashSet<String> =
+    let b: crate::collections::HashSet<String> =
         zones_crossed_by(wb, zones, 0.0).into_iter().collect();
     let mut out: Vec<String> = a.intersection(&b).cloned().collect();
     out.sort();
