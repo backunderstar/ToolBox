@@ -579,8 +579,9 @@ API 后实施/取舍：
   `arboard`。
 - **✅ `shell.exec`** → `tauri-plugin-shell`：命令名/权限门/`{cmd,args?,timeoutSec?}`/返回
   `{code,stdout,stderr}`/40 行尾/cwd=工作区 均不变；`ShellExt::shell().command().args().current_dir().spawn()`
-  的事件流用 `try_recv()+is_closed()` 轮询 + 超时 kill。**行为差异**：输出由"写临时文件再截尾(内存受限)"
-  变为"先全量捕获再截尾"（超大输出内存占用更高）。
+  的事件流用 `try_recv()+is_closed()` 轮询 + 超时 kill。**内存有界**：输出流式写入**临时缓存文件**
+  （内存全程 O(1)），结束时仅读末尾 40 行（`tail_of_file` 只读末尾 256KB + `tail_tests` 单测），
+  超大输出不会全量驻留内存。
 - **❌ HTTP**（`http.request`）：`tauri-plugin-http` **无 Rust 侧 client/fetch API（纯 JS 命令，仅 `init()`）**，
   保住 timeout/4MB 上限/响应形状只能走 IPC 适配（异步+脆弱）→ **保留自研 reqwest**。
 - **❌ 文件服务**（`files.rs`/`input.rs`）：`tauri-plugin-fs` **仅有 `Fs::open()` 一层 std::fs 包裹**，

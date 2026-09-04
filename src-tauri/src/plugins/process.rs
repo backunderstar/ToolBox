@@ -537,8 +537,16 @@ impl ProcessPlugin {
                     .map_err(|e| format!("启动命令失败（{cmd}）: {e}"))?;
                 let deadline = std::time::Instant::now()
                     + std::time::Duration::from_secs(timeout);
-                let mut stdout = String::new();
-                let mut stderr = String::new();
+                // 输出写磁盘缓存文件：内存全程 O(1)（只保留文件句柄+小块），结束时仅读末尾 40 行尾。
+                // 超大输出不会全量驻留内存，与旧 std::process 写临时文件再读尾的策略等价。
+                let tag = format!("{}-{}", self.plugin_id, std::process::id());
+                let out_path = std::env::temp_dir().join(format!("tb-shell-{tag}.out.log"));
+                let err_path = std::env::temp_dir().join(format!("tb-shell-{tag}.err.log"));
+                use std::io::Write;
+                let mut out_file = std::fs::File::create(&out_path)
+                    .map_err(|e| format!("创建输出缓存失败: {e}"))?;
+                let mut err_file = std::fs::File::create(&err_path)
+                    .map_err(|e| format!("创建输出缓存失败: {e}"))?;
                 let mut code: Option<i32> = None;
                 let mut exec_err: Option<String> = None;
                 loop {
@@ -549,10 +557,10 @@ impl ProcessPlugin {
                     }
                     match rx.try_recv() {
                         Ok(CommandEvent::Stdout(b)) => {
-                            stdout.push_str(&String::from_utf8_lossy(&b));
+                            let _ = out_file.write_all(&b);
                         }
                         Ok(CommandEvent::Stderr(b)) => {
-                            stderr.push_str(&String::from_utf8_lossy(&b));
+                            let _ = err_file.write_all(&b);
                         }
                         Ok(CommandEvent::Terminated(p)) => {
                             code = p.code;
@@ -571,13 +579,14 @@ impl ProcessPlugin {
                         }
                     }
                 }
-                let tail = |s: &str| -> String {
-                    let lines: Vec<&str> = s.lines().collect();
-                    let start = lines.len().saturating_sub(40);
-                    lines[start..].join("\n")
-                };
-                let out_tail = tail(&stdout);
-                let err_tail = tail(&stderr);
+                let _ = out_file.flush();
+                let _ = err_file.flush();
+                drop(out_file);
+                drop(err_file);
+                let out_tail = tail_of_file(&out_path);
+                let err_tail = tail_of_file(&err_path);
+                let _ = std::fs::remove_file(&out_path);
+                let _ = std::fs::remove_file(&err_path);
                 if let Some(e) = exec_err {
                     Err(format!("{e}\nstderr：\n{err_tail}"))
                 } else {
@@ -823,5 +832,59 @@ fn read_loop(stdout: ChildStdout, tx: Sender<Incoming>) {
                 break;
             }
         }
+    }
+}
+
+/// 从缓存文件读取末尾 40 行：只读末尾 `TAIL_READ` 字节（有界读尾），不整文件载入内存。
+/// 用于 shell.exec 的 stdout/stderr 读回——超大输出走磁盘，读回也恒定有界。
+fn tail_of_file(path: &std::path::Path) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    const TAIL_READ: u64 = 256 * 1024;
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return String::new();
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let skip = len.saturating_sub(TAIL_READ);
+    if f.seek(SeekFrom::Start(skip)).is_err() {
+        return String::new();
+    }
+    let mut buf = Vec::new();
+    if f.read_to_end(&mut buf).is_err() {
+        return String::new();
+    }
+    let s = String::from_utf8_lossy(&buf);
+    let lines: Vec<&str> = s.lines().collect();
+    let start = lines.len().saturating_sub(40);
+    lines[start..].join("\n")
+}
+
+#[cfg(test)]
+mod tail_tests {
+    use super::tail_of_file;
+    use std::io::Write;
+
+    #[test]
+    fn tail_returns_last_40_lines() {
+        let path = std::env::temp_dir().join(format!("tb-tail-test-{}.log", std::process::id()));
+        let mut f = std::fs::File::create(&path).unwrap();
+        for i in 0..50 {
+            writeln!(f, "line {i}").unwrap();
+        }
+        drop(f);
+        let tail = tail_of_file(&path);
+        let _ = std::fs::remove_file(&path);
+        let lines: Vec<_> = tail.lines().collect();
+        assert_eq!(lines.len(), 40);
+        assert_eq!(lines[0], "line 10");
+        assert_eq!(lines[39], "line 49");
+    }
+
+    #[test]
+    fn tail_empty_or_missing_returns_empty() {
+        assert_eq!(tail_of_file(std::path::Path::new("definitely-missing-file")), "");
+        let path = std::env::temp_dir().join(format!("tb-tail-empty-{}.log", std::process::id()));
+        let _ = std::fs::File::create(&path).unwrap();
+        assert_eq!(tail_of_file(&path), "");
+        let _ = std::fs::remove_file(&path);
     }
 }
