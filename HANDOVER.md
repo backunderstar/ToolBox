@@ -570,6 +570,26 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   （dev + **release** 档）0 告警 · `pnpm build:core` ✓（probe-rat-layer UI 137.00 kB + DLL 自检通过）。
 - 注：版本号只动版本与文档，**不改分层算法行为**（短线容忍默认关、输出目录/走通率修复纯健壮性）。
 
+### 1.20 增量（2026-09-03：宿主能力改走官方插件（剪贴板/shell）+ http/文件服务评估后保留自研）
+
+用户目标：尽量用官方插件减少手写代码，且**功能不变**（方案确认后实施）。逐项核对官方插件 Rust 侧
+API 后实施/取舍：
+- **✅ 剪贴板**（`clipboard.read/write`）：`arboard` → `tauri-plugin-clipboard-manager`（插件内部即
+  arboard，`ClipboardExt::clipboard().read_text()/write_text()`）；命令名/权限门/行为一致，删直接依赖
+  `arboard`。
+- **✅ `shell.exec`** → `tauri-plugin-shell`：命令名/权限门/`{cmd,args?,timeoutSec?}`/返回
+  `{code,stdout,stderr}`/40 行尾/cwd=工作区 均不变；`ShellExt::shell().command().args().current_dir().spawn()`
+  的事件流用 `try_recv()+is_closed()` 轮询 + 超时 kill。**行为差异**：输出由"写临时文件再截尾(内存受限)"
+  变为"先全量捕获再截尾"（超大输出内存占用更高）。
+- **❌ HTTP**（`http.request`）：`tauri-plugin-http` **无 Rust 侧 client/fetch API（纯 JS 命令，仅 `init()`）**，
+  保住 timeout/4MB 上限/响应形状只能走 IPC 适配（异步+脆弱）→ **保留自研 reqwest**。
+- **❌ 文件服务**（`files.rs`/`input.rs`）：`tauri-plugin-fs` **仅有 `Fs::open()` 一层 std::fs 包裹**，
+  无 list/readText/writeText；且 vault S1c 校验 + 隐藏 `.toolbox` 过滤 + `fs.listDir` 契约为自研策略
+  → 换过去反增适配层且不保平 → **保留自研**。
+- **结论**：剪贴板/`shell.exec` 为可净减码项；http/文件服务因无对口 Rust API/策略不匹配而保留自研。
+  依赖变更：新增 `tauri-plugin-clipboard-manager`、`tauri-plugin-shell`；移除 `arboard`。
+  验证：`cargo check -p toolbox` / `cargo test -p toolbox`（60 过）/ `cargo clippy -p toolbox` 0 告警。
+
 ---
 
 ## 2. 项目一句话

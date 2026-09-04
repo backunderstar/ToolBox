@@ -409,10 +409,17 @@ impl ProcessPlugin {
                     Err(e) => Err(format!("打开失败: {e}")),
                 }
             }
-            // ---- 剪贴板（arboard；权限 clipboard）----
+            // ---- 剪贴板（tauri-plugin-clipboard-manager；权限 clipboard）----
+            // 官方插件封装 arboard，行为一致：空剪贴板 read_text 返回同一 arboard 错误
             "clipboard.read" => {
-                let mut cb = arboard::Clipboard::new().map_err(|e| format!("剪贴板不可用: {e}"))?;
-                let text = cb.get_text().map_err(|e| format!("读取剪贴板失败: {e}"))?;
+                let Some(app) = crate::plugins::native::host_app() else {
+                    return Err("宿主未就绪（剪贴板不可用）".to_string());
+                };
+                use tauri_plugin_clipboard_manager::ClipboardExt;
+                let text = app
+                    .clipboard()
+                    .read_text()
+                    .map_err(|e| format!("读取剪贴板失败: {e}"))?;
                 Ok(json!(text))
             }
             "clipboard.write" => {
@@ -420,8 +427,12 @@ impl ProcessPlugin {
                     .get("text")
                     .and_then(|v| v.as_str())
                     .ok_or("缺少 text 参数")?;
-                let mut cb = arboard::Clipboard::new().map_err(|e| format!("剪贴板不可用: {e}"))?;
-                cb.set_text(text.to_string())
+                let Some(app) = crate::plugins::native::host_app() else {
+                    return Err("宿主未就绪（剪贴板不可用）".to_string());
+                };
+                use tauri_plugin_clipboard_manager::ClipboardExt;
+                app.clipboard()
+                    .write_text(text.to_string())
                     .map_err(|e| format!("写入剪贴板失败: {e}"))?;
                 Ok(Value::Null)
             }
@@ -489,9 +500,11 @@ impl ProcessPlugin {
                     "text": String::from_utf8_lossy(&bytes).into_owned(),
                 }))
             }
-            // ---- 执行命令（std::process；权限 shell）----
-            // 参数 {cmd, args?, timeoutSec?}；返回 {code, stdoutTail, stderrTail}
-            // 强能力：仅声明 shell 权限的插件可用；cwd = 插件目录
+            // ---- 执行命令（tauri-plugin-shell；权限 shell）----
+            // 参数 {cmd, args?, timeoutSec?}；返回 {code, stdout, stderr}
+            // 强能力：仅声明 shell 权限的插件可用；cwd = 工作区（实际行为）
+            // 说明：与 std::process 直接 spawn 的差异——输出为"全量捕获后截 40 行尾"
+            //   （超大输出时内存占用高于旧"写临时文件再截尾"），命令名/超时/终止语义不变。
             "shell.exec" => {
                 let cmd = params
                     .get("cmd")
@@ -510,53 +523,65 @@ impl ProcessPlugin {
                     .get("timeoutSec")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(10);
-                let tag = format!("{}-{}", self.plugin_id, std::process::id());
-                let out_log = std::env::temp_dir().join(format!("tb-shell-{tag}.out.log"));
-                let err_log = std::env::temp_dir().join(format!("tb-shell-{tag}.err.log"));
-                let result = (|| -> Result<i32, String> {
-                    let out = std::fs::File::create(&out_log)
-                        .map_err(|e| format!("创建日志文件失败: {e}"))?;
-                    let err = std::fs::File::create(&err_log)
-                        .map_err(|e| format!("创建日志文件失败: {e}"))?;
-                    let mut child = std::process::Command::new(cmd)
-                        .args(&args)
-                        .current_dir(&self.vault)
-                        .stdout(std::process::Stdio::from(out))
-                        .stderr(std::process::Stdio::from(err))
-                        .spawn()
-                        .map_err(|e| format!("启动命令失败（{cmd}）: {e}"))?;
-                    let deadline = std::time::Instant::now()
-                        + std::time::Duration::from_secs(timeout);
-                    loop {
-                        if let Some(status) =
-                            child.try_wait().map_err(|e| format!("等待命令失败: {e}"))?
-                        {
-                            return Ok(status.code().unwrap_or(-1));
-                        }
-                        if std::time::Instant::now() >= deadline {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                            return Err(format!("命令超过 {timeout} 秒未完成，已终止"));
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(200));
-                    }
-                })();
-                let tail = |p: &std::path::Path| -> String {
-                    std::fs::read_to_string(p)
-                        .map(|s| {
-                            let lines: Vec<&str> = s.lines().collect();
-                            let start = lines.len().saturating_sub(40);
-                            lines[start..].join("\n")
-                        })
-                        .unwrap_or_default()
+                let Some(app) = crate::plugins::native::host_app() else {
+                    return Err("宿主未就绪（无法执行命令）".to_string());
                 };
-                let out_tail = tail(&out_log);
-                let err_tail = tail(&err_log);
-                let _ = std::fs::remove_file(&out_log);
-                let _ = std::fs::remove_file(&err_log);
-                match result {
-                    Ok(code) => Ok(json!({ "code": code, "stdout": out_tail, "stderr": err_tail })),
-                    Err(e) => Err(format!("{e}\nstderr：\n{err_tail}")),
+                use tauri_plugin_shell::process::CommandEvent;
+                use tauri_plugin_shell::ShellExt;
+                let (mut rx, child) = app
+                    .shell()
+                    .command(cmd)
+                    .args(&args)
+                    .current_dir(&self.vault)
+                    .spawn()
+                    .map_err(|e| format!("启动命令失败（{cmd}）: {e}"))?;
+                let deadline = std::time::Instant::now()
+                    + std::time::Duration::from_secs(timeout);
+                let mut stdout = String::new();
+                let mut stderr = String::new();
+                let mut code: Option<i32> = None;
+                let mut exec_err: Option<String> = None;
+                loop {
+                    if std::time::Instant::now() >= deadline {
+                        let _ = child.kill();
+                        exec_err = Some(format!("命令超过 {timeout} 秒未完成，已终止"));
+                        break;
+                    }
+                    match rx.try_recv() {
+                        Ok(CommandEvent::Stdout(b)) => {
+                            stdout.push_str(&String::from_utf8_lossy(&b));
+                        }
+                        Ok(CommandEvent::Stderr(b)) => {
+                            stderr.push_str(&String::from_utf8_lossy(&b));
+                        }
+                        Ok(CommandEvent::Terminated(p)) => {
+                            code = p.code;
+                            break;
+                        }
+                        Ok(CommandEvent::Error(e)) => {
+                            exec_err = Some(format!("命令执行失败: {e}"));
+                            break;
+                        }
+                        Ok(_) => { /* CommandEvent 是非穷举枚举，忽略未知变体 */ }
+                        Err(_) => {
+                            if rx.is_closed() {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(20));
+                        }
+                    }
+                }
+                let tail = |s: &str| -> String {
+                    let lines: Vec<&str> = s.lines().collect();
+                    let start = lines.len().saturating_sub(40);
+                    lines[start..].join("\n")
+                };
+                let out_tail = tail(&stdout);
+                let err_tail = tail(&stderr);
+                if let Some(e) = exec_err {
+                    Err(format!("{e}\nstderr：\n{err_tail}"))
+                } else {
+                    Ok(json!({ "code": code.unwrap_or(-1), "stdout": out_tail, "stderr": err_tail }))
                 }
             }
             other => Err(format!("插件调用了未开放的核心 API: {other}")),

@@ -68,6 +68,10 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // 剪贴板：进程插件核心 API clipboard.read/write 经此官方插件（替代直接依赖 arboard）
+        .plugin(tauri_plugin_clipboard_manager::init())
+        // shell.exec：进程插件核心 API 经此官方插件（替代 std::process 直接 spawn）
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         // 自动更新：检查/下载/安装新版本（发布包在 GitHub Releases，见 tauri.conf.json updater）
         .plugin(tauri_plugin_updater::Builder::new().build())

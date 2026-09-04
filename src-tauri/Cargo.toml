@@ -23,6 +23,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2.7.2"
 tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
 # ????????????????????Windows ????? Mutex?
 # ???????????????????????
 tauri-plugin-single-instance = "2"
@@ -45,7 +46,8 @@ rusqlite = { version = "0.40", features = ["bundled-full"] }
 pinyin = "0.11.0"
 tauri-plugin-global-shortcut = "2.3.2"
 tauri-plugin-updater = "2.10.1"
-arboard = "3"
+# shell.exec 已改走官方插件（ps 进程改用 tauri-plugin-shell；http.request 仍自研 reqwest）
+tauri-plugin-shell = "2"
 reqwest = { version = "0.13", features = ["blocking"] }
 
 # Windows ??? WebView2 ???Tauri 2 ????
