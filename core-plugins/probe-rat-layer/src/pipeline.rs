@@ -105,6 +105,14 @@ pub fn run_once(
         })
         .collect();
     let pins: Vec<Pin> = trace_nets.iter().flat_map(|n| n.pins.clone()).collect();
+    prog.log_info(&format!(
+        "[阶段 分离电源/地] trace={} plane={} wires={} 允许层规则={} 引脚={}",
+        trace_nets.len(),
+        plane_nets.len(),
+        wires.len(),
+        allowed.len(),
+        pins.len()
+    ));
 
     prog.check_cancel()?;
     prog.set("构建拥塞图", 12.0, "构建拥塞图");
@@ -112,6 +120,12 @@ pub fn run_once(
     prog.check_cancel()?;
     prog.set("冲突检测", 22.0, "冲突检测");
     let (conflicts, hard_graph) = cc::detect_all_conflicts(&wires, &data.keepouts, cfg, Some(&cmap0));
+    prog.log_info(&format!(
+        "[阶段 冲突检测] 候选线对={} 硬冲突={} 软冲突={}",
+        conflicts.len(),
+        conflicts.iter().filter(|c| c.level == ConflictLevel::Hard).count(),
+        conflicts.iter().filter(|c| c.level == ConflictLevel::Soft).count(),
+    ));
     prog.check_cancel()?;
 
     let usable = _usable_area(&wires, &data.keepouts);
@@ -143,6 +157,11 @@ pub fn run_once(
             Some(&mut wrap),
             prog.cancel_flag(),
         )?;
+        prog.log_info(&format!(
+            "[阶段 扇区轮询分层] 已分配={}/{} 线",
+            assignment.len(),
+            wires.len()
+        ));
         let soft_pairs: Vec<(String, String)> = conflicts
             .iter()
             .filter(|c| c.level == ConflictLevel::Soft)
@@ -161,6 +180,7 @@ pub fn run_once(
                 cfg.minimize_crossings_passes,
                 prog.cancel_flag(),
             )?;
+            prog.log_info("[阶段 贪心交叉最小化] 完成");
             prog.check_cancel()?;
         }
         if cfg.optimizer == "sa" {
@@ -190,6 +210,7 @@ pub fn run_once(
                 }
             }
             assignment = best;
+            prog.log_info(&format!("[阶段 模拟退火精修] 完成 best_soft={best_soft}"));
         }
     }
 
@@ -220,6 +241,10 @@ pub fn run_once(
             manual_nets
         ));
     }
+    prog.log_info(&format!(
+        "[阶段 后处理与人工兜底] 需人工={} 线",
+        manual_nets.len()
+    ));
 
     let soft_per_layer = pp::soft_conflicts_per_layer(&assignment, &conflicts);
     let (detour, via) = pp::collect_layer_marks(&wires, &assignment, &conflicts, &data.keepouts, cfg);

@@ -594,6 +594,24 @@ API 后实施/取舍：
   （toolbox 62 + tb-sdk 3 + example 2 + probe-rat-layer 13 + 4 ignored）、`clippy dev+release` 0、
   前端 `lint` 0 / `build` ✓ / `test` 41。
 
+### 1.21 增量（2026-09-03：探针卡分层插件完善详细日志，便于出错定位）
+
+用户目标：日志尽量详细，出错时能找到错误点。现状是插件只走 `emit`(事件) + `warnings`(结构化告警)，
+**不写宿主日志**——`core::log` 的按天文件与应用内「日志」查看器都看不到它。
+- **打通宿主日志**：`Progress` 增加可选日志回调 `set_log(impl Fn(i32,&str))` 与 `log_info/warn/error`
+  （level 0/1/2 对应宿主 `core::log` 的 info/warn/error）；dispatch 用 `tb_sdk::log` 注入，
+  后台线程调用与 `tb_sdk::emit` 一样安全；未注入时 `log_*` 静默（兼容不传回调的既有测试）。
+- **日志点**（`[probe-rat-layer]` 前缀 + 阶段 + 关键统计）：
+  - dispatch：任务开始(job/input/out)、读入输入(nets/wires/keepouts/信号组)、配置(方法/层数/线宽/线距/
+    硬阈值/层容量/短线偏置与放大)、分层完成(用时/层数/需人工/硬·软冲突/走通率直线·路径·洪泛)、
+    每层(index/kind/nets/wires/软冲突/占用峰值)、导出目录、失败(完整错误)与取消。
+  - pipeline 各阶段：分离电源/地(trace/plane/wires/允许层/引脚)、冲突检测(候选/硬/软)、扇区轮询分层
+    (已分配)、贪心交叉最小化、模拟退火精修(best_soft)、后处理与人工兜底(需人工数)。
+  - 结果 `warnings` 逐条 `log_warn`（报告里仍保留）。
+- **验证**：`cargo test -p tb-probe-rat-layer` **15** 过（+2 `Progress::log_*` 单测）+ 4 ignored；
+  `clippy -p` 0；全量 `cargo test --workspace` **82** 过；`pnpm build:core` ✓（DLL 已部署）。
+- ⚠️ 插件新增日志不在热循环里打（只在阶段边界/汇总一次性），避免刷爆按天日志。
+
 ---
 
 ## 2. 项目一句话

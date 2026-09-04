@@ -438,7 +438,13 @@ fn _run_job(
     cancel: &Arc<std::sync::atomic::AtomicBool>,
     jobs: &Arc<Mutex<HashMap<String, JobRecord>>>,
 ) {
-    let prog = Progress::new(active, cancel);
+    let mut prog = Progress::new(active, cancel);
+    // 注入宿主日志（tb_sdk::log 回调；后台线程调用与 tb_sdk::emit 一样安全）
+    {
+        let host = eh.host;
+        let ctx = eh.ctx;
+        prog.set_log(move |level, msg| tb_sdk::log(host, ctx, level, msg));
+    }
     let started = std::time::Instant::now();
     let emit = |event: &str, data: Value| {
         let host = eh.host;
@@ -448,6 +454,7 @@ fn _run_job(
         let input = args.get("input").and_then(|v| v.as_str()).unwrap_or("");
         let filter = args.get("filter").and_then(|v| v.as_str()).map(str::to_string);
         let out_dir = args.get("outDir").and_then(|v| v.as_str()).unwrap_or("");
+        prog.log_info(&format!("[分层任务] job={job_id} input={input} out={out_dir}"));
         // 文件操作：输入限**可读根**（当前工作区 或 文件输入目录），输出限当前工作区
         // （用户要求：输出落地在工作区；输入可从 Input 读待处理文件，如 Allegro pin 表）。
         if !within_read(workspace, input_dir, input) {
@@ -472,6 +479,13 @@ fn _run_job(
             args.get("width").and_then(|v| v.as_f64()).unwrap_or(0.2),
             args.get("clearance").and_then(|v| v.as_f64()).unwrap_or(0.2),
         )?;
+        prog.log_info(&format!(
+            "[读入输入] nets={} wires={} keepouts={} 信号组={}",
+            data.nets.len(),
+            data.wires.len(),
+            data.keepouts.len(),
+            data.signal_groups.len()
+        ));
 
         prog.set("配置", 4.0, "配置");
         let mut cfg = default_config();
@@ -483,6 +497,17 @@ fn _run_job(
                 set_int_field(&mut cfg, fld, v);
             }
         }
+        prog.log_info(&format!(
+            "[配置] 方法={} 层数={} 线宽={} 线距={} 硬阈值={} 层容量={} 短线偏置={} 短线放大={}",
+            cfg.method,
+            args.get("layers").and_then(|v| v.as_i64()).unwrap_or(4),
+            args.get("width").and_then(|v| v.as_f64()).unwrap_or(0.2),
+            args.get("clearance").and_then(|v| v.as_f64()).unwrap_or(0.2),
+            cfg.congestion_hard_threshold,
+            cfg.layer_capacity,
+            cfg.short_segment_len,
+            cfg.short_segment_crossing_factor,
+        ));
 
         let result = pipeline::run(&data, &cfg, None, &prog)
             .map_err(|_| "已取消".to_string())?;
@@ -495,6 +520,7 @@ fn _run_job(
         report::export_manual_route_lst(&result, out_dir)?;
         report::export_net_layer_csv(&result, out_dir)?;
         report::export_layer_statistics_csv(&result, out_dir)?;
+        prog.log_info(&format!("[导出完成] 产物目录: {out_dir}"));
 
         // 存供渲染用的精简几何/结果数据（jobs/<jobId>/）
         let jdir = format!("{plugin_dir}/jobs/{job_id}");
@@ -529,6 +555,34 @@ fn _run_job(
         Ok(result) => {
             let elapsed = started.elapsed().as_secs_f64();
             let summary = summary_ext(&result, elapsed); // 含 elapsed_sec，供结果页/通知一致展示
+            prog.log_info(&format!(
+                "[分层完成] 用时 {:.2}s 层数={} 需人工={} 硬冲突={} 软冲突={} 路由直线={}/{} 路径={}/{} 洪泛={}/{}",
+                elapsed,
+                result.layers.len(),
+                result.manual_route_nets.len(),
+                result.hard_conflicts.len(),
+                result.soft_conflicts.len(),
+                result.routable_net_count,
+                result.total_net_count,
+                result.routable_path_net_count,
+                result.total_net_count,
+                result.routable_flood_net_count,
+                result.total_net_count,
+            ));
+            for li in &result.layers {
+                prog.log_info(&format!(
+                    "[层 {} {}] nets={} wires={} 软冲突={} 占用峰值={}",
+                    li.layer_index,
+                    li.kind,
+                    li.nets.len(),
+                    li.wires.len(),
+                    li.soft_conflict_count,
+                    li.max_occupancy
+                ));
+            }
+            for w in &result.warnings {
+                prog.log_warn(&format!("[警告] {w}"));
+            }
             let layers_detail: Vec<Value> = result
                 .layers
                 .iter()
@@ -572,6 +626,7 @@ fn _run_job(
         Err(_e) => {
             if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                 // 取消
+                prog.log_warn("[取消] 分层任务被用户取消");
                 let mut s = active.lock().unwrap();
                 s.state = "cancelled".to_string();
                 s.stage = "已取消".to_string();
@@ -580,6 +635,7 @@ fn _run_job(
                 s.error = None;
                 emit("layer.cancelled", json!({"jobId": job_id}));
             } else {
+                prog.log_error(&format!("[失败] {_e}"));
                 let mut s = active.lock().unwrap();
                 s.state = "failed".to_string();
                 s.stage = "失败".to_string();
