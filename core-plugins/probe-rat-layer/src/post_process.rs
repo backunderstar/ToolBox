@@ -350,6 +350,128 @@ fn cell_of(x: f64, y: f64, cmap: &congestion::CongestionMap) -> Option<(usize, u
     }
 }
 
+/// 分层后拥塞均衡（用户选定的后处理）：把"超容格点/层"上造成溢出的线，贪心移到低拥塞允许层
+/// （不新增硬冲突、不越 allowed 层、只做"正收益"移动——净溢出减小），摊平层占用峰值、减少需人工/硬冲突。
+/// 默认 `cfg.congestion_balance=false` 关闭（保留现有结果）。
+pub fn congestion_balance(
+    assignment: &mut HashMap<String, i64>,
+    wires: &[Wire],
+    keepouts: &[crate::model::KeepoutZone],
+    pins: &[Pin],
+    graph: &ConflictGraph,
+    allowed: &HashMap<String, std::collections::HashSet<i64>>,
+    cfg: &LayeringConfig,
+    cancel: &crate::cancel::CancelFlag,
+) -> Result<(), crate::cancel::LayeringCancelled> {
+    use crate::cancel::check_cancel;
+    use crate::congestion::{_grid_geometry, _wire_cells};
+    use ndarray::Array2;
+
+    if !cfg.congestion_balance || assignment.is_empty() || wires.is_empty() {
+        return Ok(());
+    }
+    let (origin, cell, cols, rows, supply) = _grid_geometry(wires, keepouts, pins, cfg);
+    if rows == 0 || cols == 0 {
+        return Ok(());
+    }
+    let factor = cfg.congestion_demand_factor;
+    let cap = cfg.layer_capacity;
+    let k = cfg.congestion_k.max(1.001);
+    let over = |occ: f64| -> f64 {
+        if occ > cap {
+            (occ - cap).powf(k)
+        } else {
+            0.0
+        }
+    };
+
+    let wire_by_id: HashMap<&str, &Wire> =
+        wires.iter().map(|w| (w.wire_id.as_str(), w)).collect();
+    let mut layers: Vec<i64> = assignment.values().copied().collect();
+    layers.sort();
+    layers.dedup();
+    let mut demand: HashMap<i64, Array2<f64>> = HashMap::new();
+    for l in &layers {
+        demand.insert(*l, Array2::zeros((rows, cols)));
+    }
+    let mut cells_cache: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
+    for (wid, l) in assignment.iter() {
+        let w: &Wire = wire_by_id.get(wid.as_str()).copied().unwrap();
+        let cells: Vec<(usize, usize)> = _wire_cells(w, origin, cell, rows, cols).into_iter().collect();
+        let d = (w.width + w.clearance) * factor;
+        for &(r, c) in &cells {
+            demand.get_mut(l).unwrap()[[r, c]] += d;
+        }
+        cells_cache.insert(wid.clone(), cells);
+    }
+    let mut layer_wires: HashMap<i64, std::collections::HashSet<String>> = HashMap::new();
+    for (wid, l) in assignment.iter() {
+        layer_wires.entry(*l).or_default().insert(wid.clone());
+    }
+
+    let passes = cfg.congestion_balance_passes.max(1) as usize;
+    for _ in 0..passes {
+        check_cancel(cancel)?;
+        let mut moved_any = false;
+        let ids: Vec<String> = assignment.keys().cloned().collect();
+        for wid in ids {
+            let Some(&la) = assignment.get(&wid) else { continue; };
+            let cells = match cells_cache.get(&wid) { Some(c) => c, None => continue };
+            if cells.is_empty() { continue; }
+            let w: &Wire = wire_by_id.get(wid.as_str()).copied().unwrap();
+            let d = (w.width + w.clearance) * factor;
+            let allowed_layers: Vec<i64> = allowed
+                .get(&wid)
+                .map(|s| s.iter().copied().filter(|l| *l != la).collect())
+                .unwrap_or_default();
+
+            let mut best_lb: Option<i64> = None;
+            let mut best_delta: f64 = 0.0;
+            for lb in allowed_layers {
+                // 硬冲突检查：目标层已有该线的硬冲突邻接线则跳过
+                if let Some(ws) = layer_wires.get(&lb) {
+                    if graph.neighbors(&wid).iter().any(|nb| ws.contains(nb)) {
+                        continue;
+                    }
+                }
+                // 溢出代价增量（仅 wid 所在格点；occ=demand/supply 与层占用峰值同源）
+                let mut delta = 0.0;
+                for &(r, c) in cells {
+                    let s = supply[[r, c]];
+                    if s <= 1e-12 {
+                        continue;
+                    }
+                    let d_la = demand.get(&la).map(|g| g[[r, c]]).unwrap_or(0.0);
+                    let d_lb = demand.get(&lb).map(|g| g[[r, c]]).unwrap_or(0.0);
+                    delta += over((d_lb + d) / s) - over(d_lb / s) + over((d_la - d) / s) - over(d_la / s);
+                }
+                if delta < best_delta {
+                    best_delta = delta;
+                    best_lb = Some(lb);
+                }
+            }
+            if let Some(lb) = best_lb {
+                if best_delta < -1e-6 {
+                    for &(r, c) in cells {
+                        demand.get_mut(&la).unwrap()[[r, c]] -= d;
+                        demand.entry(lb).or_insert_with(|| Array2::zeros((rows, cols)))[[r, c]] += d;
+                    }
+                    if let Some(ws) = layer_wires.get_mut(&la) {
+                        ws.remove(&wid);
+                    }
+                    layer_wires.entry(lb).or_default().insert(wid.clone());
+                    assignment.insert(wid.clone(), lb);
+                    moved_any = true;
+                }
+            }
+        }
+        if !moved_any {
+            break;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,6 +506,70 @@ mod tests {
         assert_eq!(total, 2);
         assert_eq!(routable, 1, "只有 below 可布");
         assert_eq!(unroutable, vec!["cross".to_string()]);
+    }
+
+    #[test]
+    fn congestion_balance_spreads_and_lowers_peak() {
+        let mut cfg = default_config();
+        cfg.congestion_balance = true;
+        cfg.congestion_balance_passes = 30;
+        cfg.congestion_grid_cell = 10.0;
+        cfg.congestion_demand_factor = 10.0; // 放大 demand 触发超容
+        cfg.layer_capacity = 0.5;
+        cfg.keepout_enabled = false;
+        cfg.via_area_cost = 0.0;
+        cfg.pin_density_weight = 1.0;
+
+        // 4 根线共享同一列（都超容层 1），全部允许层 {1,2}
+        let wires: Vec<Wire> = (0..4)
+            .map(|i| {
+                Wire::new(
+                    format!("w{i}"),
+                    format!("n{i}"),
+                    Point::new(45.0, 5.0 + i as f64),
+                    Point::new(45.0, 25.0 + i as f64),
+                    0.2,
+                    0.2,
+                )
+            })
+            .collect();
+        let allowed: HashMap<String, std::collections::HashSet<i64>> = wires
+            .iter()
+            .map(|w| (w.wire_id.clone(), std::collections::HashSet::from([1i64, 2])))
+            .collect();
+        let mut assignment: HashMap<String, i64> =
+            wires.iter().map(|w| (w.wire_id.clone(), 1i64)).collect();
+        let graph = ConflictGraph::default();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let peak_before = max_occupancy_per_layer(&assignment, &wires, &[], &[], &cfg)
+            .values()
+            .cloned()
+            .fold(0.0f64, f64::max);
+
+        congestion_balance(
+            &mut assignment,
+            &wires,
+            &[],
+            &[],
+            &graph,
+            &allowed,
+            &cfg,
+            &cancel,
+        )
+        .unwrap();
+
+        let layers_used: std::collections::HashSet<i64> = assignment.values().copied().collect();
+        let peak_after = max_occupancy_per_layer(&assignment, &wires, &[], &[], &cfg)
+            .values()
+            .cloned()
+            .fold(0.0f64, f64::max);
+
+        assert!(layers_used.len() >= 2, "应把部分线挪到层 2");
+        assert!(
+            peak_after < peak_before,
+            "层占用峰值应下降: {peak_before} -> {peak_after}"
+        );
     }
 }
 

@@ -17,15 +17,13 @@ pub struct CongestionMap {
     pub occupancy: Array2<f64>,
 }
 
-fn _rasterize(
+pub(crate) fn _wire_cells(
     w: &Wire,
     origin: (f64, f64),
     cell: f64,
     rows: usize,
     cols: usize,
-    demand: &mut Array2<f64>,
-    value: f64,
-) {
+) -> HashSet<(usize, usize)> {
     let n = (w.length() / cell * 2.0) as usize + 1;
     let n = n.max(2);
     let mut cells: HashSet<(usize, usize)> = HashSet::new();
@@ -39,7 +37,19 @@ fn _rasterize(
             cells.insert((r as usize, c as usize));
         }
     }
-    for (r, c) in cells {
+    cells
+}
+
+fn _rasterize(
+    w: &Wire,
+    origin: (f64, f64),
+    cell: f64,
+    rows: usize,
+    cols: usize,
+    demand: &mut Array2<f64>,
+    value: f64,
+) {
+    for (r, c) in _wire_cells(w, origin, cell, rows, cols) {
         demand[[r, c]] += value;
     }
 }

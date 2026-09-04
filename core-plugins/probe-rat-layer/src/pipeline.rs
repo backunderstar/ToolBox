@@ -214,6 +214,21 @@ pub fn run_once(
         }
     }
 
+    // 后处理拥塞均衡（默认关）：把超容层/格点上的线平衡到低拥塞允许层，摊平层占用峰值
+    if cfg.congestion_balance {
+        prog.log_info("[阶段 后处理拥塞均衡] 开始");
+        pp::congestion_balance(
+            &mut assignment,
+            &wires,
+            &data.keepouts,
+            &pins,
+            &hard_graph,
+            &allowed,
+            cfg,
+            prog.cancel_flag(),
+        )?;
+    }
+
     prog.check_cancel()?;
     prog.set("后处理与人工兜底", 90.0, "后处理与人工兜底");
     let viol = pp::verify_hard_free(&assignment, &hard_graph);

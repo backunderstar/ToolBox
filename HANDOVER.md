@@ -615,6 +615,23 @@ API 后实施/取舍：
   `clippy -p` 0；全量 `cargo test --workspace` **82** 过；`pnpm build:core` ✓（DLL 已部署）。
 - ⚠️ 插件新增日志不在热循环里打（只在阶段边界/汇总一次性），避免刷爆按天日志。
 
+### 1.22 增量（2026-09-03：探针卡分层"后处理拥塞均衡"——压圆心占用峰值/提走通率）
+
+用户目标：提高分层"效果"（当前瓶颈=圆心/内枢拥塞、层占用 >1.0）。对比 SA 代价 vs 后处理，用户选定
+**先做后处理均衡**（更简单、不动 SA 代价、直接摊峰值、可回退）。
+- **新增**：`post_process::congestion_balance`（默认 `cfg.congestion_balance=false` 关闭，不改变现有结果）把
+  超容格点/层上的线**贪心**移到低拥塞允许层（不新增硬冲突、不越 `allowed` 层、只做"正收益"移动——净溢出
+  减小）。算法用 `congestion.rs` 同一套 `occupancy=demand/supply` 语义；`_rasterize` 拆出可复用的 `_wire_cells`；
+  每层 demand 网格 + 共享 supply，move 只算被移线所在格点的增量。
+- **配置**：`congestion_balance`(bool, 默认 false) / `congestion_balance_passes`(int, 默认 20)。
+- **A/B（hv 1800 网，release）**：基线 最大层占用 **1.56 / 走通率(洪泛) 1774/1798(98.7%) / 需人工 2 / 用时 1.72s**
+  → **开均衡：最大层占用 1.11 / 走通率 1798/1798(100%) / 需人工 2 / 用时 1.96s(+0.24s)**。硬·软冲突/已分配均不变。
+  结论：**显著压峰值(1.56→1.11)+走通率到 100%**，零回归，仅 +14% 用时。
+- ⚠️ 对 2-pin 放射状数据圆心拥塞有几何下限（每根线在分配层必穿圆心），分层只能把它**摊平**，无法单靠它降到
+  ≤1.0；此处 1.11 已接近下限。默认关（保留现状），启用即见上述收益。
+- **验证**：`cargo test -p tb-probe-rat-layer` **16** 过（+1 `congestion_balance` 单测）+ 5 ignored；
+  `clippy -p` 0；全量 `cargo test --workspace` **（见 §9 更新）**；`pnpm build:core` ✓。
+
 ---
 
 ## 2. 项目一句话

@@ -26,6 +26,11 @@ pub struct LayeringConfig {
     pub sa_max_steps: i64,       // 0 = 自动
     pub sa_swap_ratio: f64,
     pub sa_balance_slack: f64,
+    /// 后处理：分层后按拥塞（每格点占用 = demand/supply）把超容层/格点上的线平衡到低拥塞允许层。
+    /// 默认 false = 关闭（保留现有结果）；开启可把圆心/内枢占用峰值摊平、减少需人工/硬冲突。
+    pub congestion_balance: bool,
+    /// 后处理"拥塞均衡"最大轮数（每轮做一轮正收益的贪心移动；顺序读取，一轮只做一次判断）。
+    pub congestion_balance_passes: i64,
     // —— 拥塞估计 ——
     pub congestion_grid_cell: f64,
     pub congestion_demand_factor: f64,
@@ -79,6 +84,8 @@ impl Default for LayeringConfig {
             sa_max_steps: 0,
             sa_swap_ratio: 0.7,
             sa_balance_slack: 2.0,
+            congestion_balance: false,
+            congestion_balance_passes: 20,
             congestion_grid_cell: 0.5,
             congestion_demand_factor: 1.0,
             congestion_hard_threshold: 0.8,
@@ -144,6 +151,8 @@ impl LayeringConfig {
             "sa_cooling" => self.sa_cooling = f(v)?,
             "sa_swap_ratio" => self.sa_swap_ratio = f(v)?,
             "sa_balance_slack" => self.sa_balance_slack = f(v)?,
+            "congestion_balance" => self.congestion_balance = b(v)?,
+            "congestion_balance_passes" => self.congestion_balance_passes = i(v)?,
             "congestion_grid_cell" => self.congestion_grid_cell = f(v)?,
             "congestion_demand_factor" => self.congestion_demand_factor = f(v)?,
             "congestion_hard_threshold" => self.congestion_hard_threshold = f(v)?,

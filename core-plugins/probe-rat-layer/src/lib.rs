@@ -467,6 +467,55 @@ mod tests {
         }
     }
 
+    /// A/B：后处理拥塞均衡（congestion_balance）对 hv 1800 网的层占用峰值/走通率(洪泛)/需人工/硬冲突影响。
+    #[test]
+    #[ignore]
+    fn real_data_congestion_balance_ab() {
+        let w = r"D:\ToolBoxData\Project\测试";
+        let data = crate::io::load_input(
+            &format!("{w}\\1.xlsx"),
+            Some(&format!("{w}\\hv_all.lst")),
+            4,
+            0.2,
+            0.2,
+        )
+        .expect("读入应成功");
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+        let hv = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 3, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 8, "balance_length_rounds": 3,
+            "minimize_crossings_passes": 3, "sa_restarts": 1, "sa_seed": 42, "sa_initial_temp": 8,
+            "sa_cooling": 0.9995, "sa_max_steps": 0, "sa_swap_ratio": 0.7, "sa_balance_slack": 2,
+            "via_area_cost": 0.1,
+        });
+        let base = default_config().with_overrides(&hv).expect("config 覆盖应成功");
+        let mut bal = base.clone();
+        bal.congestion_balance = true;
+        bal.congestion_balance_passes = 30;
+        for (label, cfg) in [("基线 无均衡", &base), ("后处理均衡 on", &bal)] {
+            let prog = Progress::new(&active, &cancel);
+            let t = std::time::Instant::now();
+            let r = pipeline::run_once(&data, cfg, &prog).expect("pipeline 应成功");
+            let max_occ = r
+                .layers
+                .iter()
+                .fold(0.0f64, |m, l| if l.max_occupancy > m { l.max_occupancy } else { m });
+            eprintln!(
+                "[CB {label}] 已分配={} 硬冲突={} 软冲突={} 需人工={} 走通率(洪泛)={}/{} 最大层占用={:.2} 用时={:.2}s",
+                r.assignment.len(),
+                r.hard_conflicts.len(),
+                r.soft_conflicts.len(),
+                r.manual_route_nets.len(),
+                r.routable_flood_net_count,
+                r.total_net_count,
+                max_occ,
+                t.elapsed().as_secs_f64()
+            );
+        }
+    }
+
     /// 线宽=8（POWER，20 层）时验证 pin 邻近为**硬**约束：不同 net 任一端点(pin)对距离
     /// < 0.5×(线宽+间距) 的线对**不能放同一层**。应满足同层 pin 邻近违规数为 0。
     #[test]
