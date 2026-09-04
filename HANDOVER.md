@@ -672,9 +672,15 @@ API 后实施/取舍：
     走通率三种、拥塞均衡、几何下限)、旋钮表、坑、建议阅读顺序。
   - `docs/宿主架构-学习导言.md`：Tauri 2 + Vue 3 + 插件系统(webview/process/native 三种运行时 + C ABI 协议) +
     核心服务 + 命令流 + 建议阅读顺序。
+  - `docs/前端架构-学习导言.md`：Vue 3 分层(src/core|components|views)、invoke 链路、插件界面挂载(Blob 注入+api 桥)、
+    主题系统 + 建议阅读顺序。
+- **如实结论**：抽查 `src/core/api.ts`、`plugins.ts`、`pluginRuntime.ts` 与算法 crate 的 `classify_pair`/
+  `capacity_lower_bound` 等，本仓库**函数级注释本就很全**——故不重复堆砌，只补"缺 doc 的入口 + 最难懂的逻辑"，
+  并**以 3 份导言把链路串起来**（这才是真正缺失的学习资源）。
 - **关键函数补"为什么"注释**（难点学习价值最高）：`optimizer.rs::optimize_layering`（SA 代价/邻域/接受/参数与
   `sa_max_steps` 反例）、`layer_packing.rs::pack_layers`（扇区轮询/确定序/方向感知）、
-  `congestion.rs::build_congestion_map`（occupancy 单位与为何与层占用同一套语义）。
+  `congestion.rs::build_congestion_map`（occupancy 单位与为何与层占用同一套语义）、
+  `conflict_classifier::detect_all_conflicts`(为何 O(deg) 邻接)、`post_process::routable_nets_flood`(洪泛为何更诚实)。
 - **验证**：`cargo check -p tb-probe-rat-layer` / `clippy -p` 0（doc-la y 已清）；仅注释，行为不变。
 
 ---
