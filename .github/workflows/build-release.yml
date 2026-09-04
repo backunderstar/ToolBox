@@ -69,7 +69,9 @@ jobs:
         run: New-Item -ItemType Directory -Force src-tauri/resources/_core, src-tauri/resources/bundled-plugins | Out-Null
 
       - name: Rust tests (workspace)
-        run: cargo test --workspace
+        # ffi_abi_load_and_call 直接加载 target/debug/tb_probe_rat_layer.dll；cargo test
+        # 只构建 rlib 供测试链接、不构建 cdylib → 先 build 出核心插件 DLL 再跑测试。
+        run: cargo build -p tb-probe-rat-layer && cargo test --workspace
 
       # GitHub Secrets 粘贴 key 文件内容时可能带上结尾换行（tauri 报
       # "failed to decode base64 secret key: Invalid symbol 10"）；命令替换

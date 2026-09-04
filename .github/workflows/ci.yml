@@ -58,7 +58,9 @@ jobs:
         run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
 
       - name: Rust tests (workspace)
-        run: cargo test --workspace
+        # ffi_abi_load_and_call 直接加载 target/debug/tb_probe_rat_layer.dll；cargo test
+        # 只构建 rlib 供测试链接、不构建 cdylib → 先 build 出核心插件 DLL 再跑测试。
+        run: cargo build -p tb-probe-rat-layer && cargo test --workspace
 
       # 依赖漏洞审计（pnpm 官方 registry；high/critical 才阻塞，
       # 低危 advisory 不打断常规开发）
