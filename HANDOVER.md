@@ -683,6 +683,25 @@ API 后实施/取舍：
   `conflict_classifier::detect_all_conflicts`(为何 O(deg) 邻接)、`post_process::routable_nets_flood`(洪泛为何更诚实)。
 - **验证**：`cargo check -p tb-probe-rat-layer` / `clippy -p` 0（doc-la y 已清）；仅注释，行为不变。
 
+### 1.26 增量（2026-09-03：数据过滤规则敲定 + 移除旧 JSON 加载器）
+
+用户拍板（先确认方案再实施）：
+- **过滤规则**：只剔 **GND + 单pin**，其余全保留（多pin 电源如 VDD 要进布线）。
+- **VDD 处理**：保留在数据里；是否生成飞线/参与分层由**筛选文件 (.lst)** 决定——lst 里有的 VDD/电源 net 与 Signal 一样布线。
+- **GND 处理**：完全剔除（加载即丢弃，不入 nets、不出现在 plane 层报告）。
+- **删除 allegro_json 加载器**：以后基本只用表格导入。
+
+改（`core-plugins/probe-rat-layer/`）：
+- `io/xlsx.rs`：加载时 `nc == NetClass::Ground` 即 `continue`（GND 剔除）；默认信号组 net_ids 过滤从仅 `Signal` 扩为 `Signal | Power`。
+- `io/wire_gen.rs`：`generate_wires` 只对 `net_class != Signal|Power` 跳过——**多pin VDD 也生成飞线**。
+- `layer_stack.rs`：`split_trace_plane` plane 条件从 `Power | Ground` 收紧为仅 `Ground`——**Power 留在 trace 参与布线**。
+- `io/mod.rs`：删 `mod allegro_json;`；`load_input` 非 xls/xlsx 分支报「仅支持 .xls/.xlsx 表格输入（旧 JSON 加载器已移除）」。
+- 删除 `io/allegro_json.rs`；`ui/App.vue` 清「兼容旧 JSON / 旧 JSON」字样与 `.json` 自动隐藏筛选字段逻辑；插件 `README.md` 去掉 allegro_json 描述。
+- **筛选文件强制必填**（用户拍板：不能不带筛选文件）：`dispatch.rs` 运行前置校验——未提供筛选文件 / 越出可读范围 / 文件不存在均报错；前端「输入 2」标为必填、去掉「清除」按钮、首启向导与 startRun 均校验必填；「全量（不筛选）」预设不再清空筛选文件并改名「全量（细格 0.5 / 阈值 0.8）」。
+- 回归：`cargo test -p tb-probe-rat-layer` **16 过 + 6 ignored**；`clippy -p --all-targets` 0；`cargo test --workspace` 全绿；
+  真实数据 `1.xlsx`+`hv_all.lst`：平面网=0、1800 线、信号层 [1,2,3,4]（GND 未入 plane）。
+- ⚠️ **注**：当前 `hv_all.lst` 含 1800 个 HV 信号网、**无 GND/VDD 网名**——故本次改动对该数据集结果不变；GND 剔除、VDD 保留并布线仅在数据含 GND/电源网（且列在筛选文件里）时生效。筛选文件**强制必填**，不存在"不带筛选文件"路径。
+
 ---
 
 ## 2. 项目一句话

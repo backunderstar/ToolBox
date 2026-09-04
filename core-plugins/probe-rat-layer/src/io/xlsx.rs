@@ -232,6 +232,9 @@ pub fn load_xlsx(
         let Some(nc) = classify_net(&net) else {
             continue; // NC 直接删
         };
+        if nc == NetClass::Ground {
+            continue; // GND 剔除：不进 nets、不参与分层、不出现在 plane 报告
+        }
         if let Some(w) = &whitelist {
             if !w.contains(&net) {
                 continue; // 白名单外全部不要
@@ -258,7 +261,11 @@ pub fn load_xlsx(
         ));
     }
 
-    let sig_nets: Vec<Net> = nets.iter().filter(|n| n.net_class == NetClass::Signal).cloned().collect();
+    let sig_nets: Vec<Net> = nets
+        .iter()
+        .filter(|n| matches!(n.net_class, NetClass::Signal | NetClass::Power))
+        .cloned()
+        .collect();
     let groups = vec![SignalGroup {
         group_id: "default".to_string(),
         allowed_layers: stack.signal_layers(),

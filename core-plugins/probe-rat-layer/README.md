@@ -33,7 +33,7 @@ dispatch.rs   命令分发 + 后台任务引擎 + 状态恢复（对应宿主动
   ├─ layer.listDir/config/run/status/cancel/result/readOut/render/openOut/report/notifyDone/plugin.action
   └─ 后台线程：load → pipeline::run（进度/取消）→ report 导出 → jobs/<id> 落盘
 pipeline.rs   编排（run_once：分离电源地 → 拥塞 → 冲突检测 → 分层 → 后处理）
-io/           calamine 读 xlsx / serde 读 allegro_json / Prim MST 飞线
+io/           calamine 读 xlsx（.xls/.xlsx 表格）/ Prim MST 飞线
 config/模型      LayeringConfig + 数据模型（model.rs）
 core 算法模块    geometry/keepout/congestion/conflict_classifier/layer_packing/
                 optimizer(SA)/graph_coloring(Dsatur)/layer_stack/metrics/post_process

@@ -41,13 +41,9 @@ pub fn load_input(
     if lower.ends_with(".xlsx") || lower.ends_with(".xls") {
         xlsx::load_xlsx(path, filter_path, n_signal_layers, width, clearance)
     } else {
-        if filter_path.is_some() {
-            return Err("筛选文件仅用于 .xls/.xlsx 输入".to_string());
-        }
-        allegro_json::load_allegro_json(path)
+        Err("仅支持 .xls/.xlsx 表格输入（旧 JSON 加载器已移除）".to_string())
     }
 }
 
-mod allegro_json;
 mod wire_gen;
 pub(crate) mod xlsx;

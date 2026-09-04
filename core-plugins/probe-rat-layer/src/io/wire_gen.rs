@@ -79,11 +79,11 @@ pub fn mst_wires(n: &Net, start_i: usize) -> Vec<Wire> {
 }
 
 /// 无显式 wires 时生成飞线：2-pin 单线 / 3-pin share / ≥4-pin MST。
-/// 只给 signal net 生成；power/ground 走 plane 层。
+/// 只给 signal/power net 生成（电源走信号层一起分层）；ground 已在加载时剔除。
 pub fn generate_wires(nets: &[Net], warnings: &mut Vec<String>) -> Vec<Wire> {
     let mut wires: Vec<Wire> = Vec::new();
     for n in nets {
-        if n.net_class != NetClass::Signal {
+        if !matches!(n.net_class, NetClass::Signal | NetClass::Power) {
             continue;
         }
         if n.pins.len() < 2 {

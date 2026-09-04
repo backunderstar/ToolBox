@@ -44,7 +44,9 @@ pub fn split_trace_plane(nets: &[Net], cfg: &LayeringConfig) -> (Vec<Net>, Vec<N
     let mut trace = Vec::new();
     let mut plane = Vec::new();
     for n in nets {
-        if matches!(n.net_class, NetClass::Power | NetClass::Ground) {
+        // 只有 ground 归 plane（且 ground 已在加载时剔除，故通常为空）；
+        // power 保留在 trace，与 signal 一起参与分层布线。
+        if matches!(n.net_class, NetClass::Ground) {
             plane.push(n.clone());
         } else {
             trace.push(n.clone());

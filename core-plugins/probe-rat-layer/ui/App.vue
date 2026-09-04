@@ -152,7 +152,6 @@ function applyPreset(p: "custom" | "hv" | "full" | "ac" | "power"): void {
     method.value = "packing";
     optimizer.value = "sa";
   } else if (p === "full") {
-    filterPath.value = "";
     layers.value = 4;
     width.value = 0.2;
     clearance.value = 0.2;
@@ -297,8 +296,6 @@ function confirmBrowser(): void {
     const full = base ? `${base}\\${browserSelected.value}` : browserSelected.value;
     if (browserTitle.value.includes("输入")) {
       inputPath.value = full;
-      // 自动适配输入类型提示
-      if (full.toLowerCase().endsWith(".json")) filterPath.value = "";
     } else {
       filterPath.value = full;
     }
@@ -314,6 +311,10 @@ async function completeSetup(): Promise<void> {
   inputError.value = null;
   if (!inputPath.value.trim()) {
     inputError.value = "请先选择 Allegro pin 表数据文件（必填）";
+    return;
+  }
+  if (!filterPath.value.trim()) {
+    inputError.value = "请先选择筛选文件（必填；一行一个待分层 net）";
     return;
   }
   try {
@@ -420,7 +421,12 @@ async function startRun(): Promise<void> {
   runError.value = null;
   inputError.value = null;
   if (!inputPath.value.trim()) {
-    inputError.value = "请选择输入文件（Allegro pin 表 .xls/.xlsx 或旧 JSON）";
+    inputError.value = "请选择输入文件（Allegro pin 表 .xls/.xlsx）";
+    activeTab.value = "input";
+    return;
+  }
+  if (!filterPath.value.trim()) {
+    inputError.value = "请选择筛选文件（必填；.lst/.txt/.xls/.xlsx，一行一个待分层 net）";
     activeTab.value = "input";
     return;
   }
@@ -711,7 +717,7 @@ onBeforeUnmount(() => {
       <div v-if="inputError" class="prl-error" role="alert">{{ inputError }}</div>
       <div class="prl-card">
         <div class="prl-field">
-          <label class="prl-label">Allegro pin 表数据文件（.xls/.xlsx，兼容旧 JSON）— 必填</label>
+          <label class="prl-label">Allegro pin 表数据文件（.xls/.xlsx）— 必填</label>
           <div class="prl-row">
             <input v-model="inputPath" class="prl-input" placeholder="如 D:\...\in\1.xlsx" />
             <button class="prl-btn" @click="openBrowser('file', '选择输入文件', '')">浏览</button>
@@ -755,7 +761,7 @@ onBeforeUnmount(() => {
           <code class="prl-cmd">api.call("layer.listDir")</code>
         </div>
         <div class="prl-field">
-          <label class="prl-label">输入 1：Allegro pin 表（.xls/.xlsx，兼容旧 JSON）</label>
+          <label class="prl-label">输入 1：Allegro pin 表（.xls/.xlsx）</label>
           <div class="prl-row">
             <input v-model="inputPath" class="prl-input" placeholder="D:\...\in\1.xlsx" />
             <button class="prl-btn" @click="openBrowser('file', '选择输入文件', '')">浏览</button>
@@ -763,12 +769,11 @@ onBeforeUnmount(() => {
         </div>
         <div class="prl-field">
           <label class="prl-label">
-            输入 2：筛选文件（可选；.lst/.txt 一行一个 net，空行/# 注释跳过；兼容 .xls/.xlsx）
+            输入 2：筛选文件（必填；.lst/.txt 一行一个 net，空行/# 注释跳过；也可 .xls/.xlsx 表）
           </label>
           <div class="prl-row">
             <input v-model="filterPath" class="prl-input" placeholder="D:\...\filter_example.lst" />
             <button class="prl-btn" @click="openBrowser('file', '选择筛选文件', '')">浏览</button>
-            <button class="prl-btn" @click="filterPath = ''">清除</button>
           </div>
           <p class="prl-hint">
             不在筛选文件里的 net 全部不要；建议均匀覆盖圆各扇区（只圈一个扇区会全挤圆心）。
@@ -791,7 +796,7 @@ onBeforeUnmount(() => {
               <option value="hv">DC 信号（cell 2.0 / threshold 3.0 / 4 层 / 0.2mm）</option>
               <option value="ac">AC（细线 0.1mm / 12 层）</option>
               <option value="power">POWER（宽线 8mm / 20 层）</option>
-              <option value="full">全量（不筛选）</option>
+              <option value="full">全量（细格 0.5 / 阈值 0.8）</option>
             </select>
           </div>
           <p class="prl-hint">预设=一组推荐的层数/线宽/线距/拥塞参数，一键套用；选「自定义」再逐项微调下面的参数</p>
@@ -800,7 +805,7 @@ onBeforeUnmount(() => {
           <div class="prl-field">
             <label class="prl-label">层数（xlsx 输入）</label>
             <input v-model.number="layers" type="number" min="1" max="40" class="prl-input" />
-            <p class="prl-field-hint">信号层数（Allegro 建层数）。越多每层越不挤、越散，但超过实际层数无用。推荐：DC/HV 4、AC 12、POWER 20（预设已带）；旧 JSON 输入由文件决定</p>
+            <p class="prl-field-hint">信号层数（Allegro 建层数）。越多每层越不挤、越散，但超过实际层数无用。推荐：DC/HV 4、AC 12、POWER 20（预设已带）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">线宽 mm（DC 0.2 / AC 0.1 / POWER 8）</label>
