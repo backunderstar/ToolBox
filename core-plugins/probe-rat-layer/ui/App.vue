@@ -58,6 +58,8 @@ const viaAreaCost = ref(0.1);
 const sectorAngleDeg = ref(45.0);
 const shortSegmentLen = ref(0.0);              // 短线长度阈值(mm)；0=关闭短线容忍(默认,保持现状)
 const shortSegmentCrossingFactor = ref(1.0);   // 短线交叉硬冲突阈值放大系数；1=不放大(默认)
+const congestionBalance = ref(false);          // 后处理拥塞均衡；关=不改变现状(默认)
+const congestionBalancePasses = ref(20);       // 拥塞均衡最大轮数
 
 // 首启默认 DC 信号预设（cell 2.0 / threshold 3.0）——原项目文档明确"默认 0.8/0.5 对 DC/HV 太严"，
 // 默认值若用 probe_layer 原默认会让真实数据大量进人工（实测 1800 线 manual 1758）。
@@ -84,6 +86,8 @@ const configOverrides = computed(() => {
     sector_angle_deg: sectorAngleDeg.value,
     short_segment_len: shortSegmentLen.value,
     short_segment_crossing_factor: shortSegmentCrossingFactor.value,
+    congestion_balance: congestionBalance.value,
+    congestion_balance_passes: congestionBalancePasses.value,
   };
   return o;
 });
@@ -109,6 +113,7 @@ function applyParams(v: Record<string, unknown>): void {
   if (num("clearance") !== undefined) clearance.value = num("clearance")!;
   if (str("method")) method.value = str("method")!;
   if (str("optimizer")) optimizer.value = str("optimizer")!;
+  if (typeof v.congestion_balance === "boolean") congestionBalance.value = v.congestion_balance;
   const map: Array<[keyof typeof configOverrides.value, (n: number) => void]> = [
     ["resolve_conflict_rounds", (n) => (resolveConflictRounds.value = n)],
     ["balance_length_rounds", (n) => (balanceLengthRounds.value = n)],
@@ -127,6 +132,7 @@ function applyParams(v: Record<string, unknown>): void {
     ["sector_angle_deg", (n) => (sectorAngleDeg.value = n)],
     ["short_segment_len", (n) => (shortSegmentLen.value = n)],
     ["short_segment_crossing_factor", (n) => (shortSegmentCrossingFactor.value = n)],
+    ["congestion_balance_passes", (n) => (congestionBalancePasses.value = n)],
   ];
   for (const [k, set] of map) {
     const n = num(k);
@@ -824,6 +830,8 @@ onBeforeUnmount(() => {
           <strong>质量 vs 速度</strong>：所有"轮数/步数/多起点"越大 → 质量越好、越慢（推荐先用预设默认，不满意再加）。<br />
           <strong>最关键的旋钮</strong>：<code>硬冲突阈值</code>——<u>越大越宽松</u>（硬冲突、需人工越少，但同层交叉更多）；
           <code>层容量</code>——越大每层塞得越多、层数越少（建议 ≤1.0，勿 &gt;1）。<br />
+          <strong>圆心拥塞</strong>：若层占用峰值仍 &gt;1.0（圆心/圆心处线挤），开启<strong>「拥塞均衡」</strong>
+          （后处理压峰值，实测 1.56→1.11 + 走通率到 100%，仅 +0.2s）。<br />
           <strong>推荐路径</strong>：先选「输入设置→预设」，再回来微调；DC/HV 用 cell 2.0 + threshold 3.0，
           AC 12 层 / POWER 20 层（预设已带）。
         </p>
@@ -957,8 +965,18 @@ onBeforeUnmount(() => {
             <input v-model.number="shortSegmentCrossingFactor" type="number" min="1" step="0.5" class="prl-input" />
             <p class="prl-field-hint">短线交叉需交点拥塞 ≥ 硬冲突阈值×本系数才判硬，否则按<strong>软</strong>。越大短线交叉越易同层（更宽容）；默认 1=不放大，推荐 1.5–3</p>
           </div>
+          <div class="prl-field">
+            <label class="prl-label">拥塞均衡（后处理压峰值）</label>
+            <input v-model="congestionBalance" type="checkbox" class="prl-input" />
+            <p class="prl-field-hint">分层后把超容层/格点上的线平衡到低拥塞层，<strong>摊平圆心/圆心层占用峰值</strong>（实测 hv 1800 网：峰值 <strong>1.56→1.11</strong>、走通率(洪泛) <strong>98.7%→100%</strong>、需人工/硬·软冲突不变、仅 +0.24s）。默认关=不改变现状；<strong>DC/HV 建议开启</strong></p>
+          </div>
+          <div class="prl-field">
+            <label class="prl-label">拥塞均衡轮数</label>
+            <input v-model.number="congestionBalancePasses" type="number" min="1" step="5" class="prl-input" />
+            <p class="prl-field-hint">最大轮数：越大摊得越彻底、越慢。默认 20，推荐 10–40（超过后基本无收益）</p>
+          </div>
         </div>
-        <p class="prl-hint">「硬冲突阈值」越大越宽松（硬冲突、需人工越少，但同层交叉更多）；其余参数未列出的字段用 probe_layer 默认值。短线容忍默认关闭，行为与现状一致</p>
+        <p class="prl-hint">「硬冲突阈值」越大越宽松（硬冲突、需人工越少，但同层交叉更多）；开启「拥塞均衡」可压圆心层占用峰值（实测 1.56→1.11）+ 走通率到 100%。其余参数未列出的字段用 probe_layer 默认值。短线容忍、拥塞均衡均默认关闭，行为与现状一致</p>
       </div>
 
       <div class="prl-actions">
