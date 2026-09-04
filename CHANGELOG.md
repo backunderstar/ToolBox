@@ -5,6 +5,37 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 > 详细的开发记录见 [HANDOVER.md](HANDOVER.md)；里程碑规划见 [PLAN.md](PLAN.md)。
 
+## [0.4.2] — 2026-09-03
+
+宿主能力改走官方 Tauri 插件（减手写代码）+ 探针卡分层质量/可诊断性提升 + 结果跨运行稳定。
+
+### 新增
+
+- **剪贴板 / shell.exec 改走官方插件**：`clipboard.read/write` → `tauri-plugin-clipboard-manager`；
+  `shell.exec` → `tauri-plugin-shell`（命令/权限/参数/返回不变，减手写代码）。
+- **外壳日志带插件名**：native 插件日志前缀由 `[plugin:log]` 改为 **`[plugin:<插件id>]`**，多插件可区分来源。
+- **探针卡分层详细日志**：任务开始/读入输入/配置/分层完成(汇总+逐层)/导出/失败与取消，全部写宿主
+  日志（`[plugin:probe-rat-layer]`），便于出错定位。
+- **探针卡"后处理拥塞均衡"**：把超容层/格点上的线平衡到低拥塞允许层，摊平圆心层占用峰值；实测
+  **峰值 1.56→1.11、走通率(洪泛)→~100%**，需人工/冲突不变。默认关闭（`拥塞均衡` UI 开关可开）。
+
+### 变更
+
+- **拥塞均衡改"拥塞+交叉感知"**：新增 `congestion_balance_cross_weight`(默认 0.5)，移动判据同时看
+  拥塞溢出与同层交叉，压峰值的同时不致交叉回升（对比旧均衡把同层交叉推到 2547，此版 ~2095）。
+- **分层默认值适度调高**：`resolve_conflict_rounds 8→12 / balance_length_rounds 3→6 /
+  minimize_crossings_passes 3→6 / sa_restarts 1→2`（不调 `sa_max_steps`，实测更差）。
+- **结果跨运行稳定**：算法模块 `HashMap`/`HashSet` 改用确定性哈希（`FxHashMap`/`FxHashSet`），同配置
+  多次运行结果完全一致、可复现。
+- **`shell.exec` 输出走临时缓存文件**：内存全程 O(1)，结束时仅读末尾 40 行，超大输出不驻留内存。
+
+### 修复
+
+- **走通率显示健壮性**：缺失字段返回「—」而非 `NaN`。
+- **输出目录未创建被拒**：`within_workspace` 改用 `path_within`，不存在子路径正确判在工作区内并自动创建。
+- **短线容忍可配置**：`short_segment_len`/`short_segment_crossing_factor`（默认=现状）。
+- **CI 资源占位**：`ci.yml`/`build-release.yml` 在 `cargo test` 前创建 `resources/_core`、`bundled-plugins`。
+
 ## [0.4.1] — 2026-09-03
 
 文件输入(Inbox) 目录 + 探针卡首次配置向导；走通率升级为"真实可布"（连通分量洪泛）指标；
