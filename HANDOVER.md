@@ -588,8 +588,11 @@ API 后实施/取舍：
   无 list/readText/writeText；且 vault S1c 校验 + 隐藏 `.toolbox` 过滤 + `fs.listDir` 契约为自研策略
   → 换过去反增适配层且不保平 → **保留自研**。
 - **结论**：剪贴板/`shell.exec` 为可净减码项；http/文件服务因无对口 Rust API/策略不匹配而保留自研。
-  依赖变更：新增 `tauri-plugin-clipboard-manager`、`tauri-plugin-shell`；移除 `arboard`。
-  验证：`cargo check -p toolbox` / `cargo test -p toolbox`（60 过）/ `cargo clippy -p toolbox` 0 告警。
+  依赖变更：新增 `tauri-plugin-clipboard-manager`、`tauri-plugin-shell`；移除 `arboard`（成为插件传递依赖）。
+  验证（2026-09-03 全绿）：`cargo check -p toolbox` / `cargo test -p toolbox`（**62** 过，含 `tail_tests`）/
+  `cargo clippy -p toolbox -- -D warnings` 0 告警；全量门禁 `cargo test --workspace` **80** 过
+  （toolbox 62 + tb-sdk 3 + example 2 + probe-rat-layer 13 + 4 ignored）、`clippy dev+release` 0、
+  前端 `lint` 0 / `build` ✓ / `test` 41。
 
 ---
 
@@ -804,6 +807,26 @@ cargo test --workspace                 # Rust 测试（当前 62）
   会在 refresh 时被扫描并尝试加载旧 DLL。8/29 发现 `core-records`（8/16 旧部署）残留：
   仓库早已删除 records 功能，但目录还在 `%APPDATA%\...\plugins\_core\`。清理 = 直接删目录
   （无随包资源，无需记 removed_core）。日后移除核心插件功能时记得检查目标机 `_core` 残留。
+
+### 6.6 插件核心 API 走官方插件（2026-09-03）
+
+- `clipboard.read/write`、`shell.exec` 已改由官方插件支撑：`tauri-plugin-clipboard-manager`、
+  `tauri-plugin-shell`。调用需 `crate::plugins::native::host_app()` 取 `&AppHandle`
+  （有的插件提供 `*Ext` trait，如 `ClipboardExt::clipboard()`、`ShellExt::shell()`）。
+- **`shell.exec`（tauri-plugin-shell）注意**：
+  - 插件命令是**异步/流式**（`spawn()` 返回 `(Receiver<CommandEvent>, CommandChild)`）；宿主是同步
+    JSON-RPC 分发，需自己 `try_recv()+is_closed()` 轮询 + 超时（`child.kill()`）。`CommandEvent` 是非穷举枚举，
+    match 必须留 `Ok(_)` 兜底，否则编译报 non-exhaustive。
+  - **输出走临时缓存文件**（`std::env::temp_dir()` 的 `tb-shell-<pid>-<seq>.out/err.log`，结束后删除），
+    内存全程 O(1)；读回用 `tail_of_file` 只读末尾 256KB 取 40 行。**这是有意的**：父进程 stdout/stderr
+    直接螺旋到磁盘，避免超大输出全量驻留内存。实测大输出命令行为与旧 `std::process` 写临时文件等价。
+  - 旧实现的"重定向到文件 + `try_wait` 轮询"被插件的事件流取代，**不要**再指望 `Stdio::from(File)`。
+- **选型坑：有些官方插件没有 Rust 侧 RPC API（纯 JS 命令）**：
+  - `tauri-plugin-http` **只有 `init()`**，无 `*Ext` client/fetch → 宿主同步核心 API 无法干净调用 → 保留自研 `reqwest`。
+  - `tauri-plugin-fs` **仅有 `Fs::open()`**（一层 std::fs），无 list/readText/writeText → 无法干净替代自研文件服务。
+  - 结论：**动手前先确认要用的插件是否有 Rust API**（文档/源码看 `*Ext` trait、`pub fn`），
+    否则只能走 IPC 适配（异步+脆弱+不保平），得不偿失。
+- 新增/移除宿主依赖后跑 `cargo check -p toolbox` + 全量门禁（§9）；`Cargo.lock` 会自动更新并移除未用的 crate。
 
 ## 7. 重要决策记录
 
