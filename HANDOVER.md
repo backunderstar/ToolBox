@@ -608,6 +608,9 @@ API 后实施/取舍：
   - pipeline 各阶段：分离电源/地(trace/plane/wires/允许层/引脚)、冲突检测(候选/硬/软)、扇区轮询分层
     (已分配)、贪心交叉最小化、模拟退火精修(best_soft)、后处理与人工兜底(需人工数)。
   - 结果 `warnings` 逐条 `log_warn`（报告里仍保留）。
+- **插件名标记**：宿主导 `host_log`（`native.rs`）从 `ctx`（各插件独立 `HostCtx(plugin_id)`）取出插件名，
+  日志改为 **`[plugin:<插件id>]` 前缀**（原来是 `[plugin:log]` 无插件名）——多个 native 插件同时打日志时
+  可区分来源（`docs/插件开发指南.md` §7.1 已同步）。
 - **验证**：`cargo test -p tb-probe-rat-layer` **15** 过（+2 `Progress::log_*` 单测）+ 4 ignored；
   `clippy -p` 0；全量 `cargo test --workspace` **82** 过；`pnpm build:core` ✓（DLL 已部署）。
 - ⚠️ 插件新增日志不在热循环里打（只在阶段边界/汇总一次性），避免刷爆按天日志。

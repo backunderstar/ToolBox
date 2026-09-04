@@ -54,12 +54,15 @@ unsafe extern "C" fn host_emit_event(
 }
 
 /// 日志回调：经宿主日志落盘 + 终端（`pnpm tauri dev` 可见）。
-unsafe extern "C" fn host_log(_ctx: *mut c_void, level: i32, msg: *const c_char) {
+/// 从 `ctx`（各插件独立 `HostCtx(plugin_id)`）取出**插件名**，日志带 `[plugin:<id>]` 前缀，
+/// 便于多个 native 插件同时打日志时区分来源。
+unsafe extern "C" fn host_log(ctx: *mut c_void, level: i32, msg: *const c_char) {
+    let plugin_id = unsafe { &*(ctx as *const HostCtx) }.0.clone();
     let msg = unsafe { tb_sdk::read_str(msg) }.unwrap_or("");
     match level {
-        0 => crate::core::log::info(&format!("[plugin:log] {msg}")),
-        1 => crate::core::log::warn(&format!("[plugin:warn] {msg}")),
-        _ => crate::core::log::error(&format!("[plugin:error] {msg}")),
+        0 => crate::core::log::info(&format!("[plugin:{plugin_id}] {msg}")),
+        1 => crate::core::log::warn(&format!("[plugin:{plugin_id}] {msg}")),
+        _ => crate::core::log::error(&format!("[plugin:{plugin_id}] {msg}")),
     }
 }
 
