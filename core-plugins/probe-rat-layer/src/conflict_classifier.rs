@@ -265,6 +265,9 @@ pub fn classify_pair(
     }
 }
 
+/// 检测全部线对冲突：用扫描线 `pair_candidates` 找"bbox 相交"的候选线对，逐个 `classify_pair` 判定。
+/// 返回 `(conflicts 列表, 硬冲突图)`。硬冲突图只含 **Hard** 边——分层/SA 用它做 O(deg) 邻接查询，
+/// 快速判断"某线放到某层是否会与已有硬冲突邻线撞"（避免每步遍历整层线集）。
 pub fn detect_all_conflicts(
     wires: &[Wire],
     zones: &[crate::model::KeepoutZone],
@@ -290,6 +293,8 @@ pub fn detect_all_conflicts(
     (conflicts, graph)
 }
 
+/// 由冲突列表构建**硬冲突图**：只连 Hard 边（Soft/None 不进图）。
+/// 供分层/后处理查询"某线在目标层是否已有硬冲突邻线"（`neighbors`/`has_edge`/`edges`）。
 pub fn build_hard_graph(conflicts: &[Conflict]) -> ConflictGraph {
     let mut graph = ConflictGraph::new();
     for c in conflicts {
