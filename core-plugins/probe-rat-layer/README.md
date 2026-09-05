@@ -79,5 +79,5 @@ viz.rs        plotters 按需渲染 layer/overview/rose/manual → PNG(base64 da
 ## 与旧版的关系
 
 原 `plugins/probe-rat-layer`（process Python，130MB vendor，异步任务 + 按需渲染）已改写为
-本 native 核心插件；前端 `ui/` 与宿主命令/事件契约**保持不变**。历史与迁移过程见
-[docs/改造方案-探针卡分层Rust化.md](../改造方案-探针卡分层Rust化.md)。
+本 native 核心插件；前端 `ui/` 与宿主命令/事件契约**保持不变**。算法与实现要点见
+[学习导言](../../docs/探针卡分层算法-学习导言.md)。

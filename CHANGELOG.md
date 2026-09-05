@@ -102,7 +102,7 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
   内按**直线路径占用峰值 ≤ `layer_capacity`** 判定可布；接入报告 `summary`（`routable_net_count` /
   `total_net_count` / `routable_ratio`）、文本摘要与结果页「走通率」卡片。纯诊断、不影响分层结果。
   实测（`hv` 预设，1800 网，release）：**走通率 ≈ 80%**，且暴露层占用率 > 容量 1.0 的**残留拥塞**信号
-  （为后续"模拟走线路径"版走通率与更好分层打底）。见 [零过孔改进方案 §5](docs/探针卡分层-可布线零过孔改进方案.md)。
+  （为后续"模拟走线路径"版走通率与更好分层打底）。见 [探针卡分层算法-学习导言](docs/探针卡分层算法-学习导言.md)（走通率指标）。
 - **里程碑 0 软同 net（配置化 v1）**：`LayeringConfig.same_net_via_penalty`（λ；默认 0=完全按段=现状，
   >0 启用"先整网、放不下按段拆"的两级决策）。配套 `post_process::net_span_stats` 产出 **`multi_layer_nets` /
   `via_estimate`**（跨层 net 数 / 估算过孔数），接入报告与摘要。
@@ -127,8 +127,7 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
   build-release.yml）/ 本地签名构建（路径 B：`pnpm tauri build`，未配 Secrets 时用）」，修正同步范围
   （4 个 crate）与 clippy 命令（`--no-deps`，并强调**打包前跑 release 档**）。
 - **文档体系梳理**：新增 [docs/README.md](docs/README.md) 文档索引（定位/状态/交叉引用/阅读路径）；
-  把 [改造方案-探针卡分层Rust化.md](docs/改造方案-探针卡分层Rust化.md) 状态更新为**已实施**；
-  操作手册 / 插件开发指南 补上真实算法核心插件 **probe-rat-layer**。
+  探针卡分层 Rust 化标注为**已实施**；操作手册 / 插件开发指南 补上真实算法核心插件 **probe-rat-layer**。
 
 ### 修复
 
@@ -152,7 +151,7 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
   改写为 **native cdylib 核心插件**（`tb_probe_rat_layer.dll`，随应用分发），零 vendor、
   性能接近进程内直接调用；命令/事件/前端契约**完全不变**，宿主沿用 `libloading + C ABI`
   加载。jobs/cache/settings 落在应用配置目录 `probe-rat-layer/`，重启恢复上次任务
-  （见 `core-plugins/probe-rat-layer/` 与 `docs/改造方案-探针卡分层Rust化.md`）。
+  （见 `core-plugins/probe-rat-layer/` 与算法[学习导言](docs/探针卡分层算法-学习导言.md)）。
 - **分层算法提速 + 提质（方案 B）**：
   - `_resolve_conflicts` 改**边驱动**（硬冲突图边 → 同层坏单元集，就近挪到无冲突允许层），
     复杂度由 O(线²) 降到 O(边数+坏单元×邻接度)；
@@ -179,7 +178,7 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 ### 新增
 
 - 核心插件（cdylib）分层算法的**真实数据回归测试**（`cargo test -- --ignored`，应用 `hv`
-  预设），输出指标便于核对；`docs/探针卡分层-可布线零过孔改进方案.md`（规划稿）。
+  预设），输出指标便于核对；见 [探针卡分层算法-学习导言](docs/探针卡分层算法-学习导言.md)。
 
 ## [0.2.0] — 2026-09-02
 

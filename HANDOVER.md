@@ -414,10 +414,10 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   `tb_probe_rat_layer.dll`（release 2.5MB，随包分发）。宿主仍用 `libloading + C ABI`
   （`tb_plugin!`/`tb_sdk`）加载；命令/事件/前端契约不变。模块全移植
   （model/config/geometry/keepout/congestion/conflict_classifier/layer_packing/optimizer(SA)/
-  graph_coloring/layer_stack/metrics/post_process/pipeline/report/io(calamine 读 xlsx、
-  serde 读 allegro_json、wire_gen MST)/viz(plotters)/dispatch(后台任务/取消/进度/状态恢复)。
-  jobs/cache/settings 落 `%APPDATA%/com.toolbox.desktop/probe-rat-layer/`。设计/决策记录见
-  `docs/改造方案-探针卡分层Rust化.md`。
+  graph_coloring/layer_stack/metrics/post_process/pipeline/report/io(calamine 读 xlsx、wire_gen MST)/
+  viz(plotters)/dispatch(后台任务/取消/进度/状态恢复)。
+  jobs/cache/settings 落 `%APPDATA%/com.toolbox.desktop/probe-rat-layer/`。算法与实现要点见
+  `docs/README.md` 与算法[学习导言](docs/探针卡分层算法-学习导言.md)。
 - **✅ 算法提速提质（方案 B，v0.3.0）**：`_resolve_conflicts` 边驱动 O(线²)→O(边+坏单元×邻接度)、
   `_enforce_capacity` 增量更新、初始 MFPS + `preferred_dir` 方向感知、SA `hard_conflict_in` 邻接表化。
   实测（hv，1800 网，release）：**73.6s → 1.74s（~42×）**，已分配 1781→1798、需人工 19→2、
@@ -441,8 +441,8 @@ dev 冒烟（csv-tool/py-tools 均确认使用捆绑解释器）、打包版冒�
   `expansion_radius`，**保证"原始 bbox 不交但引脚邻近"的线对也入候选**（否则漏判）。实测 width8/20层：
   **同层 pin 邻近违规=0**，需人工 58（线径 4.1mm）→255（线径 8mm，密板物理放不下）；width0.2 基线不变。
 - **✅ 文档体系**：新增 `docs/README.md` 文档索引（定位/状态/交叉引用/阅读路径）；
-  `docs/改造方案-探针卡分层Rust化.md` 状态改为**已实施**；新增 `docs/探针卡分层-可布线零过孔改进方案.md`
-  （走通率 vs 零过孔的里程碑规划稿）；`docs/发布流程.md` 重写（区分 CI 全自动路径 A / 本地签名路径 B，
+  探针卡分层 Rust 化标注为**已实施**，走通率指标见算法[学习导言](docs/探针卡分层算法-学习导言.md)；
+  `docs/发布流程.md` 重写（区分 CI 全自动路径 A / 本地签名路径 B，
   含 GitHub Secrets 配置、clippy `--no-deps` + release 档提示）；操作手册/插件开发指南补 native 核心插件。
 - **✅ 发布**：v0.3.0（本地签名，`pnpm tauri build`，未打 tag）、v0.4.0（本地签名，未打 tag）。
   均升级到 0.4.0 时同步全部版本文件 + CHANGELOG `[0.4.0]`。**2026-09-03 用户已在仓库配上

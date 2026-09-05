@@ -114,13 +114,6 @@ pub enum NetClass {
 }
 
 impl NetClass {
-    pub fn parse(s: &str) -> NetClass {
-        match s.trim().to_lowercase().as_str() {
-            "power" => NetClass::Power,
-            "ground" => NetClass::Ground,
-            _ => NetClass::Signal,
-        }
-    }
     pub fn as_str(&self) -> &'static str {
         match self {
             NetClass::Signal => "signal",
