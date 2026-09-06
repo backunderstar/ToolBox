@@ -13,7 +13,15 @@
 //
 // 新增随包插件：往 BUNDLED 数组加一项（目录须在 plugins/<id>，有合法 plugin.json）。
 
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildPluginUi } from "./plugin-ui-build.mjs";
@@ -21,7 +29,7 @@ import { buildPluginUi } from "./plugin-ui-build.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // 随包插件清单（2026-09：探针卡分层已 Rust 化为核心插件 core-plugins/probe-rat-layer，
 // 不再作为外部插件随包；此列表为空，后续新增外部随包插件再加回去）
-const BUNDLED = [];
+const BUNDLED = ["theme-maple", "theme-midnight"];
 
 /** 排除目录（任意层级）：运行期产物/缓存/测试/版本控制 */
 const EXCLUDE_DIRS = new Set(["cache", "jobs", "test", "__pycache__", ".git", "node_modules"]);
@@ -78,23 +86,32 @@ for (const id of BUNDLED) {
   }
 
   const count = copyTree(src, target);
-  // 自检：plugin.json 与运行必需文件齐全（process 插件缺 main.py = 部署了坏插件）
-  for (const required of ["plugin.json", "main.py"]) {
-    if (!existsSync(path.join(target, required))) {
-      throw new Error(`[bundle-plugins] 自检失败: ${id}/${required} 缺失`);
+  // 自检：plugin.json 必在；仅 process 插件要求 main 入口（webview/主题插件无 main.py）
+  const required = ["plugin.json"];
+  if (manifest.runtime === "process" || Array.isArray(manifest.command)) {
+    const cmd = Array.isArray(manifest.command) ? manifest.command : ["python", "main.py"];
+    const entry = [...cmd].reverse().find((x) => /\.(py|js)$/i.test(x)) || "main.py";
+    required.push(entry);
+  }
+  for (const f of required) {
+    if (!existsSync(path.join(target, f))) {
+      throw new Error(`[bundle-plugins] 自检失败: ${id}/${f} 缺失`);
     }
   }
   if (manifest.ui && !existsSync(path.join(target, "ui", "index.js"))) {
     throw new Error(`[bundle-plugins] 自检失败: ${id} 声明了 ui 但缺 ui/index.js（构建异常）`);
   }
   const sizeMB = (() => {
-    const walk = (d) => readdirSync(d, { withFileTypes: true }).reduce((s, e) => {
-      const p = path.join(d, e.name);
-      return s + (e.isDirectory() ? walk(p) : statSync(p).size);
-    }, 0);
+    const walk = (d) =>
+      readdirSync(d, { withFileTypes: true }).reduce((s, e) => {
+        const p = path.join(d, e.name);
+        return s + (e.isDirectory() ? walk(p) : statSync(p).size);
+      }, 0);
     return walk(target) / 1024 / 1024;
   })();
-  console.log(`[bundle-plugins] 已随包: ${id} → ${target}（${count} 个文件，${sizeMB.toFixed(1)} MB，含 vendor）`);
+  console.log(
+    `[bundle-plugins] 已随包: ${id} → ${target}（${count} 个文件，${sizeMB.toFixed(1)} MB，含 vendor）`,
+  );
 }
 
 console.log(`[bundle-plugins] 完成: ${BUNDLED.length} 个插件进入安装包资源`);
