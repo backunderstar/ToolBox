@@ -68,6 +68,28 @@ pub(crate) fn tray_enabled(app: &tauri::AppHandle) -> bool {
         .unwrap_or(true)
 }
 
+/// 解析主题基础模式 → 画布背景色（RGB u8）。用于**原生窗口背景色**：
+/// 启动瞬间 WebView 尚未渲染任何内容，CSP 又禁止 inline script，若窗口先以白色
+/// 出现会"白一闪"。这里在 setup 时把窗口底色设成用户所选主题的 base 色，从根上消除。
+/// 取 `themeBase`（前端 setThemeId 持久化）；缺省按 `theme` id 推断（default-dark/
+/// 暗色插件名暂无法精确判定 → 缺省亮色，仅影响个别冷启动底色，主题随后照常应用）。
+/// 返回 None = 让系统默认（亮色时也无所谓，白/浅都可接受）。
+pub(crate) fn theme_bg_rgb(app: &tauri::AppHandle) -> Option<(u8, u8, u8)> {
+    let settings = load_app_settings(app);
+    let theme = settings.get("theme").and_then(|v| v.as_str()).unwrap_or("");
+    let base = settings.get("themeBase").and_then(|v| v.as_str()).unwrap_or("");
+    // base 显式持久化；缺省时按 theme id 推断已知暗色内置（default-dark）
+    let is_dark = base.eq_ignore_ascii_case("dark")
+        || (base.is_empty() && (theme == "default-dark" || theme == "system-dark"));
+    if is_dark {
+        // 与 tokens.css [data-theme="dark"] --bg (#1b1a17) 一致
+        Some((0x1b, 0x1a, 0x17))
+    } else {
+        // 亮色 / 显式 light / 无法判定（缺省亮）
+        Some((0xf6, 0xf5, 0xf2))
+    }
+}
+
 /// 原子写单个设置键（临时文件 + rename，与 plugins.json 同风格防损坏）。
 pub(crate) fn write_app_setting(
     app: &tauri::AppHandle,

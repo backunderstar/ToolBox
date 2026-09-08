@@ -265,6 +265,18 @@ pub fn run() {
             if let Ok(dir) = app_config_dir(app.handle()) {
                 backup::spawn_auto(dir);
             }
+            // 原生窗口底色：把主窗口/浮窗 WebView 背景设成用户所选主题的 base 色。
+            // 启动瞬间 WebView 未渲染、CSP 禁止 inline script，若窗口先以白色出现会
+            // "白一闪"。这里在窗口都创建后从 app.json 的 themeBase/theme 推断底色并设
+            // 到原生窗口，从根上消除（主题随后照常由前端渲染接管）。
+            if let Some((r, g, b)) = core::app::theme_bg_rgb(app.handle()) {
+                let color = tauri::window::Color(r, g, b, 255);
+                for label in ["main", FLOAT_WINDOW] {
+                    if let Some(w) = app.get_webview_window(label) {
+                        let _ = w.set_background_color(Some(color));
+                    }
+                }
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

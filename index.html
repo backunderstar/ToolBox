@@ -4,20 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ToolBox</title>
-    <!-- ═══ 提前固定底色：在首个 CSS/module 加载前同步执行，避免启动白闪 ═══
-         读取持久化的主题基础模式（dark/light），立即给 html 上 data-theme 与
-         背景色——暗色皮肤用户启动即暗色，无需等插件主题解析。禁用了存储则回退默认。 -->
-    <script>
-      (function () {
-        var base = "light";
-        try {
-          var v = localStorage.getItem("toolbox.theme.base");
-          if (v === "dark") base = "dark";
-        } catch (e) {}
-        document.documentElement.setAttribute("data-theme", base);
-        document.documentElement.style.backgroundColor = base === "dark" ? "#1b1a17" : "#f6f5f2";
-      })();
-    </script>
+    <!-- ═══ 启动防白闪 ═══ 原生窗口底色由 Rust（lib.rs setup → theme_bg_rgb）读取
+         app.json 的 themeBase 并设为所选主题 base 色，在 WebView 渲染前就固定窗口
+         背景，避免"白一闪"。（注：CSP script-src 'self' 禁止 inline script，故不能用
+         内联脚本提前上色。） -->
   </head>
   <body>
     <div id="app"></div>

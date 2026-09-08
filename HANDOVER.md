@@ -819,9 +819,12 @@ dsatur 都**不降**（2210 / 2210 / 2349）——4 层同层交叉已近几何�
   找不到主题 → 旧逻辑硬编码 `light` 打底；等插件就绪才翻暗色；splash `background: var(--bg)` 此时也浅色。
   改为"**提前固定底色**"：
   - `setThemeId` 选择时把该主题**基础模式（dark/light）**一并持久化（`toolbox.theme.base`；
-    `persistThemeBaseFor` 派生 base，与 id 解耦）；
-  - **`index.html` `<head>` 内联脚本在首个 CSS/module 加载前**读 base → 给 `<html>` 设 `data-theme`
-    与背景色——暗色用户首帧即暗色，无需等插件解析（`getStoredThemeBase`/`applyTheme` 未解析分支用 base）；
+    Rust `app.json themeBase`；`persistThemeBaseFor` 派生 base，与 id 解耦）；
+  - **原生窗口底色（关键）**：`lib.rs setup` 调 `theme_bg_rgb` 读 `app.json` 的 `themeBase/theme`
+    （`default-dark` 兜底），用 `window.set_background_color` 把主窗口/浮窗 WebView 背景在渲染前
+    设成主题 base 色（`Color(r,g,b,255)`）。⚠️ 曾用 `index.html` 内联脚本提前上色，但被 CSP
+    `script-src 'self'` 拦截、生产包不生效，**已移除**——原生窗口底色才是可靠消除白闪的途径；
+  - `applyTheme` 未解析分支改按持久化 base（而非硬编码 `light`）打底；
   - 启动 IIFE 对老用户**回填一次 base**（只写 base 不写 id，不触发"启动落盘 id"的边界）；
   - splash 淡出 + 主界面淡入（`.boot-fade` / `.app-fade-in`，240ms）平滑过渡。
 - **测试**：`themes.test.ts` 新增 `setThemeId` 用例组（persist 插件主题后 `getInitialTheme` 读回原 id）；
