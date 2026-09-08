@@ -29,6 +29,12 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 - **DC 信号预设改为"质量优先"**：算法默认项调高（`resolve_conflict_rounds=15`、`sa_restarts=3`、
   `sa_initial_temp=12`），并**开启拥塞均衡**（`congestion_balance=true`, `congestion_balance_passes=40`）；
   层数 4 / 线宽 0.2 不变，计算时间略长。实测该套参数对真实数据取得 **0 需人工 / 0 硬冲突 / 层占用 ≤1.0**。
+- **主题持久化彻底修复（皮肤主题重启常驻）**：此前 `main.ts` 在启动渲染前用 `localStorage` 取主题并
+  **立即持久化**——打包版首启动 localStorage 为空/存了旧回退 `system` 时，会把错误的 `"system"` 写回
+  Rust app.json，覆盖用户保存的皮肤主题（如 `theme-midnight`）。改为：启动打底色**不持久化**
+  （`applyTheme(..., { persist: false })`），主题权威值由启动引导 IIFE **从 Rust app.json 读取**，
+  用 `resolveAuthoritativeTheme(rust, local)` 解析（优先任一来源的非 `system` 真实值），仅当插件就绪、
+  `themeId` 变化时才正常持久化。
 
 ## [0.4.3] — 2026-09-04
 

@@ -22,6 +22,7 @@ import { PromptHost } from "./core/prompt";
 import {
   applyTheme,
   getInitialTheme,
+  resolveAuthoritativeTheme,
   toggleTheme,
   getThemeBase,
   findTheme,
@@ -200,7 +201,10 @@ onMounted(() => {
   // ═══ 启动引导：从后端 Rust 读取持久化配置（主题等，authoritative）+ 加载过渡动画 ═══
   // 主题不依赖 localStorage（可能被旧启动逻辑覆盖/清空/不可靠），以 Rust app.json 为准。
   void (async () => {
-    // 读 Rust 侧配置文件里的主题 id
+    // 读 Rust 侧配置文件里的主题 id（**权威**）。
+    // 关键：以 Rust app.json 为准，localStorage 仅兜底（打包版首启动/受限环境
+    // localStorage 可能为空或存了旧回退 "system"）。解析时优先非"跟随系统"的真实值，
+    // 避免拿空的/回退的 "system" 去覆盖用户在 Rust 里保存的主题（如 theme-midnight）。
     let rustTheme = "";
     try {
       const s = (await appSettingsGet()) as Record<string, unknown>;
@@ -208,7 +212,7 @@ onMounted(() => {
     } catch {
       /* 非 Tauri 环境/失败：忽略，交给 getInitialTheme(localStorage) 兜底 */
     }
-    if (rustTheme) themeId.value = rustTheme;
+    themeId.value = resolveAuthoritativeTheme(rustTheme, getInitialTheme());
 
     // 等插件列表加载（皮肤插件主题此刻才可解析），避免启动瞬间默认外观闪烁；
     // 给固定超时兜底——插件迟迟不加载也不卡住启动。

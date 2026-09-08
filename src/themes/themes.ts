@@ -287,9 +287,14 @@ function clearPluginCss(): void {
   document.getElementById(PLUGIN_CSS_ID)?.remove();
 }
 
-/** 应用主题：base → data-theme（驱动 tokens.css），覆盖令牌注入 style，持久化。
- *  插件主题额外异步读取并注入 css 覆盖文件（双通道）；调用方无需 await。 */
-export async function applyTheme(id: string): Promise<void> {
+/** 应用主题：base → data-theme（驱动 tokens.css），覆盖令牌注入 style，可持久化。
+ *  插件主题额外异步读取并注入 css 覆盖文件（双通道）；调用方无需 await。
+ *  ⚠️ `opts.persist`：**启动（main.ts 渲染前打底色）必须传 `false`**——启动时
+ *  插件未加载、localStorage 可能为空/不可靠，此刻持久化会把错误的回退值
+ *  （如 "system"）写回 Rust app.json，覆盖用户上次保存的权威主题（theme-midnight
+ *  就是这样被冲掉的）。权威值由 App 启动 IIFE 从 Rust 读取后由 watch 正常持久化。 */
+export async function applyTheme(id: string, opts?: { persist?: boolean }): Promise<void> {
+  const shouldPersist = opts?.persist !== false;
   const resolved = resolveThemeId(id);
   const theme = findTheme(resolved);
   if (!theme) {
@@ -312,7 +317,9 @@ export async function applyTheme(id: string): Promise<void> {
   if (document.documentElement.dataset.themeId !== resolved) return;
   // 持久化**原始** id：system 保留 "system"（跟随系统状态），不落 resolved 值，
   // 否则重启后丢失"跟随系统"模式。存储失败（受限环境）不阻断主题应用
-  persistThemeId(id);
+  if (shouldPersist) {
+    persistThemeId(id);
+  }
   void syncWindowTheme(theme.base);
   // 标题栏近似色跟随主题画布背景（Windows 11 原生标题栏；失败静默）
   syncCaptionColor();
@@ -351,6 +358,16 @@ export function getInitialTheme(): string {
   if (saved === SYSTEM_THEME_ID) return SYSTEM_THEME_ID;
   if (saved) return saved; // 已存储：内置/自定义/插件主题一律保留（含暂未解析的插件主题）
   return SYSTEM_THEME_ID;
+}
+
+/** 解析启动时的权威主题 id：Rust app.json 为主，localStorage 为兜底。
+ *  优先级：任一来源的**非"跟随系统"**值最高（"system" 既可能是真实选择，
+ *  也可能是 localStorage 为空/被旧启动逻辑覆盖后的回退——宁可回退到另一来源
+ *  的真实值，也不拿空的/回退的 "system" 去覆盖）；两来源都是 system/空才归 system。 */
+export function resolveAuthoritativeTheme(rustTheme: string, localTheme: string): string {
+  if (rustTheme && rustTheme !== SYSTEM_THEME_ID) return rustTheme;
+  if (localTheme && localTheme !== SYSTEM_THEME_ID) return localTheme;
+  return rustTheme || localTheme || SYSTEM_THEME_ID;
 }
 
 /** 顶栏切换：跟随系统时退出跟随（切到当前系统 base 的相反默认）；

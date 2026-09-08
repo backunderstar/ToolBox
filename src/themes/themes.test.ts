@@ -7,6 +7,7 @@ import {
   getThemeBase,
   getInitialTheme,
   importThemesJson,
+  resolveAuthoritativeTheme,
   resolveThemeId,
   swatchOf,
   SYSTEM_THEME_ID,
@@ -156,6 +157,27 @@ describe("getInitialTheme", () => {
     // 无效/已删除的 id 同样保留（避免启动阶段误判插件主题为无效；App 层在插件就绪后回落跟随系统）
     localStorage.setItem("toolbox.theme", "no-such");
     expect(getInitialTheme()).toBe("no-such");
+  });
+});
+
+describe("resolveAuthoritativeTheme（启动权威主题解析：Rust 为主、localStorage 兜底）", () => {
+  it("Rust 非 system 值优先（即使 localStorage 回退到 system）", () => {
+    expect(resolveAuthoritativeTheme("theme-midnight", SYSTEM_THEME_ID)).toBe("theme-midnight");
+    expect(resolveAuthoritativeTheme("default-dark", SYSTEM_THEME_ID)).toBe("default-dark");
+    expect(resolveAuthoritativeTheme("warm", "system")).toBe("warm");
+  });
+  it("Rust 无值/为空 → 用 localStorage 非 system 值", () => {
+    expect(resolveAuthoritativeTheme("", "theme-midnight")).toBe("theme-midnight");
+    expect(resolveAuthoritativeTheme("", "default-light")).toBe("default-light");
+    expect(resolveAuthoritativeTheme(SYSTEM_THEME_ID, "theme-midnight")).toBe("theme-midnight");
+  });
+  it("两来源都是 system/空 → 归 system（跟随系统）", () => {
+    expect(resolveAuthoritativeTheme("", "")).toBe(SYSTEM_THEME_ID);
+    expect(resolveAuthoritativeTheme(SYSTEM_THEME_ID, SYSTEM_THEME_ID)).toBe(SYSTEM_THEME_ID);
+    expect(resolveAuthoritativeTheme("", SYSTEM_THEME_ID)).toBe(SYSTEM_THEME_ID);
+  });
+  it("Rust 保存了真实选择，localStorage 是旧回退 system → 取 Rust 值（核心回归）", () => {
+    expect(resolveAuthoritativeTheme("theme-midnight", "system")).toBe("theme-midnight");
   });
 });
 
