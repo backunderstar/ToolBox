@@ -754,6 +754,24 @@ API 后实施/取舍：
   `cargo test -p tb-probe-rat-layer --lib` **18+6 ignored** 全过 · clippy 0 · real-data 仍 1800 网 ·
   `pnpm build:core` 已部署（**需全量重启生效**）。
 
+### 1.30 增量（2026-09-08：已选筛选文件 UI 醒目化 + 遗留宿主改动 + 版本 0.4.4）
+
+用户反馈"已选筛选文件只用小字显示，不注意看不到"→ **UI 醒目化**（`ui/App.vue`）：单行小字改为
+**卡片列表**——`prl-filter-box`（数量徽标 + 标题 + 清空；accent 描边/底色）+ 每个文件一行
+`prl-filter-chip`（序号+文件名 + 完整路径 + × 移除按钮），新增 `basename`/`removeFilter`，未选时占位提示。
+
+另审查/提交了**遗留未提交的宿主改动**（`src-tauri/src/plugins/{deps,manager,process,pyruntime}.rs`，非本会话所写）：
+- **解释器优先 `pythonw.exe`**（GUI 子系统无控制台），`resolve_interpreter` 每级（插件自带/全局捆绑）优先，
+  找不到回落 `python.exe`；新增单测 `resolve_prefers_pythonw`；manager 安装依赖同样优先。
+- **`CREATE_NO_WINDOW`**：pip install / process 插件 spawn / taskkill 加 `creation_flags(0x08000000)`
+  （仅 `cfg(windows)`）——不再弹黑色控制台窗口。
+- 审查确认无误：`cargo test -p toolbox --lib` **63 过**（含新单测）· `cargo clippy -p toolbox -- -D warnings` 0；
+  并恢复 4 文件末行换行（符合 `.editorconfig`）。
+
+- **版本 0.4.4**：`package.json` → `pnpm version:sync`（tauri.conf.json / version.ts / src-tauri·tb-sdk·example·
+  probe-rat-layer 共 6 处 Cargo.toml），`sync-version --check` 通过；CHANGELOG 新增 `[0.4.4]`。
+- 推送门禁本地全绿后推送（用户已确认）。
+
 ---
 
 ## 2. 项目一句话
