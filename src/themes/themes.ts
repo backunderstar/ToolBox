@@ -323,7 +323,11 @@ export function applyThemeStyle(base: ThemeMode, id: string, tokens: Record<stri
 }
 
 /** 初始主题：读持久化值（含 system），兼容旧版 "light"/"dark"；
- *  无存储时默认**跟随系统**（随系统亮暗实时切换，比一次性选亮/暗更合理）。 */
+ *  无存储时默认**跟随系统**（随系统亮暗实时切换，比一次性选亮/暗更合理）。
+ *  ⚠️ 若保存的是**插件主题**（皮肤插件），启动时插件列表尚未加载、`findTheme` 找不到——
+ *  必须**保留该 id**（不回落 system），让 `applyTheme` 走"未解析→默认外观且不覆盖持久化"分支，
+ *  待插件列表就绪后 `pluginThemeKey` 变化触发 `applyTheme` 重放，恢复用户选择的插件主题
+ *  （否则重启后丢失，如 theme-midnight）。无存储才默认跟随系统。 */
 export function getInitialTheme(): string {
   let saved: string | null = null;
   try {
@@ -336,7 +340,7 @@ export function getInitialTheme(): string {
     return saved === "light" ? "default-light" : "default-dark";
   }
   if (saved === SYSTEM_THEME_ID) return SYSTEM_THEME_ID;
-  if (saved && findTheme(saved)) return saved;
+  if (saved) return saved; // 已存储：内置/自定义/插件主题一律保留（含暂未解析的插件主题）
   return SYSTEM_THEME_ID;
 }
 

@@ -165,13 +165,20 @@ watchEffect((onCleanup) => {
   onCleanup(() => mq.removeEventListener("change", onChange));
 });
 
-/* 当前主题是皮肤插件主题但插件已禁用/卸载：回落到默认亮色 */
+/* 主题回落（**插件就绪后再判定**，避免启动阶段把"待恢复的插件主题"误判为无效）：
+   - 皮肤插件主题被禁用/卸载 → 回落默认亮色；
+   - 插件列表已就绪后当前 id 仍不解析（无效/已删除的自定义主题）→ 回落跟随系统。 */
 watch(
-  () => [themeId.value, pluginCtx.pluginThemeKey.value] as const,
+  () => [themeId.value, pluginCtx.pluginThemeKey.value, pluginCtx.state.plugins.length] as const,
   ([id]) => {
+    const key = pluginCtx.pluginThemeKey.value;
     const t = findTheme(id);
-    if (t?.source === "plugin" && !pluginCtx.pluginThemeKey.value.split(",").includes(id)) {
-      themeId.value = "default-light";
+    if (t?.source === "plugin") {
+      if (!key.split(",").includes(id)) themeId.value = "default-light";
+      return;
+    }
+    if (!t && id !== SYSTEM_THEME_ID && pluginCtx.state.plugins.length > 0) {
+      themeId.value = SYSTEM_THEME_ID;
     }
   },
 );

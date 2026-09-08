@@ -144,13 +144,18 @@ describe("getInitialTheme", () => {
     localStorage.setItem("toolbox.theme", "dark");
     expect(getInitialTheme()).toBe("default-dark");
   });
-  it("有效 id 原样返回；持久化 system 保留；未知回跟随系统", () => {
+  it("有效 id 原样返回；持久化 system 保留；**未解析 id 也保留**（插件主题重启恢复用）", () => {
     localStorage.setItem("toolbox.theme", "warm");
     expect(getInitialTheme()).toBe("warm");
     localStorage.setItem("toolbox.theme", SYSTEM_THEME_ID);
     expect(getInitialTheme()).toBe(SYSTEM_THEME_ID);
+    // 插件主题（皮肤插件）在插件列表加载前 findTheme 找不到——不再回落 system，
+    // 而是保留该 id，交给 applyTheme("未解析→默认外观但不覆盖持久化") + 插件就绪后重放恢复。
+    localStorage.setItem("toolbox.theme", "theme-midnight");
+    expect(getInitialTheme()).toBe("theme-midnight");
+    // 无效/已删除的 id 同样保留（避免启动阶段误判插件主题为无效；App 层在插件就绪后回落跟随系统）
     localStorage.setItem("toolbox.theme", "no-such");
-    expect(getInitialTheme()).toBe(SYSTEM_THEME_ID);
+    expect(getInitialTheme()).toBe("no-such");
   });
 });
 
