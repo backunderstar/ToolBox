@@ -7,6 +7,9 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 /// pip install 超时：装小依赖几秒，pandas 等大 wheel 也要几分钟（网速决定）。
 pub(crate) const PIP_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -37,7 +40,10 @@ pub(crate) fn run_pip_install(
     let result = (|| -> Result<bool, String> {
         let out = std::fs::File::create(&out_log).map_err(|e| format!("创建日志文件失败: {e}"))?;
         let err = std::fs::File::create(&err_log).map_err(|e| format!("创建日志文件失败: {e}"))?;
-        let mut child = std::process::Command::new(python)
+        let mut cmd = std::process::Command::new(python);
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW：pip install 不弹黑窗口
+        let mut child = cmd
             .args([
                 "-m",
                 "pip",

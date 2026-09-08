@@ -1184,13 +1184,16 @@ impl PluginManager {
             self.stop_record(idx);
             self.records[idx].error = None;
         }
-        // 捆绑解释器：refresh 时缓存的纯路径优先；当前会话未刷新时用 AppHandle 现解析
+        // 捆绑解释器：refresh 时缓存的纯路径优先；当前会话未刷新时用 AppHandle 现解析。
+        // 优先 pythonw.exe（无控制台黑窗口），找不到回落到 python.exe。
         let python = self
             .bundled_python
             .clone()
             .or_else(|| super::pyruntime::bundled_python_dir(app))
-            .map(|d| d.join("python.exe"))
-            .filter(|p| p.is_file())
+            .and_then(|d| ["pythonw.exe", "python.exe"]
+                .into_iter()
+                .map(|n| d.join(n))
+                .find(|p| p.is_file()))
             .ok_or(
                 "未找到捆绑 Python 运行时，无法安装依赖。构建期请运行 pnpm fetch:python，\
                  或安装系统 Python 并加入 PATH。",
@@ -1371,11 +1374,12 @@ impl PluginManager {
         // spawn 失败时由下方"解释器文件不存在"分支给可读提示。
         program = resolve_relative_program(&dir, &program);
         // 冒烟验证辅助日志：记录 process 插件实际用的解释器来源（三级解析命中哪一级：
-        // 插件自带 python.exe / 全局捆绑 / 系统 PATH 回落），排查优先级问题用。
+        // 插件自带 pythonw.exe / python.exe → 全局捆绑 → 系统 PATH 回落），排查优先级问题用。
         if super::pyruntime::is_python_command(&cmd[0]) {
             let source = if !resolved {
                 "系统 PATH 回落".to_string()
-            } else if paths_equal(Path::new(&program), &dir.join("python.exe")) {
+            } else if paths_equal(Path::new(&program), &dir.join("pythonw.exe"))
+                   || paths_equal(Path::new(&program), &dir.join("python.exe")) {
                 "插件自带".to_string()
             } else {
                 "全局捆绑".to_string()
@@ -1675,4 +1679,3 @@ mod export_tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 }
-

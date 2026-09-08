@@ -7,8 +7,9 @@
 //! - 打包版首启 `ensure_bundled_python` 部署到 `%APPDATA%/com.toolbox.desktop/python/`
 //!   （配置目录可写：插件"安装依赖" pip install --target 需要）
 //! - 解释器解析三级优先（`resolve_interpreter`）：
-//!   1. 插件目录自带 `python.exe`（插件完全自包含）
-//!   2. 全局捆绑解释器
+//!   每个层级**优先 pythonw.exe**（无控制台），找不到回落 python.exe。
+//!   1. 插件目录自带 `<plugin>/pythonw.exe`
+//!   2. 全局捆绑解释器（同上优先级）
 //!   3. 回落系统 PATH（原行为）
 //!
 //! 与 `_core` 核心插件部署（manager::ensure_core_plugins）同构。
@@ -101,7 +102,9 @@ pub(crate) fn is_python_command(cmd: &str) -> bool {
 }
 
 /// 解析 process 插件的解释器（仅对 `python`/`python3` 生效）：
-/// 1. 插件目录内自带解释器 `<plugin>/python.exe`（第三层：插件完全自包含）
+/// 每个层级**优先返回 pythonw.exe**（Windows GUI 子系统，不弹黑窗口），
+/// 找不到时再 fallback 到 python.exe。
+/// 1. 插件目录内自带解释器 `<plugin>/pythonw.exe`（第三层：插件完全自包含）
 /// 2. `bundled_dir` 指定的全局捆绑解释器目录（第二层：默认路径；由调用方在能拿到
 ///    AppHandle 时经 `bundled_python_dir` 解析后缓存——**数据对象不持有 tauri 类型**，
 ///    见 manager.rs struct 注释的历史教训）
@@ -116,15 +119,15 @@ pub(crate) fn resolve_interpreter(
         return Err(format!("非 Python 解释器命令，不解析: {requested}"));
     }
     // 1. 插件自带（整个运行时随插件分发，见插件开发指南 §3.5 方案 D）
-    let self_contained = plugin_dir.join("python.exe");
-    if self_contained.is_file() {
-        return Ok(self_contained);
+    for name in ["pythonw.exe", "python.exe"] {
+        let p = plugin_dir.join(name);
+        if p.is_file() { return Ok(p); }
     }
     // 2. 全局捆绑（默认路径：目标机无 Python 也能跑）
     if let Some(dir) = bundled_dir {
-        let exe = dir.join("python.exe");
-        if exe.is_file() {
-            return Ok(exe);
+        for name in ["pythonw.exe", "python.exe"] {
+            let p = dir.join(name);
+            if p.is_file() { return Ok(p); }
         }
     }
     Err("未找到捆绑解释器，回落系统 python".to_string())
@@ -180,6 +183,27 @@ mod tests {
         assert!(resolve_interpreter(None, &plugin_dir, "python").is_err());
         // 非 python 命令不解析
         assert!(resolve_interpreter(None, &plugin_dir, "node").is_err());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// pythonw.exe 优先于 python.exe（无控制台优先）。
+    #[test]
+    fn resolve_prefers_pythonw() {
+        let base = std::env::temp_dir().join(format!("tb-python-pyw-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let plugin_dir = base.join("plugins/my-py");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("pythonw.exe"), b"w").unwrap();
+        std::fs::write(plugin_dir.join("python.exe"), b"e").unwrap();
+        let p = resolve_interpreter(None, &plugin_dir, "python").unwrap();
+        assert_eq!(p, plugin_dir.join("pythonw.exe"));
+
+        // 只有 python.exe 时 fallback
+        std::fs::remove_dir_all(&plugin_dir).unwrap();
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("python.exe"), b"e").unwrap();
+        let p = resolve_interpreter(None, &plugin_dir, "python").unwrap();
+        assert_eq!(p, plugin_dir.join("python.exe"));
         let _ = std::fs::remove_dir_all(&base);
     }
 }

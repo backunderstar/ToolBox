@@ -12,6 +12,9 @@ use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::sync::mpsc::{channel, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -95,6 +98,11 @@ impl ProcessPlugin {
         if let Some(inbox) = inbox {
             cmd.env("TB_INBOX", inbox);
         }
+        // Windows：双重保险抑制黑窗口
+        // - resolve_interpreter 已优先返回 pythonw.exe（GUI 子系统，天生无控制台）
+        // - 此处 CREATE_NO_WINDOW 兜底：系统 PATH 回落/python.exe/非 Python 进程
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -664,12 +672,15 @@ fn kill_process_tree(child: &mut std::process::Child) {
     #[cfg(target_os = "windows")]
     {
         let pid = child.id();
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
+        let mut cmd = std::process::Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
+            .stderr(std::process::Stdio::null());
+        // taskkill 本身是控制台程序，也加 CREATE_NO_WINDOW 兜底
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+        let _ = cmd.status();
         // taskkill 可能已结束进程；再 kill 一次兜底（幂等，无害）
         let _ = child.kill();
     }
