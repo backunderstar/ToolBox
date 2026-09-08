@@ -452,7 +452,6 @@ fn _run_job(
     };
     let result = (|| -> Result<LayeringResult, String> {
         let input = args.get("input").and_then(|v| v.as_str()).unwrap_or("");
-        let filter = args.get("filter").and_then(|v| v.as_str()).map(|s| s.trim().to_string());
         let out_dir = args.get("outDir").and_then(|v| v.as_str()).unwrap_or("");
         prog.log_info(&format!("[分层任务] job={job_id} input={input} out={out_dir}"));
         // 文件操作：输入限**可读根**（当前工作区 或 文件输入目录），输出限当前工作区
@@ -469,23 +468,37 @@ fn _run_job(
         if out_dir.is_empty() {
             return Err("未指定输出目录（必填）".to_string());
         }
-        // 筛选文件必填：白名单决定哪些 net 参与分层（用户要求：不能不带筛选文件）
-        let filter_path = filter.as_deref().unwrap_or("").trim();
-        if filter_path.is_empty() {
-            return Err("必须提供筛选文件（.lst/.txt/.xls/.xlsx，一行一个待分层 net）".to_string());
+        // 筛选文件必填：白名单决定哪些 net 参与分层（用户要求：不能不带筛选文件；
+        // 支持**多个筛选文件**，`filter` 可为字符串数组，并集作为白名单）。
+        let filter_vec: Vec<String> = match args.get("filter") {
+            Some(Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect(),
+            Some(Value::String(s)) => {
+                let s = s.trim().to_string();
+                if s.is_empty() { Vec::new() } else { vec![s] }
+            }
+            _ => Vec::new(),
+        };
+        if filter_vec.is_empty() {
+            return Err("必须提供至少一个筛选文件（.lst/.txt/.xls/.xlsx，一行一个待分层 net）".to_string());
         }
-        if !within_read(workspace, input_dir, filter_path) {
-            return Err("筛选文件越出可读范围（需在当前工作区或文件输入目录内）".to_string());
-        }
-        if !std::path::Path::new(filter_path).is_file() {
-            return Err(format!("筛选文件不存在: {filter_path}"));
+        for fp in &filter_vec {
+            if !within_read(workspace, input_dir, fp) {
+                return Err(format!("筛选文件越出可读范围: {fp}（需在当前工作区或文件输入目录内）"));
+            }
+            if !std::path::Path::new(fp).is_file() {
+                return Err(format!("筛选文件不存在: {fp}"));
+            }
         }
         std::fs::create_dir_all(out_dir).map_err(|e| format!("创建输出目录失败: {e}"))?;
 
         prog.set("读入输入", 2.0, "读入输入");
         let data: LoadedData = load_input(
             input,
-            filter.as_deref(),
+            &filter_vec,
             args.get("layers").and_then(|v| v.as_i64()).unwrap_or(4),
             args.get("width").and_then(|v| v.as_f64()).unwrap_or(0.2),
             args.get("clearance").and_then(|v| v.as_f64()).unwrap_or(0.2),

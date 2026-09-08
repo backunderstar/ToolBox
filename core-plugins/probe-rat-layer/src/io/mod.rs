@@ -29,17 +29,17 @@ impl LoadedData {
     }
 }
 
-/// 按扩展名选 loader。
+/// 按扩展名选 loader。`filter_paths` 支持**多个筛选文件**（并集白名单）。
 pub fn load_input(
     path: &str,
-    filter_path: Option<&str>,
+    filter_paths: &[String],
     n_signal_layers: i64,
     width: f64,
     clearance: f64,
 ) -> Result<LoadedData, String> {
     let lower = path.to_lowercase();
     if lower.ends_with(".xlsx") || lower.ends_with(".xls") {
-        xlsx::load_xlsx(path, filter_path, n_signal_layers, width, clearance)
+        xlsx::load_xlsx(path, filter_paths, n_signal_layers, width, clearance)
     } else {
         Err("仅支持 .xls/.xlsx 表格输入（旧 JSON 加载器已移除）".to_string())
     }

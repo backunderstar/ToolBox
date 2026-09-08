@@ -702,6 +702,58 @@ API 后实施/取舍：
   真实数据 `1.xlsx`+`hv_all.lst`：平面网=0、1800 线、信号层 [1,2,3,4]（GND 未入 plane）。
 - ⚠️ **注**：当前 `hv_all.lst` 含 1800 个 HV 信号网、**无 GND/VDD 网名**——故本次改动对该数据集结果不变；GND 剔除、VDD 保留并布线仅在数据含 GND/电源网（且列在筛选文件里）时生效。筛选文件**强制必填**，不存在"不带筛选文件"路径。
 
+### 1.27 增量（2026-09-08：探针卡输入规则重定义——"不分类 / 只剔特殊网 / 筛选文件放最后"）
+
+用户对 §1.26 的过滤/分类规则重定义，**取代** §1.26 的"只剔 GND+单pin / VDD 保留并布线"与更早的
+`classify_net` 启发式分类（`io/xlsx.rs`）：
+
+- **不分类**：读 pin 表后不再按 net 名判 `Signal/Power/Ground`。其余保留的 net **一律当信号网**
+  （`net_class = Signal`），统一生成飞线、走信号层；不再有 GND 剔除 / Power plane 特殊处理。
+- **只剔特殊网**（新增 `io/xlsx.rs::should_drop_net`）：**空名 / `NC` / `GND`**（大小写不敏感，`=` 前缀可有可无，
+  如 `===NC` / `===Gnd` / 裸 `NC` / `GND`）→ 丢弃；单 pin（<2）无法成飞线仍跳过；其余**全部保留**。
+- **筛选文件放最后**：`.lst/.txt` 白名单作为**分层前的最后一道过滤**——先构建 nets（剔特殊网+单 pin），
+  **最后** `retain` 只保留列表内的 net，之后才生成默认信号组 + 飞线交给分层。筛选文件仍**强制必填**
+  （`dispatch.rs` 校验不变）。
+- 旧 `classify_net` / `_vdigit`（判 NC / GND / `V<digit>` 电源）已删除；`lib.rs` 测试
+  `classify_net_hv_signals_stay_signal` 改为 `drop_net_special_names`。
+- ⚠️ **注**：此规则下 `AGND / VSS / DGND / GROUND` 等"类地网"**不再当 Ground，会保留并按信号网处理**；
+  这些若也要丢需再扩 `should_drop_net` 名单。当前 `hv_all.lst` 无 GND/VDD 网名，结果不变。
+- 验证：`cargo test -p tb-probe-rat-layer --lib` **16+6 ignored** 全过 · `clippy -p --all-targets -- -D warnings` 0 告警 ·
+  `pnpm build:core` ✓（DLL + UI 部署到 `D:\ToolBoxData\plugins\_core\probe-rat-layer`，需全量重启生效）。
+
+### 1.28 增量（2026-09-08：修 .lst 筛选大小写敏感导致 0 net）
+
+用户用 `1165P_3D.xlsx` + `PWR_VDD1_SENSE.lst` 跑出 **0 net**。排查（用 `_read_rows` + 交叉匹配真实 xlsx）：
+- pin 表 `NET_NAME` 为**大写**（如 `1_SA2_S1_A_DPS_S1AX` @ 42596 行），而 `.lst` 为**小写**
+  （`1_SA2_S1_a_DPS_S1a`）。旧 `.lst` 匹配**大小写敏感**（`w.contains(&net_id)` 精确全等）→
+  "剔特殊网/单 pin 后 18647 个 net"全被白名单剔成 **0**。
+- 交叉匹配 `LIST/*.lst` 对 20670 唯一 net：多数是"0 精确匹配、**大小写不敏感 100% 匹配**"
+  （`PWR_VDD1_SENSE` 1165/1165、`AC_TDQ*` 1165/1165、`DC_VFSBLN_IN` 1165/1165 等）；
+  唯 `AC_MAX_Ctrl.lst` 大小写不敏感仍 **0/320**（该列表与这张板无关）。
+- **修复**：`read_net_filter`（.lst 文本 + .xls/.xlsx 表单两路径）读入网名**归一化为大写**；
+  `load_xlsx` 白名单 retain 改用 `net_id.to_uppercase()` 匹配 → **大小写不敏感**。
+  新增单测 `xlsx::tests::filter_names_normalized_uppercase`；警告改为"白名单筛选（大小写不敏感）"。
+  注：net_id 输出仍用 pin 表原始**大写**名（过滤只看归属，不改名）。
+- 验证：`cargo test -p tb-probe-rat-layer --lib` **17+6 ignored** 全过 · clippy 0 ·
+  real-data(`1.xlsx`+`hv_all.lst`) 仍 1800 网 · `pnpm build:core` 已部署（**需全量重启生效**）。
+
+### 1.29 增量（2026-09-08：支持多个筛选文件（并集白名单）+ 单 pin 澄清）
+
+用户澄清：`PWR_VDD1_SENSE.lst` 出 0 是**筛选文件选错**（该组网在 pin 表里是**单 pin**，本就无法布飞线），
+行为保持现状。新增**多选筛选文件**：
+- **后端**（`io/xlsx.rs`）：新增 `read_net_filters(paths)` 读多个文件取**并集**（大小写不敏感）；
+  `load_xlsx`/`load_input` 的 `filter_path: Option<&str>` 改为 `filter_paths: &[String]`；
+  `dispatch.rs` `layer.run` 的 `filter` 接受**字符串数组**（兼容单个字符串）：逐一校验
+  in-read/is-file，**至少一个必填**。
+- **前端**（`ui/App.vue` + `bridge.ts`）：`filterPath`（单）改 `filterPaths: string[]`；文件浏览器复用
+  并支持**多选**（筛选文件 picker 用多选模式，点选切换 / 确认"选择 N 个筛选文件"；**按当前目录计**，
+  跨目录会拼错路径故导航即清空；有"清空"按钮）；`layer.run` 发 `filter: [...]`；配置持久化存
+  `lastFilters: string[]`（兼容旧 `lastFilter` 字符串）。
+- 验证：union 单测（两个 .lst 并集 + 大小写归一化）、`load_xlsx` 实测
+  f1=`PWR_VDD1_IN`(640)+f2=`DC_VFR_Ctrl`(1165) → **并集 1805 nets / 1971 wires**；
+  `cargo test -p tb-probe-rat-layer --lib` **18+6 ignored** 全过 · clippy 0 · real-data 仍 1800 网 ·
+  `pnpm build:core` 已部署（**需全量重启生效**）。
+
 ---
 
 ## 2. 项目一句话

@@ -272,17 +272,24 @@ mod tests {
         }
     }
 
-    /// 校验 net 分类：HV 探针卡信号网不能因"V 后隔位出现数字"被误判为电源（回归）。
+    /// 校验待丢弃网名：空 / NC / GND（大小写不敏感，`=` 前缀可有可无）；其余一律保留（不分类）。
     #[test]
-    fn classify_net_hv_signals_stay_signal() {
-        use crate::io::xlsx::classify_net;
-        use crate::model::NetClass;
-        assert_eq!(classify_net("1_SA10_S1_A_HV_1"), Some(NetClass::Signal));
-        assert_eq!(classify_net("2_SA3_S2_B_HV_8X"), Some(NetClass::Signal));
-        assert_eq!(classify_net("GND"), Some(NetClass::Ground));
-        assert_eq!(classify_net("5V"), Some(NetClass::Signal)); // V 在末尾，无 V<digit>，Python 亦为 Signal
-        assert_eq!(classify_net("1V8"), Some(NetClass::Power)); // V<digit> 紧邻才是电源
-        assert_eq!(classify_net("NC"), None);
+    fn drop_net_special_names() {
+        use crate::io::xlsx::should_drop_net;
+        assert!(should_drop_net(""));
+        assert!(should_drop_net("   "));
+        assert!(should_drop_net("NC"));
+        assert!(should_drop_net("nc"));
+        assert!(should_drop_net("===NC"));
+        assert!(should_drop_net("GND"));
+        assert!(should_drop_net("Gnd"));
+        assert!(should_drop_net("===Gnd"));
+        assert!(!should_drop_net("1_SA10_S1_A_HV_1"));
+        assert!(!should_drop_net("2_SA3_S2_B_HV_8X"));
+        assert!(!should_drop_net("VDD"));
+        assert!(!should_drop_net("VCC"));
+        assert!(!should_drop_net("5V"));
+        assert!(!should_drop_net("1V8"));
     }
 
     /// 真实数据端到端（本地手工运行 `cargo test -- --ignored`）：确认修复后能正确分出信号层。
@@ -292,7 +299,7 @@ mod tests {
         let w = r"D:\ToolBoxData\Project\测试";
         let data = crate::io::load_input(
             &format!("{w}\\1.xlsx"),
-            Some(&format!("{w}\\hv_all.lst")),
+            &[format!("{w}\\hv_all.lst")],
             4,
             0.2,
             0.2,
@@ -373,7 +380,7 @@ mod tests {
         let w = r"D:\ToolBoxData\Project\测试";
         let data = crate::io::load_input(
             &format!("{w}\\1.xlsx"),
-            Some(&format!("{w}\\hv_all.lst")),
+            &[format!("{w}\\hv_all.lst")],
             4,
             0.2,
             0.2,
@@ -426,7 +433,7 @@ mod tests {
         let w = r"D:\ToolBoxData\Project\测试";
         let data = crate::io::load_input(
             &format!("{w}\\1.xlsx"),
-            Some(&format!("{w}\\hv_all.lst")),
+            &[format!("{w}\\hv_all.lst")],
             4,
             0.2,
             0.2,
@@ -475,7 +482,7 @@ mod tests {
         let w = r"D:\ToolBoxData\Project\测试";
         let data = crate::io::load_input(
             &format!("{w}\\1.xlsx"),
-            Some(&format!("{w}\\hv_all.lst")),
+            &[format!("{w}\\hv_all.lst")],
             4,
             0.2,
             0.2,
@@ -525,7 +532,7 @@ mod tests {
         let w = r"D:\ToolBoxData\Project\测试";
         let data = crate::io::load_input(
             &format!("{w}\\1.xlsx"),
-            Some(&format!("{w}\\hv_all.lst")),
+            &[format!("{w}\\hv_all.lst")],
             4,
             0.2,
             0.2,
@@ -589,7 +596,7 @@ mod tests {
         let w = r"D:\ToolBoxData\Project\测试";
         let data = crate::io::load_input(
             &format!("{w}\\1.xlsx"),
-            Some(&format!("{w}\\hv_all.lst")),
+            &[format!("{w}\\hv_all.lst")],
             20,
             8.0,
             0.2,

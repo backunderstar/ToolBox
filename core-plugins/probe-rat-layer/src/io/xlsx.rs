@@ -64,34 +64,16 @@ fn _read_rows(path: &str) -> Result<Vec<Vec<String>>, String> {
     Ok(out)
 }
 
-pub fn classify_net(name: &str) -> Option<NetClass> {
-    let u = name.to_uppercase().trim().to_string();
-    if u == "NC" {
-        return None;
+/// 是否应丢弃的网名：空 / NC（无连接）/ GND（地）。
+/// 匹配大小写不敏感，且允许零个或多个 `=` 前缀（如 `===NC`、`===Gnd`，或裸 `NC`/`GND`）。
+/// 探针卡数据中这些是特殊网，直接丢掉；**其余全部保留、不做 Signal/Power/Ground 分类，
+/// 统一按信号网处理**（后续仅交给筛选文件 .lst 决定是否参与）。
+pub fn should_drop_net(name: &str) -> bool {
+    let norm = name.trim().trim_start_matches('=').trim().to_uppercase();
+    if norm.is_empty() {
+        return true;
     }
-    for k in ["GND", "VSS", "AGND", "DGND", "SGND", "GROUND"] {
-        if u.contains(k) {
-            return Some(NetClass::Ground);
-        }
-    }
-    for k in ["VDD", "VCC", "VPP", "VREF", "AVDD", "DVDD", "PWR"] {
-        if u.contains(k) {
-            return Some(NetClass::Power);
-        }
-    }
-    // re.search(r"V\d", u)
-    if _vdigit(&u) {
-        return Some(NetClass::Power);
-    }
-    Some(NetClass::Signal)
-}
-
-fn _vdigit(u: &str) -> bool {
-    // 与 Python `re.search(r"V\d", u)` 一致：V 后**紧邻**一个数字才算电源（如 5V、V1）；
-    // 不能是"V 后任意位置出现数字"——否则 HV_1 这类探针卡信号网会被误判为电源。
-    u.as_bytes()
-        .windows(2)
-        .any(|w| w[0] == b'V' && w[1].is_ascii_digit())
+    norm == "NC" || norm == "GND"
 }
 
 fn _read_text_net_list(path: &str) -> Result<crate::collections::HashSet<String>, String> {
@@ -102,7 +84,8 @@ fn _read_text_net_list(path: &str) -> Result<crate::collections::HashSet<String>
         if v.is_empty() || v.starts_with('#') {
             continue;
         }
-        names.insert(v.to_string());
+        // 归一化为大写，与 pin 表 NET_NAME（大写）做大小写不敏感匹配
+        names.insert(v.to_uppercase());
     }
     Ok(names)
 }
@@ -121,7 +104,8 @@ fn _read_net_whitelist_table(path: &str) -> Result<crate::collections::HashSet<S
         if ["net", "net_name", "netname", "network", "名称", "网络", "net list"].contains(&v.to_lowercase().as_str()) {
             continue;
         }
-        names.insert(v);
+        // 归一化为大写，做大小写不敏感匹配（见表单路径说明）
+        names.insert(v.to_uppercase());
     }
     Ok(names)
 }
@@ -134,6 +118,17 @@ pub fn read_net_filter(path: &str) -> Result<crate::collections::HashSet<String>
     } else {
         _read_net_whitelist_table(path)
     }
+}
+
+/// 读**多个**筛选文件，取**并集**作为白名单（大小写不敏感，见 `read_net_filter` 归一化为大写）。
+pub fn read_net_filters(paths: &[String]) -> Result<crate::collections::HashSet<String>, String> {
+    let mut w = crate::collections::HashSet::default();
+    for p in paths {
+        for name in read_net_filter(p)? {
+            w.insert(name);
+        }
+    }
+    Ok(w)
 }
 
 fn _columns(header_row: &[String]) -> (usize, usize, usize, Option<usize>, Option<usize>) {
@@ -161,15 +156,17 @@ fn _columns(header_row: &[String]) -> (usize, usize, usize, Option<usize>, Optio
 
 pub fn load_xlsx(
     path: &str,
-    filter_path: Option<&str>,
+    filter_paths: &[String],
     n_signal_layers: i64,
     width: f64,
     clearance: f64,
 ) -> Result<LoadedData, String> {
     let mut warnings: Vec<String> = Vec::new();
-    let whitelist = match filter_path {
-        Some(p) => Some(read_net_filter(p)?),
-        None => None,
+    // 支持**多个筛选文件**：并集作为白名单（大小写不敏感，见 `read_net_filter` 归一化为大写）。
+    let whitelist: Option<crate::collections::HashSet<String>> = if filter_paths.is_empty() {
+        None
+    } else {
+        Some(read_net_filters(filter_paths)?)
     };
     let rows = _read_rows(path)?;
     if rows.is_empty() {
@@ -227,25 +224,18 @@ pub fn load_xlsx(
     let raw_count = net_pins.len();
     let mut net_keys: Vec<String> = net_pins.keys().cloned().collect();
     net_keys.sort();
+    // 先只剔特殊网（空 / NC / GND）与单 pin，其余全部当信号网保留（不分类）。
     for net in net_keys {
         let pins = net_pins.remove(&net).unwrap();
-        let Some(nc) = classify_net(&net) else {
-            continue; // NC 直接删
-        };
-        if nc == NetClass::Ground {
-            continue; // GND 剔除：不进 nets、不参与分层、不出现在 plane 报告
-        }
-        if let Some(w) = &whitelist {
-            if !w.contains(&net) {
-                continue; // 白名单外全部不要
-            }
+        if should_drop_net(&net) {
+            continue; // 空 / NC / GND（含 === 前缀）丢弃
         }
         if pins.len() < 2 {
             continue; // 单 pin 无法成飞线
         }
         nets.push(Net {
             net_id: net.clone(),
-            net_class: nc,
+            net_class: NetClass::Signal, // 不分类：其余全部当信号网
             signal_group_id: None,
             net_group_id: None,
             pins,
@@ -253,17 +243,20 @@ pub fn load_xlsx(
             clearance,
         });
     }
-    if whitelist.is_some() {
+    // 筛选文件（.lst/.txt）放**最后一步**：分层前剔除不在并集白名单内的 net（**大小写不敏感**）。
+    if let Some(w) = &whitelist {
+        let before = nets.len();
+        nets.retain(|n| w.contains(&n.net_id.to_uppercase()));
         warnings.push(format!(
-            "白名单筛选：保留 {} 个 net（原始 {} 个）",
-            nets.len(),
-            raw_count
+            "白名单筛选（{} 个筛选文件，大小写不敏感）：保留 {} 个 net（原始 {raw_count} 个，剔特殊网/单 pin 后 {before} 个）",
+            filter_paths.len(),
+            nets.len()
         ));
     }
 
     let sig_nets: Vec<Net> = nets
         .iter()
-        .filter(|n| matches!(n.net_class, NetClass::Signal | NetClass::Power))
+        .filter(|n| n.net_class == NetClass::Signal)
         .cloned()
         .collect();
     let groups = vec![SignalGroup {
@@ -286,4 +279,40 @@ pub fn load_xlsx(
 
 fn _cell_f64_str(s: &str) -> Option<f64> {
     s.parse::<f64>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 筛选文件匹配应大小写不敏感：读入后归一化为大写（与 pin 表 NET_NAME 大写对齐）。
+    #[test]
+    fn filter_names_normalized_uppercase() {
+        let dir = std::env::temp_dir().join(format!("tb-prl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("f.lst");
+        std::fs::write(&p, "net_a\n.NET_B\n# comment\n\n").unwrap();
+        let s = read_net_filter(p.to_str().unwrap()).unwrap();
+        assert!(s.contains("NET_A"), "小写应归一化为大写");
+        assert!(s.contains(".NET_B"));
+        assert_eq!(s.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 多个筛选文件取**并集**，且大小写不敏感（归一化为大写）。
+    #[test]
+    fn filters_union_case_insensitive() {
+        let dir = std::env::temp_dir().join(format!("tb-prl2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f1 = dir.join("a.lst");
+        let f2 = dir.join("b.lst");
+        std::fs::write(&f1, "NET_A\nNET_B").unwrap();
+        std::fs::write(&f2, "net_b\nNET_C\n# comment\n").unwrap();
+        let u = read_net_filters(&[f1.to_string_lossy().into(), f2.to_string_lossy().into()]).unwrap();
+        assert!(u.contains("NET_A"));
+        assert!(u.contains("NET_B")); // 两文件共有（小写归一化后合并）
+        assert!(u.contains("NET_C"));
+        assert_eq!(u.len(), 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

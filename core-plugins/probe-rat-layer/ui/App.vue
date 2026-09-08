@@ -31,7 +31,8 @@ const configured = ref(false);
 
 /* ---------- 输入设置 ---------- */
 const inputPath = ref("");
-const filterPath = ref("");
+/** 支持**多个筛选文件**（并集白名单）：数组保存所选 .lst/.txt 路径 */
+const filterPaths = ref<string[]>([]);
 const outDir = ref("");
 const layers = ref(4);
 const width = ref(0.2);
@@ -224,6 +225,10 @@ const browserPath = ref("");
 const browserEntries = ref<DirEntry[]>([]);
 const browserBusy = ref(false);
 const browserSelected = ref<string | null>(null);
+/* 浏览器用途：input=单选输入文件 / filter=多选筛选文件 / outdir=选目录 */
+const browserKind = ref<"input" | "filter" | "outdir">("input");
+const browserSel = ref<string[]>([]); // filter 多选暂存
+const browserMulti = computed(() => browserKind.value === "filter");
 /* 当前工作区（宿主注入）：文件操作只允许在这个根目录下进行 */
 const workspaceRoot = props.api.context.vault ?? "";
 /* 文件输入（Inbox，数据根/Input）：待处理文件（如 Allegro pin 表）可只读浏览 */
@@ -234,11 +239,18 @@ const browserSource = ref<BrowseSource>("workspace");
 const sourceRoot = computed(() => (browserSource.value === "input" ? inputDir : workspaceRoot));
 const hasInputRoot = computed(() => !!inputDir);
 
-async function openBrowser(mode: "file" | "dir", title: string, startPath: string): Promise<void> {
+async function openBrowser(
+  mode: "file" | "dir",
+  title: string,
+  startPath: string,
+  kind: "input" | "filter" | "outdir" = "input",
+): Promise<void> {
   browserMode.value = mode;
   browserTitle.value = title;
   browserOpen.value = true;
+  browserKind.value = kind;
   browserSelected.value = null;
+  browserSel.value = [];
   browserSource.value = "workspace";
   await navigateBrowser(startPath || workspaceRoot);
 }
@@ -246,6 +258,7 @@ async function openBrowser(mode: "file" | "dir", title: string, startPath: strin
 async function navigateBrowser(path: string): Promise<void> {
   browserBusy.value = true;
   browserSelected.value = null;
+  browserSel.value = []; // 多选按当前目录计（名字拼接需同目录，避免跨目录拼错路径）
   try {
     const entries = (await props.api.call("layer.listDir", { path })) as DirEntry[];
     browserPath.value = path ?? "";
@@ -286,18 +299,30 @@ function pickEntry(entry: DirEntry): void {
     if (browserMode.value === "dir") browserSelected.value = entry.name;
     return; // 文件模式点目录只做进入（双击）
   }
-  if (browserMode.value === "file") browserSelected.value = entry.name;
+  if (browserMode.value === "file") {
+    if (browserMulti.value) {
+      // 多选：切换该文件是否在名单内
+      const i = browserSel.value.indexOf(entry.name);
+      if (i >= 0) browserSel.value.splice(i, 1);
+      else browserSel.value.push(entry.name);
+    } else {
+      browserSelected.value = entry.name;
+    }
+  }
 }
 
 function confirmBrowser(): void {
   if (browserMode.value === "file") {
-    if (!browserSelected.value) return;
     const base = browserPath.value ? browserPath.value.replace(/\\$/, "") : "";
-    const full = base ? `${base}\\${browserSelected.value}` : browserSelected.value;
-    if (browserTitle.value.includes("输入")) {
-      inputPath.value = full;
+    if (browserMulti.value) {
+      // 多选筛选文件：把选中的文件名拼成完整路径
+      if (!browserSel.value.length) return;
+      filterPaths.value = browserSel.value.map((n) => (base ? `${base}\\${n}` : n));
     } else {
-      filterPath.value = full;
+      if (!browserSelected.value) return;
+      const full = base ? `${base}\\${browserSelected.value}` : browserSelected.value;
+      if (browserKind.value === "input") inputPath.value = full;
+      else outDir.value = full;
     }
   } else {
     if (!browserPath.value) return;
@@ -313,8 +338,8 @@ async function completeSetup(): Promise<void> {
     inputError.value = "请先选择 Allegro pin 表数据文件（必填）";
     return;
   }
-  if (!filterPath.value.trim()) {
-    inputError.value = "请先选择筛选文件（必填；一行一个待分层 net）";
+  if (!filterPaths.value.length) {
+    inputError.value = "请先选择至少一个筛选文件（必填；一行一个待分层 net，可多选并集）";
     return;
   }
   try {
@@ -323,7 +348,7 @@ async function completeSetup(): Promise<void> {
       patch: {
         configured: true,
         lastInput: inputPath.value.trim(),
-        lastFilter: filterPath.value.trim(),
+        lastFilters: [...filterPaths.value],
         lastOutDir: outDir.value.trim(),
         ...collectParams(),
       },
@@ -425,8 +450,8 @@ async function startRun(): Promise<void> {
     activeTab.value = "input";
     return;
   }
-  if (!filterPath.value.trim()) {
-    inputError.value = "请选择筛选文件（必填；.lst/.txt/.xls/.xlsx，一行一个待分层 net）";
+  if (!filterPaths.value.length) {
+    inputError.value = "请选择至少一个筛选文件（必填；.lst/.txt/.xls/.xlsx，一行一个待分层 net，可多选并集）";
     activeTab.value = "input";
     return;
   }
@@ -441,7 +466,7 @@ async function startRun(): Promise<void> {
   try {
     const r = (await props.api.call("layer.run", {
       input: inputPath.value.trim(),
-      filter: filterPath.value.trim() || undefined,
+      filter: filterPaths.value.length ? [...filterPaths.value] : undefined,
       outDir: outDir.value.trim(),
       layers: layers.value,
       width: width.value,
@@ -457,7 +482,7 @@ async function startRun(): Promise<void> {
       action: "set",
       patch: {
         lastInput: inputPath.value.trim(),
-        lastFilter: filterPath.value.trim(),
+        lastFilters: [...filterPaths.value],
         lastOutDir: outDir.value.trim(),
         ...collectParams(),
       },
@@ -629,7 +654,13 @@ void (async () => {
     const s = r.settings;
     configured.value = !!(s && typeof s === "object" && s.configured === true);
     if (typeof s.lastInput === "string" && s.lastInput) inputPath.value = s.lastInput;
-    if (typeof s.lastFilter === "string" && s.lastFilter) filterPath.value = s.lastFilter;
+    if (Array.isArray(s.lastFilters)) {
+      filterPaths.value = s.lastFilters.filter(
+        (x: unknown): x is string => typeof x === "string" && x.trim().length > 0,
+      );
+    } else if (typeof s.lastFilter === "string" && s.lastFilter) {
+      filterPaths.value = [s.lastFilter]; // 兼容旧配置（单一筛选文件）
+    }
     if (typeof s.lastOutDir === "string" && s.lastOutDir) outDir.value = s.lastOutDir;
     if (s && typeof s === "object" && "preset" in s) {
       applyParams(s); // 恢复上次预设与全部参数（含 layers/width/clearance）
@@ -672,7 +703,7 @@ void (async () => {
 let persistTimer: number | null = null;
 watch(
   () => [
-    inputPath.value, filterPath.value, outDir.value,
+    inputPath.value, filterPaths.value, outDir.value,
     presetName.value, layers.value, width.value, clearance.value,
     method.value, optimizer.value, resolveConflictRounds.value,
     balanceLengthRounds.value, minimizeCrossingsPasses.value, saRestarts.value,
@@ -688,7 +719,7 @@ watch(
         action: "set",
         patch: {
           lastInput: inputPath.value.trim(),
-          lastFilter: filterPath.value.trim(),
+          lastFilters: [...filterPaths.value],
           lastOutDir: outDir.value.trim(),
           ...collectParams(),
         },
@@ -720,7 +751,7 @@ onBeforeUnmount(() => {
           <label class="prl-label">Allegro pin 表数据文件（.xls/.xlsx）— 必填</label>
           <div class="prl-row">
             <input v-model="inputPath" class="prl-input" placeholder="如 D:\...\in\1.xlsx" />
-            <button class="prl-btn" @click="openBrowser('file', '选择输入文件', '')">浏览</button>
+            <button class="prl-btn" @click="openBrowser('file', '选择输入文件', '', 'input')">浏览</button>
           </div>
           <p class="prl-hint">
             文件可在当前工作区或「文件输入」目录中浏览选择——通常 Allegro 导出的文件先放到
@@ -764,27 +795,35 @@ onBeforeUnmount(() => {
           <label class="prl-label">输入 1：Allegro pin 表（.xls/.xlsx）</label>
           <div class="prl-row">
             <input v-model="inputPath" class="prl-input" placeholder="D:\...\in\1.xlsx" />
-            <button class="prl-btn" @click="openBrowser('file', '选择输入文件', '')">浏览</button>
+            <button class="prl-btn" @click="openBrowser('file', '选择输入文件', '', 'input')">浏览</button>
           </div>
         </div>
         <div class="prl-field">
           <label class="prl-label">
-            输入 2：筛选文件（必填；.lst/.txt 一行一个 net，空行/# 注释跳过；也可 .xls/.xlsx 表）
+            输入 2：筛选文件（必填；.lst/.txt 一行一个 net，空行/# 注释跳过；可**多选**，多个取并集）
           </label>
           <div class="prl-row">
-            <input v-model="filterPath" class="prl-input" placeholder="D:\...\filter_example.lst" />
-            <button class="prl-btn" @click="openBrowser('file', '选择筛选文件', '')">浏览</button>
+            <button class="prl-btn" @click="openBrowser('file', '选择筛选文件', '', 'filter')">
+              浏览(可多选)
+            </button>
+            <button v-if="filterPaths.length" class="prl-btn prl-btn-sm" @click="filterPaths = []">
+              清空
+            </button>
           </div>
+          <p v-if="filterPaths.length" class="prl-hint">
+            已选 {{ filterPaths.length }} 个：{{ filterPaths.join("；") }}
+          </p>
+          <p v-else class="prl-hint">尚未选择筛选文件（必填）</p>
           <p class="prl-hint">
             不在筛选文件里的 net 全部不要；建议均匀覆盖圆各扇区（只圈一个扇区会全挤圆心）。
-            想控制规模/提速可先抽样导出一份筛选用 lst。
+            想一次圈多组网一起分层，就**多选**几个文件（名单取并集）。
           </p>
         </div>
         <div class="prl-field">
           <label class="prl-label">输出目录（必填，强制指定）</label>
           <div class="prl-row">
             <input v-model="outDir" class="prl-input" placeholder="D:\...\out_demo" />
-            <button class="prl-btn" @click="openBrowser('dir', '选择输出目录', '')">浏览</button>
+            <button class="prl-btn" @click="openBrowser('dir', '选择输出目录', '', 'outdir')">浏览</button>
           </div>
           <p class="prl-hint">必须在当前工作区内；未创建会自动创建。产出 report.json / layer_N.lst / csv 等</p>
         </div>
@@ -1001,7 +1040,7 @@ onBeforeUnmount(() => {
         </div>
         <p class="prl-meta">
           输入：{{ inputPath || "（未选择）" }}
-          <template v-if="filterPath"> ｜ 筛选：{{ filterPath }}</template>
+          <template v-if="filterPaths.length"> ｜ 筛选({{ filterPaths.length }})：{{ filterPaths.join("；") }}</template>
           <br />输出：{{ outDir || "（未指定）" }} ｜ 层数 {{ layers }} / 线宽 {{ width }} / 线距 {{ clearance }}
         </p>
         <p v-if="presetName === 'custom' && congestionHardThreshold < 1.5" class="prl-warn prl-warn-inline">
@@ -1175,12 +1214,13 @@ onBeforeUnmount(() => {
               v-for="e in browserEntries"
               :key="e.name"
               class="prl-browser-item"
-              :class="{ selected: browserSelected === e.name, dir: e.isDir }"
+              :class="{ selected: browserMulti ? browserSel.includes(e.name) : browserSelected === e.name, dir: e.isDir }"
               @click="pickEntry(e)"
               @dblclick="enterDir(e)"
             >
               <span class="prl-browser-icon">{{ e.isDir ? "📁" : "📄" }}</span>
               <span class="prl-browser-name">{{ e.name }}</span>
+              <span class="prl-browser-multi" v-if="browserMulti && !e.isDir">{{ browserSel.includes(e.name) ? "✓" : "" }}</span>
               <span v-if="!e.isDir && e.size != null" class="prl-browser-size">{{ (e.size / 1024).toFixed(0) }} KB</span>
             </div>
             <div v-if="!browserEntries.length" class="prl-empty">（空目录）</div>
@@ -1192,6 +1232,12 @@ onBeforeUnmount(() => {
             class="prl-btn prl-btn-primary"
             @click="confirmBrowser"
           >选择此目录</button>
+          <button
+            v-else-if="browserMode === 'file' && browserMulti"
+            class="prl-btn prl-btn-primary"
+            :disabled="!browserSel.length"
+            @click="confirmBrowser"
+          >选择 {{ browserSel.length }} 个筛选文件</button>
           <button
             v-else-if="browserMode === 'file' && browserSelected"
             class="prl-btn prl-btn-primary"
@@ -1496,5 +1542,6 @@ onBeforeUnmount(() => {
 .prl-browser-item.selected { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .prl-browser-icon { flex: none; }
 .prl-browser-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prl-browser-multi { flex: none; font-weight: 700; color: var(--accent); margin-left: 6px; }
 .prl-browser-size { flex: none; font-size: 11px; color: var(--fg-faint); }
 </style>

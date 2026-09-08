@@ -5,7 +5,9 @@
 
 ## 作用
 
-Allegro pin 表（xls/xlsx）+ 筛选文件（.lst/.txt）→ 分层 →
+Allegro pin 表（xls/xlsx）→ 剔特殊网（空/NC/GND，含 `===` 前缀）与单 pin、其余**不分类一律当信号网**
+→ 按筛选文件（.lst/.txt）保留（**分层前最后一步**，**大小写不敏感**、与 pin 表 NET_NAME 对齐；
+支持**多选多个文件**，名单取**并集**）→ 分层 →
 `layer_N.lst`（供 Allegro 导入）+ `report.json` + CSV。自带 Vue 前端（`ui/`，侧边栏「探针卡分层」）。
 
 ## 分层算法（方案 B：效率+质量）
@@ -32,7 +34,7 @@ Allegro pin 表（xls/xlsx）+ 筛选文件（.lst/.txt）→ 分层 →
 dispatch.rs   命令分发 + 后台任务引擎 + 状态恢复（对应宿主动态库的 tb_call）
   ├─ layer.listDir/config/run/status/cancel/result/readOut/render/openOut/report/notifyDone/plugin.action
   └─ 后台线程：load → pipeline::run（进度/取消）→ report 导出 → jobs/<id> 落盘
-pipeline.rs   编排（run_once：分离电源地 → 拥塞 → 冲突检测 → 分层 → 后处理）
+pipeline.rs   编排（run_once：分信号/电源地(实际 GND 已剔除、Power 当信号) → 拥塞 → 冲突检测 → 分层 → 后处理）
 io/           calamine 读 xlsx（.xls/.xlsx 表格）/ Prim MST 飞线
 config/模型      LayeringConfig + 数据模型（model.rs）
 core 算法模块    geometry/keepout/congestion/conflict_classifier/layer_packing/
@@ -46,6 +48,9 @@ viz.rs        plotters 按需渲染 layer/overview/rose/manual → PNG(base64 da
 命令：`layer.listDir` `layer.config` `layer.run` `layer.status` `layer.cancel`
 `layer.result` `layer.readOut` `layer.render` `layer.openOut` `layer.report`
 `layer.notifyDone` `plugin.action`。
+
+`layer.run` 参数：`input`=pin 表（.xls/.xlsx）；`filter`=**筛选文件路径或多个（数组取并集）**；
+`outDir`=输出目录（必填）；`layers`/`width`/`clearance`/`config`=分层与算法参数。
 
 事件：`layer.progress`（实时补充）`layer.done` `layer.cancelled` `layer.failed`。
 

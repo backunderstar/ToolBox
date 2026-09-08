@@ -24,7 +24,8 @@ export interface DirEntry {
 
 export interface RunArgs {
   input: string;
-  filter?: string;
+  /** 单个筛选文件路径，或**多个**（取并集作为白名单） */
+  filter?: string | string[];
   outDir: string;
   layers?: number;
   width?: number;
