@@ -41,6 +41,14 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
     （优先任一来源非 `system` 真实值）→ 仅设置 `themeId` 渲染，**读取不落盘**；
   - 回退 watch 改为**纯渲染兜底**（皮肤插件被禁用/卸载、无效自定义才就地渲染默认/跟随系统），
     **不再改写 `themeId`**（改写会连带触发再应用+再落盘，正是历史上把 id 改成 `system` 的源头）。
+- **消除启动白闪**：启动瞬间插件未加载、`applyTheme(暗色皮肤)` 找不到主题时会退到硬编码 `light`（白），
+  等插件就绪才翻暗色，splash `background: var(--bg)` 此时也是浅色。改为：
+  - `setThemeId` 选择主题时把其**基础模式（dark/light）**一并持久化（`toolbox.theme.base`）；
+  - **`index.html` `<head>` 内联脚本在首个 CSS/module 加载前**读取该 base，立即给 `<html>` 上
+    `data-theme` 与背景色——暗色皮肤用户启动即暗色，无需等插件解析；
+  - `applyTheme` 找不到主题时改按**持久化的 base**（而非硬编码 `light`）打底；
+  - 启动时对只有旧主题 id、尚无 base 的用户**回填一次** base（只写 base，不写 id，不影响持久化）；
+  - splash 淡出 + 主界面淡入平滑过渡（`.boot-fade` / `.app-fade-in`），不再"蹦出来"。
 
 ## [0.4.3] — 2026-09-04
 

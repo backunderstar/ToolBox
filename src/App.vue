@@ -23,6 +23,7 @@ import {
   applyTheme,
   getInitialTheme,
   resolveAuthoritativeTheme,
+  persistThemeBaseFor,
   setThemeId,
   toggleTheme,
   getThemeBase,
@@ -221,6 +222,9 @@ onMounted(() => {
     }
     const localTheme = getInitialTheme();
     themeId.value = resolveAuthoritativeTheme(rustTheme, localTheme);
+    // 回填主题基础模式（只写 base，不写 id）：老用户只有主题 id 尚缺 BASE_KEY，
+    // 启动补一次，下次即可提前固定底色不再白闪；不影响 id 持久化。
+    persistThemeBaseFor(themeId.value);
     // 运行时追踪（只读恢复，不落盘）：确认启动解出了正确的权威主题。
     console.error(
       `[theme] boot rust=${JSON.stringify(rustTheme)} local=${JSON.stringify(localTheme)}` +
@@ -418,7 +422,7 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
       </div>
     </Transition>
 
-    <div class="app" data-part="app">
+    <div class="app" data-part="app" :class="{ 'app-fade-in': booted }">
       <TopBar
         :theme="themeMode"
         :on-toggle-theme="toggleThemeMode"
@@ -497,9 +501,12 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
     </template>
     <PromptHost />
   </ErrorBoundary>
-  <!-- 启动加载过渡动画：从 Rust 读取持久化配置（主题）+ 插件就绪后隐藏 -->
-  <div v-if="!booted" class="boot-splash" role="status">
-    <div class="boot-splash-spinner" aria-hidden="true"></div>
-    <div class="boot-splash-text">正在启动 ToolBox…</div>
-  </div>
+  <!-- 启动加载过渡动画：从 Rust 读取持久化配置（主题）+ 插件就绪后隐藏。
+       避免主界面"突然蹦出"，splash 淡出、主界面淡入（平滑过渡）。 -->
+  <Transition name="boot-fade">
+    <div v-if="!booted" class="boot-splash" role="status">
+      <div class="boot-splash-spinner" aria-hidden="true"></div>
+      <div class="boot-splash-text">正在启动 ToolBox…</div>
+    </div>
+  </Transition>
 </template>

@@ -184,3 +184,21 @@ body,
 @keyframes boot-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ═══ 启动 → 主界面平滑过渡：splash 淡出 + 主界面淡入（不突兀） ═══ */
+.boot-fade-enter-active,
+.boot-fade-leave-active {
+  transition: opacity 240ms var(--ease);
+}
+.boot-fade-enter-from,
+.boot-fade-leave-to {
+  opacity: 0;
+}
+/* 主界面进场淡入（首帧不再"蹦出来"） */
+.app-fade-in {
+  animation: app-in 240ms var(--ease) both;
+}
+@keyframes app-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

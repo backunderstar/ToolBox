@@ -58,6 +58,10 @@ const STORAGE_KEY = "toolbox.theme";
 const CUSTOM_KEY = "toolbox.custom-themes";
 /** 后端持久化（app.json）中的主题 id 键：比 localStorage 更可靠（可跨重启/不被旧启动逻辑覆盖） */
 const APP_THEME_KEY = "theme";
+/** 所选主题的**基础模式**（dark/light）持久化键：随主题 id 一起保存。
+ *  启动时插件未解析前，用它**提前固定底色**（splash/首帧不再白闪），
+ *  不必等插件主题解析出 tokens。 */
+const BASE_KEY = "toolbox.theme.base";
 
 /* ---------------- 跟随系统模式 ---------------- */
 
@@ -102,14 +106,43 @@ export function persistThemeId(id: string): void {
   void appSettingsSet(APP_THEME_KEY, id).catch(() => undefined);
 }
 
+/** 读取持久化的主题**基础模式**（dark/light）。启动时插件未解析前，splash 用它
+ *  提前固定底色，避免白闪。未存储/失效时按亮色（与无主题默认一致）。 */
+export function getStoredThemeBase(): ThemeMode {
+  try {
+    const v = localStorage.getItem(BASE_KEY);
+    if (v === "dark" || v === "light") return v;
+  } catch {
+    /* 受限存储：按亮色默认 */
+  }
+  return "light";
+}
+
+/** 按主题 id 计算并写盘其基础模式（**只写 base，绝不写主题 id**）——供启动时：
+ *  老用户只有主题 id、还没有 BASE_KEY，启动时回填一次，下次启动即可提前固定底色。
+ *  只写 base 不会覆盖/冲掉用户选择的主题 id（这正是"启动不落盘 id"要求的边界：base 是
+ *  派生的渲染优化值，与 id 解耦）。 */
+export function persistThemeBaseFor(id: string): void {
+  const base = getThemeBase(id);
+  try {
+    localStorage.setItem(BASE_KEY, base);
+  } catch {
+    /* 忽略 */
+  }
+  void appSettingsSet("themeBase", base).catch(() => undefined);
+}
+
 /** **唯一持久化入口**：用户显式选择主题时调用（设置页 / 引导页 / 顶栏切换）。
  *  与 `applyTheme`（纯视觉、不持久化）解耦——保证主题 id 只在"用户真实选择"这一
- *  个时机被写盘，启动/插件重放无论何时都不落盘，杜绝把回退值（如 system）写回覆盖。 */
+ *  个时机被写盘，启动/插件重放无论何时都不落盘，杜绝把回退值（如 system）写回覆盖。
+ *  同时把该主题的**基础模式**（dark/light）一并落盘，供启动时提前固定底色不再白闪。 */
 export function setThemeId(id: string): void {
   // 运行时追踪：console.error 由 main.ts 转发到 Rust 日志（[webview] 前缀），
   // 便于排查"主题不常驻"——确认唯一落盘时机确实是用户选择。
   console.error(`[theme] setThemeId -> ${JSON.stringify(id)}`);
   persistThemeId(id);
+  // 记录基础模式（getThemeBase 处理 system 解析与插件/custom 的 base），供启动提前固定底色
+  persistThemeBaseFor(id);
 }
 
 /* ---------------- 插件主题注册表（皮肤插件） ---------------- */
@@ -312,11 +345,14 @@ export async function applyTheme(id: string): Promise<void> {
       ` found=${theme ? "Y" : "N"} source=${theme?.source ?? "-"} pluginKey=resolveOnly`,
   );
   if (!theme) {
-    // 主题暂不可用（插件主题尚未加载 / 插件被禁用）：应用默认外观但
-    // **不覆盖持久化值**——避免启动瞬间插件未就绪时把用户的选择冲掉
-    applyThemeStyle("light", "default-light", {});
+    // 主题暂不可用（插件主题尚未加载 / 插件被禁用）：应用**持久化的基础模式**底色，
+    // 而非一律 light——用户选的是暗色皮肤（如 theme-midnight）时，启动瞬间 splash 与
+    // 首帧就从暗色开始，不再白闪；同时**不覆盖持久化值**（不落盘）。
+    const base = getStoredThemeBase();
+    const fallbackId = base === "dark" ? "default-dark" : "default-light";
+    applyThemeStyle(base, fallbackId, {});
     clearPluginCss();
-    syncCaptionColor(); // 标题栏回到默认（浅色）画布色
+    syncCaptionColor(); // 标题栏回到默认（按当前 base）画布色
     return;
   }
   applyThemeStyle(theme.base, resolved, theme.tokens);

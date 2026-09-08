@@ -815,6 +815,15 @@ dsatur 都**不降**（2210 / 2210 / 2349）——4 层同层交叉已近几何�
 - **运行时追踪**：`applyTheme`/`setThemeId`/启动 IIFE 加 `console.error('[theme] …')`（经 `main.ts`
   转发到 Rust 日志，`[webview]` 前缀），下次启动可看 `%APPDATA%\\com.toolbox.desktop\\logs\\toolbox-*.log`
   验证"唯一落盘时机=用户选择"。
+- **消除启动白闪（用户反馈"打开时白一小会"）**：启动瞬间插件未加载、`applyTheme(theme-midnight)`
+  找不到主题 → 旧逻辑硬编码 `light` 打底；等插件就绪才翻暗色；splash `background: var(--bg)` 此时也浅色。
+  改为"**提前固定底色**"：
+  - `setThemeId` 选择时把该主题**基础模式（dark/light）**一并持久化（`toolbox.theme.base`；
+    `persistThemeBaseFor` 派生 base，与 id 解耦）；
+  - **`index.html` `<head>` 内联脚本在首个 CSS/module 加载前**读 base → 给 `<html>` 设 `data-theme`
+    与背景色——暗色用户首帧即暗色，无需等插件解析（`getStoredThemeBase`/`applyTheme` 未解析分支用 base）；
+  - 启动 IIFE 对老用户**回填一次 base**（只写 base 不写 id，不触发"启动落盘 id"的边界）；
+  - splash 淡出 + 主界面淡入（`.boot-fade` / `.app-fade-in`，240ms）平滑过渡。
 - **测试**：`themes.test.ts` 新增 `setThemeId` 用例组（persist 插件主题后 `getInitialTheme` 读回原 id）；
   `resolveAuthoritativeTheme` 用例组保留。`pnpm test` 47 项全过、`lint` 0、`build` ✓。
 
