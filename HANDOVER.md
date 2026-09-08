@@ -837,6 +837,34 @@ dsatur 都**不降**（2210 / 2210 / 2349）——4 层同层交叉已近几何�
 > **用户需操作一次**：安装本版后重新选一次 `theme-midnight`（旧版曾把它错写回 `system`）。此后启动
 > 只读恢复、不落盘，真实值稳定常驻。建议升版 0.4.5 重打（当前 0.4.4 tag 已发布，本次为本地改动）。
 
+### 1.33 增量（2026-09-08：升版 0.4.5 + 启动画面与主题完全同色）
+
+用户确认主题常驻 OK 但启动仍"白一闪"（且希望 splash 背景跟随主题）。**x 处修复**：
+
+- **白闪真正根因（此前多轮"改底色"无效的最终答案）**：`tauri-plugin-window-state` 默认
+  `StateFlags::all()` **含 `VISIBLE`**，启动 `restore` 时会 `window.show()`——恰好绕过
+  `tauri.conf` 的 `visible:false`，把窗口在 WebView 未渲染前（白色）就显示出来。修法：
+  ```rust
+  .plugin(tauri_plugin_window_state::Builder::default()
+      .with_state_flags(SIZE | POSITION | MAXIMIZED)  // 不含 VISIBLE
+      .build())
+  ```
+  可见性完全交由前端延迟显示控制；尺寸/位置/最大化仍记忆。
+- **启动画面与主题完全同色（splash 精确 --bg）**：
+  - `themes.ts` 新增 `bgOf(id)`（取主题 `tokens["--bg"]`，无则按 base 默认 `#1b1a17`/`#f6f5f2`）、
+    `getStoredThemeBg()`、`setBootBackground(bg)`（设 `--boot-bg` CSS 变量 + body 内联底色）、
+    `clearBootBackground()`（主题解析成功并正式渲染后清体内联，交 tokens.css 接管）；
+  - `setThemeId`/`persistThemeBaseFor` 同时持久化 **`toolbox.theme.bg`**（精确色）与（Rust）
+    `app.json themeBg`；
+  - `.boot-splash` 背景改用 `var(--boot-bg, var(--bg))`（缺省回退 `--bg`）；
+  - Rust `theme_bg_rgb` 优先 `app.json themeBg`（精确色，解析 `#RRGGBB`），无则按 base 推断。
+- **验证**：`pnpm test` 49 项（新增 `bgOf`/`getStoredThemeBg` 用例组）、`lint` 0、`build` ✓、
+  `cargo test --workspace` 63 过、`cargo clippy --workspace --all-targets --no-deps --release -- -D warnings` 0。
+- **本地打包（路径 B 签名）**：`pnpm tauri build` → `target/release/bundle/nsis/ToolBox_0.4.5_x64-setup.exe`
+  + `.sig`；顺带 `node scripts/sync-version.mjs --check` 版本单源一致。
+- **推送**：更新 CHANGELOG/HANDOVER 后提交并推送 `main`；打 `v0.4.5` tag 推送，CI 走路径 A 发下发行版
+  与 `latest.json`（更新器可用）。
+
 ---
 
 ## 2. 项目一句话

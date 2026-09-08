@@ -166,7 +166,9 @@ body,
   align-items: center;
   justify-content: center;
   gap: var(--space-3);
-  background: var(--bg);
+  /* 主题精确画布色：applyTheme 启动时经 setBootBackground 设 --boot-bg（与主题 --bg 完全同色，
+     如 theme-midnight 的 #101418）；缺省回退 var(--bg)。避免 splash 只到 dark/light 近似。 */
+  background: var(--boot-bg, var(--bg));
   color: var(--fg);
 }
 .boot-splash-spinner {

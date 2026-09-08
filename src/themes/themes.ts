@@ -62,6 +62,10 @@ const APP_THEME_KEY = "theme";
  *  启动时插件未解析前，用它**提前固定底色**（splash/首帧不再白闪），
  *  不必等插件主题解析出 tokens。 */
 const BASE_KEY = "toolbox.theme.base";
+/** 所选主题的**精确画布背景色**（--bg，如 #101418）持久化键。
+ *  splash 背景用它做到与主题"完全同色"（而无痛只能到 dark/light 的近似），
+ *  对皮肤插件（theme-midnight 的 #101418）尤其吻合。 */
+const BG_KEY = "toolbox.theme.bg";
 
 /* ---------------- 跟随系统模式 ---------------- */
 
@@ -118,18 +122,31 @@ export function getStoredThemeBase(): ThemeMode {
   return "light";
 }
 
-/** 按主题 id 计算并写盘其基础模式（**只写 base，绝不写主题 id**）——供启动时：
- *  老用户只有主题 id、还没有 BASE_KEY，启动时回填一次，下次启动即可提前固定底色。
- *  只写 base 不会覆盖/冲掉用户选择的主题 id（这正是"启动不落盘 id"要求的边界：base 是
- *  派生的渲染优化值，与 id 解耦）。 */
+/** 读取持久化的主题**精确画布背景色**（#RRGGBB）。启动时插件未解析前，splash 用它
+ *  与主题**完全同色**（而非只到 dark/light 近似）。无值回退 base 默认色。 */
+export function getStoredThemeBg(): string {
+  try {
+    const v = localStorage.getItem(BG_KEY);
+    if (v && /^#[0-9a-f]{6}$/i.test(v)) return v;
+  } catch {
+    /* 受限存储：回退 */
+  }
+  return getStoredThemeBase() === "dark" ? "#1b1a17" : "#f6f5f2";
+}
+
+/** 按主题 id 计算并写盘其基础模式与**精确背景色**（只写 base/bg，绝不写主题 id）——
+ *  供启动时：老用户只有主题 id、尚未有 BASE_KEY/BG_KEY，启动回填一次，下次即可提前固定底色。
+ *  只写 base/bg 不会覆盖/冲掉用户选择的主题 id（与 id 解耦）。 */
 export function persistThemeBaseFor(id: string): void {
   const base = getThemeBase(id);
   try {
     localStorage.setItem(BASE_KEY, base);
+    localStorage.setItem(BG_KEY, bgOf(id));
   } catch {
     /* 忽略 */
   }
   void appSettingsSet("themeBase", base).catch(() => undefined);
+  void appSettingsSet("themeBg", bgOf(id)).catch(() => undefined);
 }
 
 /** **唯一持久化入口**：用户显式选择主题时调用（设置页 / 引导页 / 顶栏切换）。
@@ -238,6 +255,22 @@ export function getThemeBase(id: string): ThemeMode {
   return findTheme(id)?.base ?? "light";
 }
 
+/** 主题的画布背景色（--bg 值，#RRGGBB 或 CSS 定义）。任一主题都可用；解析失败回退 base 默认。
+ *  用于 splash 精确同色与原生窗口底色。 */
+export function bgOf(id: string): string {
+  // system：按系统亮暗取对应默认
+  if (id === SYSTEM_THEME_ID) {
+    return bgOf(resolveThemeId(id));
+  }
+  const theme = findTheme(id);
+  if (theme) {
+    const bg = theme.tokens["--bg"];
+    if (bg && /^#[0-9a-f]{6}$/i.test(bg)) return bg;
+  }
+  // 回退 base 默认（与 tokens.css 一致）
+  return getThemeBase(id) === "dark" ? "#1b1a17" : "#f6f5f2";
+}
+
 /** 保存/更新自定义主题（内置主题 id 拒绝覆盖——内置优先且不可被遮蔽；
  *  导入含内置 id 的主题时该条被跳过，避免"存了却永远不可见"的幽灵主题）。
  *  返回是否实际保存（内置 id 或写入失败返回 false）。 */
@@ -336,6 +369,24 @@ function clearPluginCss(): void {
  *  避免任何"启动打底色 / watch 重放把值写回"的时序污染。用户显式选择主题时由
  *  `setTheme()`（App 调用）持久化；启动恢复直接渲染 Rust/localStorage 读到的 id。
  *  不可解析（插件未就绪/被禁用）时应用默认外观并清除插件 css，但不改动持久化值。 */
+/** 在启动/主题未解析期间，把 splash 与 body 的底色设成**精确主题画布色**（--bg）。
+ *  用它替代仅"dark/light 近似"，让 theme-midnight 的启动画面就是其真正的 #101418。
+ *  仅设置 CSS 变量与 body 内联背景，不改 data-theme 逻辑（那仍由 applyThemeStyle 负责）。 */
+function setBootBackground(bg: string): void {
+  const root = document.documentElement;
+  // 覆盖 --boot-bg（splash 用），并给 body 直接上底色（防止任何白底闪现）
+  root.style.setProperty("--boot-bg", bg);
+  root.style.backgroundColor = bg;
+  document.body.style.background = bg;
+}
+
+/** 主题解析成功、正式渲染后清理启动期注入的 body 内联背景，改由 tokens.css
+ *  `body { background: var(--bg) }` 接管（避免内联覆盖随 data-theme 变化的正确底色）。
+ *  --boot-bg 保留，供 splash 淡出过渡期间仍与主题同色。 */
+function clearBootBackground(): void {
+  document.body.style.background = "";
+}
+
 export async function applyTheme(id: string): Promise<void> {
   const resolved = resolveThemeId(id);
   const theme = findTheme(resolved);
@@ -351,11 +402,16 @@ export async function applyTheme(id: string): Promise<void> {
     const base = getStoredThemeBase();
     const fallbackId = base === "dark" ? "default-dark" : "default-light";
     applyThemeStyle(base, fallbackId, {});
+    // 用**精确主题背景色**给 splash/body 铺底（而非仅 base 近似），与主题完全同色
+    setBootBackground(getStoredThemeBg());
     clearPluginCss();
     syncCaptionColor(); // 标题栏回到默认（按当前 base）画布色
     return;
   }
   applyThemeStyle(theme.base, resolved, theme.tokens);
+  // 正式渲染：--boot-bg 同步为精确画布色，同时清掉 body 内联背景，交给 tokens.css 接管
+  setBootBackground(bgOf(resolved));
+  clearBootBackground();
   if (theme.source === "plugin" && theme.css && theme.pluginId) {
     await loadPluginCss(theme.pluginId, theme.css, resolved);
   } else {

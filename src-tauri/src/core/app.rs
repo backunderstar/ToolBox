@@ -68,26 +68,44 @@ pub(crate) fn tray_enabled(app: &tauri::AppHandle) -> bool {
         .unwrap_or(true)
 }
 
-/// 解析主题基础模式 → 画布背景色（RGB u8）。用于**原生窗口背景色**：
+/// 解析主题 → 画布背景色（RGB u8）。用于**原生窗口背景色**：
 /// 启动瞬间 WebView 尚未渲染任何内容，CSP 又禁止 inline script，若窗口先以白色
 /// 出现会"白一闪"。这里在 setup 时把窗口底色设成用户所选主题的 base 色，从根上消除。
-/// 取 `themeBase`（前端 setThemeId 持久化）；缺省按 `theme` id 推断（default-dark/
-/// 暗色插件名暂无法精确判定 → 缺省亮色，仅影响个别冷启动底色，主题随后照常应用）。
-/// 返回 None = 让系统默认（亮色时也无所谓，白/浅都可接受）。
+/// 优先取 `themeBg`（前端 setThemeId 持久化的**精确** --bg 色，如 theme-midnight 的
+/// #101418）；无则按 `themeBase`（dark/light）/`theme` id 推断 base 色。
 pub(crate) fn theme_bg_rgb(app: &tauri::AppHandle) -> Option<(u8, u8, u8)> {
     let settings = load_app_settings(app);
     let theme = settings.get("theme").and_then(|v| v.as_str()).unwrap_or("");
     let base = settings.get("themeBase").and_then(|v| v.as_str()).unwrap_or("");
-    // base 显式持久化；缺省时按 theme id 推断已知暗色内置（default-dark）
+    let bg = settings
+        .get("themeBg")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    // 1) 精确画布色（前端持久化的 #RRGGBB，与主题 --bg 完全一致）
+    if let Some((r, g, b)) = parse_hex_triplet(bg) {
+        return Some((r, g, b));
+    }
+    // 2) 按 base 推断（显式或由 theme id 推断已知暗色内置）
     let is_dark = base.eq_ignore_ascii_case("dark")
         || (base.is_empty() && (theme == "default-dark" || theme == "system-dark"));
-    if is_dark {
-        // 与 tokens.css [data-theme="dark"] --bg (#1b1a17) 一致
-        Some((0x1b, 0x1a, 0x17))
+    // 3) 与 tokens.css 一致：暗色 --bg #1b1a17 / 亮色 --bg #f6f5f2
+    Some(if is_dark {
+        (0x1b, 0x1a, 0x17)
     } else {
-        // 亮色 / 显式 light / 无法判定（缺省亮）
-        Some((0xf6, 0xf5, 0xf2))
+        (0xf6, 0xf5, 0xf2)
+    })
+}
+
+/// 解析 #RRGGBB → (r, g, b)；非法返回 None（供 themeBg 精确色用）。
+fn parse_hex_triplet(s: &str) -> Option<(u8, u8, u8)> {
+    let h = s.trim().trim_start_matches('#');
+    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
     }
+    let r = u8::from_str_radix(&h[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&h[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&h[4..6], 16).ok()?;
+    Some((r, g, b))
 }
 
 /// 原子写单个设置键（临时文件 + rename，与 plugins.json 同风格防损坏）。

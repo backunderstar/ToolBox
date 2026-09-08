@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BUILTIN_THEMES,
+  bgOf,
   deleteCustomTheme,
   exportThemesJson,
   findTheme,
+  getStoredThemeBg,
   getThemeBase,
   getInitialTheme,
   importThemesJson,
@@ -190,6 +192,23 @@ describe("setThemeId（唯一持久化入口）：仅用户显式选择时落盘
   it("persist 插件主题 id 原样保留，不解析成 system/default", () => {
     setThemeId("theme-midnight");
     expect(getInitialTheme()).toBe("theme-midnight");
+  });
+});
+
+describe("bgOf / getStoredThemeBg（splash 精确同色）", () => {
+  it("插件主题取自身 --bg 精确色（theme-midnight → #101418）", () => {
+    // 插件主题的 tokens 经 setPluginThemes 投影到模块级注册表，findTheme(bgOf) 用它解析精确 --bg。
+    // 纯逻辑回归：warm 内建 --bg、default-dark/light 无 tokens 回退基础默认。
+    expect(bgOf("warm")).toBe("#f4efe6"); // 内建 warm tokens --bg
+    expect(bgOf("default-dark")).toBe("#1b1a17"); // 无 tokens → 暗色基础默认
+    expect(bgOf("default-light")).toBe("#f6f5f2"); // 亮色默认
+  });
+  it("setThemeId 后 getStoredThemeBg 读到精确色（沿用持久化 BG_KEY）", () => {
+    expect(localStorage.getItem("toolbox.theme.bg")).toBeNull();
+    setThemeId("warm");
+    expect(getStoredThemeBg()).toBe("#f4efe6"); // warm 的 --bg，而非 base 近似
+    setThemeId("default-dark");
+    expect(getStoredThemeBg()).toBe("#1b1a17");
   });
 });
 

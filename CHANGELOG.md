@@ -5,6 +5,36 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 
 > 详细的开发记录见 [HANDOVER.md](HANDOVER.md)；里程碑规划见 [PLAN.md](PLAN.md)。
 
+## [0.4.5] — 2026-09-08
+
+**主题持久化彻底修复（皮肤主题重启常驻）** + **消除启动白闪** + **皮肤主题/启动画面完全同色**。
+
+### 变更
+
+- **主题持久化重写（皮肤主题重启常驻）**：把"渲染"与"落盘"解耦——`applyTheme` 改为**纯视觉、
+  永不持久化**；主题 id 只在**用户显式选择**时经新入口 `setThemeId`（设置页/引导页/顶栏切换）
+  落盘。从而杜绝"启动打底色 / plugin 就绪重放"把回退值（如 `system`）写回、覆盖用户保存的
+  `theme-midnight`。
+- **启动恢复只读**：启动 IIFE 从 **Rust app.json** 权威读取主题（`resolveAuthoritativeTheme` 优先
+  任意来源非 `system` 真实值），仅设置 `themeId` 渲染、**不落盘**；回退 watch 改**纯渲染兜底**，
+  不再改写 `themeId`（历史上正是它把 id 改成 `system` 又落盘）。
+- **消除启动白闪（延迟显示窗口）**：主窗口 `visible:false` 启动即隐藏；前端在主题已解析、dark
+  splash 已绘制后 `window.show()`——用户看到的是所选主题底色的"正在启动"动画，绝不先冒白。
+  ⚠️ 关键：`window-state` 插件默认 `StateFlags::all()` 含 `VISIBLE`，恢复时会重新 `show()` 窗口、
+  恰好绕过 `visible:false`（白闪仍在的根源）。改为 `with_state_flags(SIZE|POSITION|MAXIMIZED)`
+  **不含 VISIBLE**，可见性完全交由前端延迟显示控制。
+- **原生窗口底色**：`lib.rs setup` 用 `theme_bg_rgb` 读 `app.json` 的 `themeBase/theme`（含精确
+  `themeBg`）设 `set_background_color`，双重保险；Rust 侧 **4s 兜底强制显示**（前端异常不卡死）。
+- **启动画面与主题完全同色**：`setThemeId` 把所选主题的**精确画布背景色**（`--bg`，如
+  `theme-midnight` 的 `#101418`）一并持久化（`toolbox.theme.bg`/Rust `themeBg`）；splash 背景改用
+  `var(--boot-bg)`（启动时由 `setBootBackground` 设为主题精确色），不再只近似的 dark/light。
+- **启动过渡**：splash 淡出 + 主界面淡入（`.boot-fade` / `.app-fade-in`，240ms），不再"蹦出来"。
+
+### 修复
+
+- **启动白闪**：此前尝试在 `index.html` 内联脚本提前上色，但被 CSP `script-src 'self'` 拦截、
+  生产包不生效，已移除；改为原生窗口底色 + 延迟显示窗口（真正生效）。
+
 ## [0.4.4] — 2026-09-08
 
 探针卡分层**net 输入规则重做** + **筛选文件大小写不敏感 / 多选并集** + **已选筛选文件 UI 改进** + **宿主进程免黑窗口**。
