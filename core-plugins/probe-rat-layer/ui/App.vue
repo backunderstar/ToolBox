@@ -331,6 +331,16 @@ function confirmBrowser(): void {
   browserOpen.value = false;
 }
 
+/** 取路径末段文件名（展示用） */
+function basename(p: string): string {
+  const i = Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/"));
+  return i >= 0 ? p.slice(i + 1) : p;
+}
+/** 移除某一个已选筛选文件 */
+function removeFilter(i: number): void {
+  filterPaths.value.splice(i, 1);
+}
+
 /** 完成首次配置：记录 configured=true 并持久化，进入现有页签 */
 async function completeSetup(): Promise<void> {
   inputError.value = null;
@@ -810,10 +820,21 @@ onBeforeUnmount(() => {
               清空
             </button>
           </div>
-          <p v-if="filterPaths.length" class="prl-hint">
-            已选 {{ filterPaths.length }} 个：{{ filterPaths.join("；") }}
-          </p>
-          <p v-else class="prl-hint">尚未选择筛选文件（必填）</p>
+          <div class="prl-filter-box" :class="{ empty: !filterPaths.length }">
+            <div class="prl-filter-head">
+              <span class="prl-filter-count">{{ filterPaths.length }}</span>
+              <span class="prl-filter-title">已选筛选文件（多个取并集）</span>
+              <button v-if="filterPaths.length" class="prl-btn prl-btn-sm" @click="filterPaths = []">清空</button>
+            </div>
+            <div class="prl-filter-list">
+              <span v-if="!filterPaths.length" class="prl-filter-empty">尚未选择——点「浏览(可多选)」</span>
+              <span v-for="(f, i) in filterPaths" :key="f" class="prl-filter-chip">
+                <span class="prl-filter-chip-name">{{ i + 1 }}.&nbsp;{{ basename(f) }}</span>
+                <span class="prl-filter-chip-path">{{ f }}</span>
+                <button class="prl-filter-chip-x" @click="removeFilter(i)" :aria-label="'移除 ' + f">×</button>
+              </span>
+            </div>
+          </div>
           <p class="prl-hint">
             不在筛选文件里的 net 全部不要；建议均匀覆盖圆各扇区（只圈一个扇区会全挤圆心）。
             想一次圈多组网一起分层，就**多选**几个文件（名单取并集）。
@@ -1380,6 +1401,40 @@ onBeforeUnmount(() => {
 .prl-input[type="number"]::-webkit-inner-spin-button,
 .prl-input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .prl-hint { margin: 0; font-size: var(--text-xs); color: var(--fg-faint); line-height: 1.6; }
+/* 已选筛选文件：明显的卡片式列表（含数量徽标 + 可移除 chip） */
+.prl-filter-box {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 8px;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.prl-filter-box.empty { border-style: dashed; background: transparent; }
+.prl-filter-head { display: flex; align-items: center; gap: var(--space-2); }
+.prl-filter-count {
+  min-width: 20px; height: 20px; padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; background: var(--accent); color: #fff;
+  font-weight: 700; font-size: var(--text-xs);
+}
+.prl-filter-title { font-weight: 600; font-size: var(--text-sm); color: var(--fg); flex: 1; }
+.prl-filter-list { display: flex; flex-direction: column; gap: var(--space-1); }
+.prl-filter-chip {
+  display: flex; align-items: center; gap: var(--space-2);
+  background: var(--bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 6px; padding: 4px 8px;
+}
+.prl-filter-chip-name { font-weight: 600; font-size: var(--text-xs); color: var(--fg); white-space: nowrap; }
+.prl-filter-chip-path { flex: 1; font-size: var(--text-xs); color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prl-filter-chip-x {
+  flex: none; border: none; background: transparent; color: var(--fg-faint);
+  font-size: 14px; line-height: 1; cursor: pointer; padding: 0 2px;
+}
+.prl-filter-chip-x:hover { color: var(--danger, #e33); }
+.prl-filter-empty { font-size: var(--text-xs); color: var(--fg-muted); }
 /* 参数小字解释：字段下方一行，说明含义/影响/默认值 */
 .prl-field-hint { margin: 0; font-size: var(--text-xs); color: var(--fg-faint); line-height: 1.55; }
 .prl-meta { margin: 0; font-size: var(--text-xs); color: var(--fg-muted); line-height: 1.7; }
