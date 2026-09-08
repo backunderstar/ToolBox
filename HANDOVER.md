@@ -815,18 +815,19 @@ dsatur 都**不降**（2210 / 2210 / 2349）——4 层同层交叉已近几何�
 - **运行时追踪**：`applyTheme`/`setThemeId`/启动 IIFE 加 `console.error('[theme] …')`（经 `main.ts`
   转发到 Rust 日志，`[webview]` 前缀），下次启动可看 `%APPDATA%\\com.toolbox.desktop\\logs\\toolbox-*.log`
   验证"唯一落盘时机=用户选择"。
-- **消除启动白闪（用户反馈"打开时白一小会"）**：启动瞬间插件未加载、`applyTheme(theme-midnight)`
-  找不到主题 → 旧逻辑硬编码 `light` 打底；等插件就绪才翻暗色；splash `background: var(--bg)` 此时也浅色。
-  改为"**提前固定底色**"：
+- **消除启动白闪（用户反馈"打开时白一小会"）**：改为**延迟显示主窗口**（比只改底色更彻底——
+  窗口从不在未渲染/白色状态出现）：
+  - 主窗口 `tauri.conf.json` `visible:false`（启动即隐藏）；前端在**主题已解析、暗色 splash 已绘制**
+    后 `window.show()`——用户看到的是所选主题底色的"正在启动"加载动画，绝不先冒白；
+    （`App.vue` 的 boot IIFE 里 `nextTick + rAF` 后 `getCurrentWindow().show()`；浮窗窗口不在此逻辑内。）
+  - 保留**原生窗口底色**作双重保险：`lib.rs setup` 调 `theme_bg_rgb`（读 `app.json` 的
+    `themeBase/theme`，`default-dark` 兜底）设 `window.set_background_color(Color(r,g,b,255))`；
   - `setThemeId` 选择时把该主题**基础模式（dark/light）**一并持久化（`toolbox.theme.base`；
-    Rust `app.json themeBase`；`persistThemeBaseFor` 派生 base，与 id 解耦）；
-  - **原生窗口底色（关键）**：`lib.rs setup` 调 `theme_bg_rgb` 读 `app.json` 的 `themeBase/theme`
-    （`default-dark` 兜底），用 `window.set_background_color` 把主窗口/浮窗 WebView 背景在渲染前
-    设成主题 base 色（`Color(r,g,b,255)`）。⚠️ 曾用 `index.html` 内联脚本提前上色，但被 CSP
-    `script-src 'self'` 拦截、生产包不生效，**已移除**——原生窗口底色才是可靠消除白闪的途径；
-  - `applyTheme` 未解析分支改按持久化 base（而非硬编码 `light`）打底；
+    Rust `app.json themeBase`）；`applyTheme` 未解析分支按持久化 base 打底；
   - 启动 IIFE 对老用户**回填一次 base**（只写 base 不写 id，不触发"启动落盘 id"的边界）；
+  - Rust 侧 **4s 兜底** `thread::sleep` + `window.show()`（前端异常时不至于窗口永久隐藏）；
   - splash 淡出 + 主界面淡入（`.boot-fade` / `.app-fade-in`，240ms）平滑过渡。
+  - ⚠️ 曾用 `index.html` 内联脚本提前上色，但被 CSP `script-src 'self'` 拦截、生产包不生效，**已移除**。
 - **测试**：`themes.test.ts` 新增 `setThemeId` 用例组（persist 插件主题后 `getInitialTheme` 读回原 id）；
   `resolveAuthoritativeTheme` 用例组保留。`pnpm test` 47 项全过、`lint` 0、`build` ✓。
 

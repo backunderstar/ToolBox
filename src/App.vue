@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ping, type PingInfo } from "./core/ipc";
 import { appSettingsGet, appSettingsSet } from "./core/api";
@@ -231,6 +231,19 @@ onMounted(() => {
         ` -> themeId=${JSON.stringify(themeId.value)}` +
         ` rustAuth=${rustTheme && rustTheme !== SYSTEM_THEME_ID ? "Y" : "N"}`,
     );
+
+    // 主窗口延迟显示（防白闪）：窗口启动即隐藏（tauri.conf.json visible:false）。
+    // 这里在**主题已解析、暗色 splash 已绘制**后就 `show()`——用户看到的是"正在启动"
+    // 加载动画（splash 背景就是所选主题底色），绝不先冒白。叠一层 rAF 确保已绘制。
+    // 浮窗窗口不在此逻辑内（它独立创建/显隐）。
+    if (!isFloat) {
+      await nextTick();
+      requestAnimationFrame(() => {
+        void getCurrentWindow()
+          .show()
+          .catch((e) => console.error(`[theme] 显示主窗口失败 ${e}`));
+      });
+    }
 
     // 等插件列表加载（皮肤插件主题此刻才可解析），避免启动瞬间默认外观闪烁；
     // 给固定超时兜底——插件迟迟不加载也不卡住启动。

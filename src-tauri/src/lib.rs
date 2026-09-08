@@ -277,6 +277,19 @@ pub fn run() {
                     }
                 }
             }
+            // 主窗口延迟显示（防白闪）：tauri.conf.json 已设 visible:false，前端首帧
+            // 渲染完成后调 window.show()（见 App.vue）。这里兜底：若 4s 内前端未显示
+            // （异常/渲染失败），强制显示，避免窗口永久隐藏。
+            {
+                let h = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(4));
+                    if let Some(w) = h.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

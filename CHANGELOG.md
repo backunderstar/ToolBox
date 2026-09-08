@@ -41,16 +41,15 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
     （优先任一来源非 `system` 真实值）→ 仅设置 `themeId` 渲染，**读取不落盘**；
   - 回退 watch 改为**纯渲染兜底**（皮肤插件被禁用/卸载、无效自定义才就地渲染默认/跟随系统），
     **不再改写 `themeId`**（改写会连带触发再应用+再落盘，正是历史上把 id 改成 `system` 的源头）。
-- **消除启动白闪**：启动瞬间插件未加载、`applyTheme(暗色皮肤)` 找不到主题时会退到硬编码 `light`（白），
-  等插件就绪才翻暗色，splash `background: var(--bg)` 此时也是浅色。改为：
-  - `setThemeId` 选择主题时把其**基础模式（dark/light）**一并持久化（`toolbox.theme.base` /
-    Rust `app.json themeBase`）；
-  - **原生窗口底色**：`lib.rs setup` 调 `theme_bg_rgb` 读 `app.json` 的 `themeBase/theme`，用
-    `window.set_background_color` 把主窗口/浮窗 WebView 背景在渲染前设成主题 base 色——从根上消除
-    "白一闪"（此前内联脚本方案被 CSP `script-src 'self'` 拦截，生产包中不生效，已移除）；
-  - `applyTheme` 找不到插件主题时改按**持久化的 base**（而非硬编码 `light`）打底；
-  - 启动时对只有旧主题 id、尚无 base 的用户**回填一次** base（只写 base，不写 id，不影响持久化）；
-  - splash 淡出 + 主界面淡入平滑过渡（`.boot-fade` / `.app-fade-in`），不再"蹦出来"。
+- **消除启动白闪**：改为**延迟显示主窗口**（比"改底色"更彻底——窗口从不在未渲染/白色状态出现）：
+  - 主窗口 `visible: false`（启动即隐藏），前端在**主题已解析、暗色 splash 已绘制**后调
+    `window.show()`——用户看到的就是所选主题底色的"正在启动"加载动画，绝不先冒白；
+  - 保留**原生窗口底色**（`lib.rs setup` → `theme_bg_rgb` 读 `themeBase/theme` 设
+    `set_background_color`）作双重保险；`applyTheme` 未解析分支按**持久化 base** 打底、
+    `setThemeId` 把所选主题的**基础模式**一并持久化（`toolbox.theme.base` / Rust `themeBase`）；
+  - 启动对只有旧主题 id、尚无 base 的用户**回填一次 base**（只写 base，不写 id）；
+  - Rust 侧 **4s 兜底强制显示**（前端异常时不至于窗口永久隐藏）；splash 淡出 + 主界面淡入平滑过渡
+    （`.boot-fade` / `.app-fade-in`）。此前内联脚本方案被 CSP `script-src 'self'` 拦截、不生效，已移除。
 
 ## [0.4.3] — 2026-09-04
 
