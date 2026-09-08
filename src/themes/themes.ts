@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { pluginsReadFile, setWindowCaptionColor } from "../core/api";
+import { pluginsReadFile, setWindowCaptionColor, appSettingsSet } from "../core/api";
 
 /**
  * 主题系统（M5）：
@@ -56,6 +56,8 @@ export interface ThemeDef {
 
 const STORAGE_KEY = "toolbox.theme";
 const CUSTOM_KEY = "toolbox.custom-themes";
+/** 后端持久化（app.json）中的主题 id 键：比 localStorage 更可靠（可跨重启/不被旧启动逻辑覆盖） */
+const APP_THEME_KEY = "theme";
 
 /* ---------------- 跟随系统模式 ---------------- */
 
@@ -87,6 +89,17 @@ export function getStoredThemeId(): string {
   } catch {
     return "";
   }
+}
+
+/** 持久化主题 id：写 localStorage（同步）+ 写后端 app.json（异步，失败静默）。
+ *  双通道：localStorage 给同步初始渲染用；app.json 更可靠，跨重启/本地存储异常时兜底。 */
+export function persistThemeId(id: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, id);
+  } catch {
+    /* 本地存储异常：本会话内生效，重启靠 app.json 兜底 */
+  }
+  void appSettingsSet(APP_THEME_KEY, id).catch(() => undefined);
 }
 
 /* ---------------- 插件主题注册表（皮肤插件） ---------------- */
@@ -299,11 +312,7 @@ export async function applyTheme(id: string): Promise<void> {
   if (document.documentElement.dataset.themeId !== resolved) return;
   // 持久化**原始** id：system 保留 "system"（跟随系统状态），不落 resolved 值，
   // 否则重启后丢失"跟随系统"模式。存储失败（受限环境）不阻断主题应用
-  try {
-    localStorage.setItem(STORAGE_KEY, id);
-  } catch {
-    /* 存储不可用：主题本会话内生效，重启后回落默认 */
-  }
+  persistThemeId(id);
   void syncWindowTheme(theme.base);
   // 标题栏近似色跟随主题画布背景（Windows 11 原生标题栏；失败静默）
   syncCaptionColor();

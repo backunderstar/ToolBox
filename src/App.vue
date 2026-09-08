@@ -195,6 +195,18 @@ onMounted(() => {
         os: "浏览器预览（未连接 Tauri 核心）",
       };
     });
+  // 后端 app.json 持久化的主题更可靠（本地 localStorage 可能被旧启动逻辑覆盖/清空）。
+  // 若启动时尚未变动手动选主题，用 app.json 的主题兜底恢复（含插件主题——setThemeId
+  // 会触发主题重放/回退逻辑）。非 Tauri 环境（invoke 失败）静默。
+  const initThemeId = themeId.value;
+  void appSettingsGet()
+    .then((s) => {
+      const t = (s as Record<string, unknown>)?.theme;
+      if (typeof t === "string" && t && themeId.value === initThemeId) {
+        themeId.value = t;
+      }
+    })
+    .catch(() => undefined);
 });
 
 function toggleThemeMode(): void {
