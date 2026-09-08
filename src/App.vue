@@ -98,6 +98,8 @@ const view = computed(() => nav.state.view);
 
 const themeId = ref<string>(getInitialTheme());
 const pingInfo = ref<PingInfo | null>(null);
+/** 启动完成标记：完成从 Rust 读取持久化配置（主题等）后才进入主界面，期间显示加载过渡动画 */
+const booted = ref(false);
 /* Ctrl+K 聚焦信号（自增触发 TopBar 聚焦） */
 const focusTick = ref(0);
 
@@ -195,18 +197,33 @@ onMounted(() => {
         os: "浏览器预览（未连接 Tauri 核心）",
       };
     });
-  // 后端 app.json 持久化的主题更可靠（本地 localStorage 可能被旧启动逻辑覆盖/清空）。
-  // 若启动时尚未变动手动选主题，用 app.json 的主题兜底恢复（含插件主题——setThemeId
-  // 会触发主题重放/回退逻辑）。非 Tauri 环境（invoke 失败）静默。
-  const initThemeId = themeId.value;
-  void appSettingsGet()
-    .then((s) => {
-      const t = (s as Record<string, unknown>)?.theme;
-      if (typeof t === "string" && t && themeId.value === initThemeId) {
-        themeId.value = t;
-      }
-    })
-    .catch(() => undefined);
+  // ═══ 启动引导：从后端 Rust 读取持久化配置（主题等，authoritative）+ 加载过渡动画 ═══
+  // 主题不依赖 localStorage（可能被旧启动逻辑覆盖/清空/不可靠），以 Rust app.json 为准。
+  void (async () => {
+    // 读 Rust 侧配置文件里的主题 id
+    let rustTheme = "";
+    try {
+      const s = (await appSettingsGet()) as Record<string, unknown>;
+      if (typeof s?.theme === "string" && s.theme) rustTheme = s.theme;
+    } catch {
+      /* 非 Tauri 环境/失败：忽略，交给 getInitialTheme(localStorage) 兜底 */
+    }
+    if (rustTheme) themeId.value = rustTheme;
+
+    // 等插件列表加载（皮肤插件主题此刻才可解析），避免启动瞬间默认外观闪烁；
+    // 给固定超时兜底——插件迟迟不加载也不卡住启动。
+    const deadline = Date.now() + 1200;
+    await new Promise<void>((resolve) => {
+      if (pluginCtx.state.plugins.length > 0) return resolve();
+      const poll = setInterval(() => {
+        if (pluginCtx.state.plugins.length > 0 || Date.now() > deadline) {
+          clearInterval(poll);
+          resolve();
+        }
+      }, 40);
+    });
+    booted.value = true;
+  })();
 });
 
 function toggleThemeMode(): void {
@@ -453,4 +470,9 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
     </template>
     <PromptHost />
   </ErrorBoundary>
+  <!-- 启动加载过渡动画：从 Rust 读取持久化配置（主题）+ 插件就绪后隐藏 -->
+  <div v-if="!booted" class="boot-splash" role="status">
+    <div class="boot-splash-spinner" aria-hidden="true"></div>
+    <div class="boot-splash-text">正在启动 ToolBox…</div>
+  </div>
 </template>
