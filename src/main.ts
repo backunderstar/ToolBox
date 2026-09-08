@@ -4,10 +4,10 @@ import App from "./App.vue";
 import { applyTheme, getInitialTheme } from "./themes/themes";
 
 // 渲染前应用初始主题（含原生标题栏同步），避免首帧闪烁。
-// ⚠️ 必须 persist:false：启动时插件未加载、localStorage 可能为空/不可靠，此刻持久化
-// 会把回退值（如 "system"）写回 Rust app.json，覆盖用户保存的权威主题。真正的主题由
-// App 启动 IIFE 从 Rust 读取后应用并持久化。
-applyTheme(getInitialTheme(), { persist: false });
+// applyTheme 是纯视觉、永不持久化——启动打底色无论取到什么值都不会写回存储，
+// 不会覆盖用户保存的权威主题（theme-midnight）。真正的主题 id 由 App 启动 IIFE
+// 从 Rust/localStorage 读取 + 插件就绪后重放；持久化仅发生在用户显式 setThemeId。
+applyTheme(getInitialTheme());
 
 /* ---- 调试通道：把前端错误转发到 Rust 终端（pnpm tauri dev 输出可见） ---- */
 interface EvtLike {

@@ -9,6 +9,7 @@ import {
   importThemesJson,
   resolveAuthoritativeTheme,
   resolveThemeId,
+  setThemeId,
   swatchOf,
   SYSTEM_THEME_ID,
   toggleTheme,
@@ -178,6 +179,17 @@ describe("resolveAuthoritativeTheme（启动权威主题解析：Rust 为主、l
   });
   it("Rust 保存了真实选择，localStorage 是旧回退 system → 取 Rust 值（核心回归）", () => {
     expect(resolveAuthoritativeTheme("theme-midnight", "system")).toBe("theme-midnight");
+  });
+});
+
+describe("setThemeId（唯一持久化入口）：仅用户显式选择时落盘", () => {
+  it("持久化 theme-midnight 后 getInitialTheme 读取到它（与启动重放解耦）", () => {
+    setThemeId("theme-midnight");
+    expect(getInitialTheme()).toBe("theme-midnight");
+  });
+  it("persist 插件主题 id 原样保留，不解析成 system/default", () => {
+    setThemeId("theme-midnight");
+    expect(getInitialTheme()).toBe("theme-midnight");
   });
 });
 

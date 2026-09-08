@@ -23,6 +23,7 @@ import {
   applyTheme,
   getInitialTheme,
   resolveAuthoritativeTheme,
+  setThemeId,
   toggleTheme,
   getThemeBase,
   findTheme,
@@ -151,7 +152,8 @@ function toggleNavGroup(groupId: string): void {
 
 /* 应用主题：内置/自定义同步，插件主题异步读 css（双通道）。
    依赖 pluginThemeKey：插件列表加载完成后重放——重启后持久化的插件
-   主题 id 此刻才可解析；插件被禁用/卸载时由此触发回落（下方 watch）。 */
+   主题 id 此刻才可解析。**applyTheme 只渲染不落盘**；持久化只在用户显式
+   选择（setThemeId）时发生，启动/重放永不写回，杜绝把回退值写坏。 */
 watch(
   () => [themeId.value, pluginCtx.pluginThemeKey.value] as const,
   () => void applyTheme(themeId.value),
@@ -168,20 +170,25 @@ watchEffect((onCleanup) => {
   onCleanup(() => mq.removeEventListener("change", onChange));
 });
 
-/* 主题回落（**插件就绪后再判定**，避免启动阶段把"待恢复的插件主题"误判为无效）：
-   - 皮肤插件主题被禁用/卸载 → 回落默认亮色；
-   - 插件列表已就绪后当前 id 仍不解析（无效/已删除的自定义主题）→ 回落跟随系统。 */
+/* 主题回落的**纯渲染**兜底（不动持久化值）：插件列表已就绪后，当前 id 仍不解析
+   ——要么是皮肤插件被禁用/卸载，要么是无效/已删除的自定义主题。此时**就地渲染**默认
+   外观即可（applyTheme 已做），无需改 themeId；改 themeId 会连带触发本 watch 再应用、
+   再加回退 watch 递归，且历史上正是它把 id 改成 system 又落盘。只处理"已就绪且明确无效"，
+   避免启动阶段把待恢复的插件主题误判。 */
 watch(
   () => [themeId.value, pluginCtx.pluginThemeKey.value, pluginCtx.state.plugins.length] as const,
   ([id]) => {
-    const key = pluginCtx.pluginThemeKey.value;
+    if (pluginCtx.state.plugins.length === 0) return; // 未就绪：不判
     const t = findTheme(id);
-    if (t?.source === "plugin") {
-      if (!key.split(",").includes(id)) themeId.value = "default-light";
-      return;
-    }
-    if (!t && id !== SYSTEM_THEME_ID && pluginCtx.state.plugins.length > 0) {
-      themeId.value = SYSTEM_THEME_ID;
+    if (t && t.source !== "plugin") return; // 内置/自定义可解析：不干预
+    // 到这里是"插件主题 id 或未解析 id"。若它是**已启用皮肤插件**的主题，等待其
+    // 就绪后由上方 applyTheme watch 重放；仅当它不在启用列表里（被禁用/卸载）才回落。
+    const key = pluginCtx.pluginThemeKey.value;
+    if (t?.source === "plugin" && !key.split(",").includes(id)) {
+      void applyTheme("default-light"); // 渲染兜底，不改 themeId
+    } else if (!t && id !== SYSTEM_THEME_ID) {
+      // 无效/已删除的自定义主题，或未启用皮肤的 id：渲染跟随系统，但不落盘
+      void applyTheme(SYSTEM_THEME_ID);
     }
   },
 );
@@ -198,13 +205,13 @@ onMounted(() => {
         os: "浏览器预览（未连接 Tauri 核心）",
       };
     });
-  // ═══ 启动引导：从后端 Rust 读取持久化配置（主题等，authoritative）+ 加载过渡动画 ═══
-  // 主题不依赖 localStorage（可能被旧启动逻辑覆盖/清空/不可靠），以 Rust app.json 为准。
+  // ═══ 启动引导：从后端 Rust 读取主题 id（**只读恢复**，绝不落盘）+ 加载过渡动画 ═══
+  // 权威值以 Rust app.json 为准，localStorage 仅兜底（打包版首启动/受限环境
+  // localStorage 可能为空或存了旧回退 "system"）。解析时优先非"跟随系统"的真实值，
+  // 避免拿空的/回退的 "system" 去覆盖用户保存的主题（如 theme-midnight）。
+  // 无论解出何值，这里只设置 themeId 由 applyTheme 渲染；applyTheme 不持久化，
+  // themeId 的**落盘只在用户显式选择（setThemeId）时发生**——启动永不写回。
   void (async () => {
-    // 读 Rust 侧配置文件里的主题 id（**权威**）。
-    // 关键：以 Rust app.json 为准，localStorage 仅兜底（打包版首启动/受限环境
-    // localStorage 可能为空或存了旧回退 "system"）。解析时优先非"跟随系统"的真实值，
-    // 避免拿空的/回退的 "system" 去覆盖用户在 Rust 里保存的主题（如 theme-midnight）。
     let rustTheme = "";
     try {
       const s = (await appSettingsGet()) as Record<string, unknown>;
@@ -212,7 +219,14 @@ onMounted(() => {
     } catch {
       /* 非 Tauri 环境/失败：忽略，交给 getInitialTheme(localStorage) 兜底 */
     }
-    themeId.value = resolveAuthoritativeTheme(rustTheme, getInitialTheme());
+    const localTheme = getInitialTheme();
+    themeId.value = resolveAuthoritativeTheme(rustTheme, localTheme);
+    // 运行时追踪（只读恢复，不落盘）：确认启动解出了正确的权威主题。
+    console.error(
+      `[theme] boot rust=${JSON.stringify(rustTheme)} local=${JSON.stringify(localTheme)}` +
+        ` -> themeId=${JSON.stringify(themeId.value)}` +
+        ` rustAuth=${rustTheme && rustTheme !== SYSTEM_THEME_ID ? "Y" : "N"}`,
+    );
 
     // 等插件列表加载（皮肤插件主题此刻才可解析），避免启动瞬间默认外观闪烁；
     // 给固定超时兜底——插件迟迟不加载也不卡住启动。
@@ -231,7 +245,16 @@ onMounted(() => {
 });
 
 function toggleThemeMode(): void {
-  themeId.value = toggleTheme(themeId.value);
+  const next = toggleTheme(themeId.value);
+  themeId.value = next;
+  setThemeId(next); // 用户显式操作：持久化（唯一落盘时机）
+}
+
+/* 用户显式选择主题（设置页 / 引导页 / 顶栏切换）→ 唯一落盘入口。
+   applyTheme 纯渲染不落盘，此处 setThemeId 负责持久化；保证启动/重放永不写回。 */
+function selectTheme(id: string): void {
+  themeId.value = id;
+  setThemeId(id);
 }
 
 /* Ctrl+K：任意视图下聚焦顶栏全局搜索（不切视图） */
@@ -361,7 +384,7 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
     <OnboardingView
       v-if="showOnboarding"
       :theme-id="themeId"
-      :on-set-theme-id="(id: string) => (themeId = id)"
+      :on-set-theme-id="selectTheme"
       :on-done="onOnboardingDone"
     />
     <template v-else>
@@ -446,7 +469,7 @@ useTauriListen<{ pluginId: string; event: string; data: { title?: string; body?:
               v-else-if="view === 'settings'"
               :key="'settings'"
               :theme-id="themeId"
-              :on-set-theme-id="(id: string) => (themeId = id)"
+              :on-set-theme-id="selectTheme"
               :ping="pingInfo"
               :nav-config="navConfigNorm"
               :defs="navDefs"

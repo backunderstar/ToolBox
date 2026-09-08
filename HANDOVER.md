@@ -792,32 +792,34 @@ dsatur 都**不降**（2210 / 2210 / 2349）——4 层同层交叉已近几何�
   `bundled-plugins`、`resources/python`、签名私钥）齐备，release 档 clippy 已先过（0 告警）。
 - 验证：`node scripts/sync-version.mjs --check` 一致 · `build:core` 已部署（需全量重启生效）。
 
-### 1.32 增量（2026-09-08：主题持久化彻底修复——"选了皮肤主题重启后不常驻"）
+### 1.32 增量（2026-09-08：主题持久化彻底修复——重写"纯渲染 + 唯一落盘"设计）
 
-打包安装后用户仍反馈主题（`theme-midnight`）重启不常驻。**根因不在"读回"，而在"启动写回"**：
+打包安装后用户仍反馈主题（`theme-midnight`）重启不常驻，且多轮"读取/写回"式修复无效。**真正的根因**
+不在"读取"，而在**`applyTheme` 每次都持久化**，于是"启动打底色 + 插件就绪后 watch 重放"只要某刻把
+`themeId` 解析成**可解析的** `system`/默认值，就会把它**写回** Rust app.json 与 localStorage，覆盖用户
+保存的皮肤主题。（前一轮只给 `main.ts` 加 `{persist:false}` 封住一个入口，`App.vue` 的
+`watch(() => applyTheme(themeId.value))` 仍以默认 `persist:true` 落盘——仍有写入路径。）
 
-- **旧链路**：`main.ts`（模块加载、`createApp` 之前）执行 `applyTheme(getInitialTheme())`，而
-  `applyTheme` 会**持久化**。打包版首启动 `localStorage` 为空或存了旧回退 `"system"`（老 bug 遗留的
-  localStorage 值），于是启动瞬间 `applyTheme("system")` 命中内置主题 → `persistThemeId("system")`
-  把 `"system"` **写回 Rust app.json**。这一步发生在 `App.vue` 的启动 IIFE 之前，IIFE 随即读到被
-  覆盖的 `"system"`，用户上次保存的 `"theme-midnight"` 就此被冲掉——**权威值被"启动打底色"污染**。
+**改为解耦设计**：
+1. **`applyTheme(id)` → 纯视觉、永不持久化**：删除 `opts.persist`，无论何时调用、`themeId` 是否可解析，
+   都只渲染（插件主题异步读 css 双通道不变）。`main.ts` 改回 `applyTheme(getInitialTheme())`。
+2. **`setThemeId(id)` = 唯一持久化入口**：与 `applyTheme` 解耦，仅在**用户显式选择**时被调用——
+   设置页/引导页 `:on-set-theme-id` 和顶栏切换统一走新建的 `selectTheme(id)`（`themeId=id; setThemeId(id)`），
+   `selectTheme` 内部才 `persistThemeId`（localStorage + Rust app.json）。
+3. **启动恢复 = 只读**：`App.vue` 启动 IIFE 从 **Rust app.json** 权威读取，经
+   `resolveAuthoritativeTheme(rust, local)`（优先任一来源非 `system` 真实值）设置 `themeId` 供渲染，
+   **读取不落盘**。
+4. **回退 watch → 纯渲染兜底**：皮肤插件被禁用/卸载、无效/已删除自定义主题时，**就地渲染**默认（亮色）
+   或跟随系统，**不再改写 `themeId`**（历史上正是回退 watch 把 id 改成 `system` 又经 applyTheme 落盘）。
 
-- **修复**：
-  1. `applyTheme(id, opts?: { persist?: boolean })` 新增 `persist` 开关（默认 `true`，行为兼容）；
-     `main.ts` 启动打底色改传 `{ persist: false }`，**启动不再持久化**。
-  2. `themes.ts` 新增 `resolveAuthoritativeTheme(rust, local)`：启动权威主题解析——**优先任一来源的
-     非 `"system"` 真实值**，两来源都是 `system`/空才归 `system`。防止拿空的/回退的 `"system"`
-     覆盖用户真实的主题（`App.vue` 启动 IIFE 用它替换原来的 `if (rust) themeId=rust`）。
-  3. 权威值仍以 **Rust app.json** 为准（`appSettingsGet().theme`），localStorage 仅兜底；主题在
-     `themeId` 变化（含插件就绪后的皮肤主题重放）时才正常持久化。
+- **运行时追踪**：`applyTheme`/`setThemeId`/启动 IIFE 加 `console.error('[theme] …')`（经 `main.ts`
+  转发到 Rust 日志，`[webview]` 前缀），下次启动可看 `%APPDATA%\\com.toolbox.desktop\\logs\\toolbox-*.log`
+  验证"唯一落盘时机=用户选择"。
+- **测试**：`themes.test.ts` 新增 `setThemeId` 用例组（persist 插件主题后 `getInitialTheme` 读回原 id）；
+  `resolveAuthoritativeTheme` 用例组保留。`pnpm test` 47 项全过、`lint` 0、`build` ✓。
 
-- **测试**：`themes.test.ts` 新增 `resolveAuthoritativeTheme` 用例组（Rust 优先 / localStorage 兜底 /
-  双 system 归 system / **Rust=真实值 + localStorage=旧回退 system 取 Rust** 核心回归）；`pnpm test`
-  45 项全过、`lint` 0、`build` ✓。
-
-- **用户只需操作一次**：安装本版后**重新选一次** `theme-midnight`（旧版曾把它错误地覆盖回 `"system"`，
-  这次选择会把真实值写回 Rust app.json），之后重启即常驻——重启时 main.ts 不再持久化，IIFE 读到
-  Rust 的 `"theme-midnight"` 稳定恢复。建议升版 0.4.5 重打（当前 0.4.4 tag 已发布，本次为本地改动）。
+> **用户需操作一次**：安装本版后重新选一次 `theme-midnight`（旧版曾把它错写回 `system`）。此后启动
+> 只读恢复、不落盘，真实值稳定常驻。建议升版 0.4.5 重打（当前 0.4.4 tag 已发布，本次为本地改动）。
 
 ---
 

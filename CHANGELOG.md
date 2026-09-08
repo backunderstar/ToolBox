@@ -29,12 +29,18 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 - **DC 信号预设改为"质量优先"**：算法默认项调高（`resolve_conflict_rounds=15`、`sa_restarts=3`、
   `sa_initial_temp=12`），并**开启拥塞均衡**（`congestion_balance=true`, `congestion_balance_passes=40`）；
   层数 4 / 线宽 0.2 不变，计算时间略长。实测该套参数对真实数据取得 **0 需人工 / 0 硬冲突 / 层占用 ≤1.0**。
-- **主题持久化彻底修复（皮肤主题重启常驻）**：此前 `main.ts` 在启动渲染前用 `localStorage` 取主题并
-  **立即持久化**——打包版首启动 localStorage 为空/存了旧回退 `system` 时，会把错误的 `"system"` 写回
-  Rust app.json，覆盖用户保存的皮肤主题（如 `theme-midnight`）。改为：启动打底色**不持久化**
-  （`applyTheme(..., { persist: false })`），主题权威值由启动引导 IIFE **从 Rust app.json 读取**，
-  用 `resolveAuthoritativeTheme(rust, local)` 解析（优先任一来源的非 `system` 真实值），仅当插件就绪、
-  `themeId` 变化时才正常持久化。
+- **主题持久化彻底修复（皮肤主题重启常驻）——重写为"纯渲染 + 唯一落盘"解耦设计**：
+  此前 `applyTheme` 在**每次渲染都持久化**，于是启动打底色（`main.ts`）与插件就绪后的
+  `watch` 重放——只要某刻 `themeId` 被解析成可解析的 `system`/默认值——都会把该值**写回**
+  Rust app.json 与 localStorage，覆盖用户保存的皮肤主题（如 `theme-midnight`）。（前一轮只加
+  `{persist:false}` 封住了 `main.ts` 一个入口，`App.vue` 的 watch 仍默认 `persist:true` 在写。）
+  现改为：
+  - `applyTheme(id)` **纯视觉、永不持久化**（取消 `persist` 选项）；主题 id 只由
+    **`setThemeId(id)`** 在**用户显式选择**（设置页/引导页/顶栏切换）时经 `selectTheme` 落盘；
+  - 启动恢复（`App.vue` 启动 IIFE）从 **Rust app.json** 权威读取 → `resolveAuthoritativeTheme`
+    （优先任一来源非 `system` 真实值）→ 仅设置 `themeId` 渲染，**读取不落盘**；
+  - 回退 watch 改为**纯渲染兜底**（皮肤插件被禁用/卸载、无效自定义才就地渲染默认/跟随系统），
+    **不再改写 `themeId`**（改写会连带触发再应用+再落盘，正是历史上把 id 改成 `system` 的源头）。
 
 ## [0.4.3] — 2026-09-04
 

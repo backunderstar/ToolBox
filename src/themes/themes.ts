@@ -102,6 +102,16 @@ export function persistThemeId(id: string): void {
   void appSettingsSet(APP_THEME_KEY, id).catch(() => undefined);
 }
 
+/** **唯一持久化入口**：用户显式选择主题时调用（设置页 / 引导页 / 顶栏切换）。
+ *  与 `applyTheme`（纯视觉、不持久化）解耦——保证主题 id 只在"用户真实选择"这一
+ *  个时机被写盘，启动/插件重放无论何时都不落盘，杜绝把回退值（如 system）写回覆盖。 */
+export function setThemeId(id: string): void {
+  // 运行时追踪：console.error 由 main.ts 转发到 Rust 日志（[webview] 前缀），
+  // 便于排查"主题不常驻"——确认唯一落盘时机确实是用户选择。
+  console.error(`[theme] setThemeId -> ${JSON.stringify(id)}`);
+  persistThemeId(id);
+}
+
 /* ---------------- 插件主题注册表（皮肤插件） ---------------- */
 
 /**
@@ -287,16 +297,20 @@ function clearPluginCss(): void {
   document.getElementById(PLUGIN_CSS_ID)?.remove();
 }
 
-/** 应用主题：base → data-theme（驱动 tokens.css），覆盖令牌注入 style，可持久化。
- *  插件主题额外异步读取并注入 css 覆盖文件（双通道）；调用方无需 await。
- *  ⚠️ `opts.persist`：**启动（main.ts 渲染前打底色）必须传 `false`**——启动时
- *  插件未加载、localStorage 可能为空/不可靠，此刻持久化会把错误的回退值
- *  （如 "system"）写回 Rust app.json，覆盖用户上次保存的权威主题（theme-midnight
- *  就是这样被冲掉的）。权威值由 App 启动 IIFE 从 Rust 读取后由 watch 正常持久化。 */
-export async function applyTheme(id: string, opts?: { persist?: boolean }): Promise<void> {
-  const shouldPersist = opts?.persist !== false;
+/** 应用主题：**纯视觉**，从不持久化。base → data-theme（驱动 tokens.css），
+ *  覆盖令牌注入 style；插件主题额外异步读取并注入 css 覆盖文件（双通道）。
+ *  ⚠️ 本函数只做渲染，**不在意 themeId 是否可解析、何时被调用**——持久化与它解耦，
+ *  避免任何"启动打底色 / watch 重放把值写回"的时序污染。用户显式选择主题时由
+ *  `setTheme()`（App 调用）持久化；启动恢复直接渲染 Rust/localStorage 读到的 id。
+ *  不可解析（插件未就绪/被禁用）时应用默认外观并清除插件 css，但不改动持久化值。 */
+export async function applyTheme(id: string): Promise<void> {
   const resolved = resolveThemeId(id);
   const theme = findTheme(resolved);
+  // 运行时追踪（进 Rust 日志）：确认各调用点的 id 与是否可解析、是否只渲染。
+  console.error(
+    `[theme] applyTheme id=${JSON.stringify(id)} resolved=${JSON.stringify(resolved)}` +
+      ` found=${theme ? "Y" : "N"} source=${theme?.source ?? "-"} pluginKey=resolveOnly`,
+  );
   if (!theme) {
     // 主题暂不可用（插件主题尚未加载 / 插件被禁用）：应用默认外观但
     // **不覆盖持久化值**——避免启动瞬间插件未就绪时把用户的选择冲掉
@@ -310,15 +324,6 @@ export async function applyTheme(id: string, opts?: { persist?: boolean }): Prom
     await loadPluginCss(theme.pluginId, theme.css, resolved);
   } else {
     clearPluginCss();
-  }
-  // 竞态防护（与 loadPluginCss 同源）：await 期间用户可能已切走主题（含
-  // 插件禁用触发的自动回落）——此时**丢弃本次的持久化**，否则挂起的旧调用
-  // 恢复执行会把 localStorage 又写回旧主题 id（界面已切换，值却倒退）。
-  if (document.documentElement.dataset.themeId !== resolved) return;
-  // 持久化**原始** id：system 保留 "system"（跟随系统状态），不落 resolved 值，
-  // 否则重启后丢失"跟随系统"模式。存储失败（受限环境）不阻断主题应用
-  if (shouldPersist) {
-    persistThemeId(id);
   }
   void syncWindowTheme(theme.base);
   // 标题栏近似色跟随主题画布背景（Windows 11 原生标题栏；失败静默）
