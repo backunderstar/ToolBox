@@ -820,6 +820,9 @@ dsatur 都**不降**（2210 / 2210 / 2349）——4 层同层交叉已近几何�
   - 主窗口 `tauri.conf.json` `visible:false`（启动即隐藏）；前端在**主题已解析、暗色 splash 已绘制**
     后 `window.show()`——用户看到的是所选主题底色的"正在启动"加载动画，绝不先冒白；
     （`App.vue` 的 boot IIFE 里 `nextTick + rAF` 后 `getCurrentWindow().show()`；浮窗窗口不在此逻辑内。）
+  - ⚠️ **关键修复**：`window-state` 插件默认 `StateFlags::all()` 含 `VISIBLE`，恢复时会重新
+    `show()` 窗口、恰好绕过 `visible:false`——**这就是白闪仍在的真正原因**。已在 `lib.rs` 改为
+    `with_state_flags(SIZE | POSITION | MAXIMIZED)` **不含 VISIBLE**，可见性完全交由前端延迟显示控制。
   - 保留**原生窗口底色**作双重保险：`lib.rs setup` 调 `theme_bg_rgb`（读 `app.json` 的
     `themeBase/theme`，`default-dark` 兜底）设 `window.set_background_color(Color(r,g,b,255))`；
   - `setThemeId` 选择时把该主题**基础模式（dark/light）**一并持久化（`toolbox.theme.base`；

@@ -44,6 +44,9 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 - **消除启动白闪**：改为**延迟显示主窗口**（比"改底色"更彻底——窗口从不在未渲染/白色状态出现）：
   - 主窗口 `visible: false`（启动即隐藏），前端在**主题已解析、暗色 splash 已绘制**后调
     `window.show()`——用户看到的就是所选主题底色的"正在启动"加载动画，绝不先冒白；
+  - ⚠️ **关键修复**：`window-state` 插件默认 `StateFlags::all()` 含 `VISIBLE`，恢复时会重新
+    `show()` 窗口、恰好绕过 `visible:false`（这就是白闪仍在的原因）。改为
+    `with_state_flags(SIZE | POSITION | MAXIMIZED)` **不含 VISIBLE**，可见性完全交由前端延迟显示控制；
   - 保留**原生窗口底色**（`lib.rs setup` → `theme_bg_rgb` 读 `themeBase/theme` 设
     `set_background_color`）作双重保险；`applyTheme` 未解析分支按**持久化 base** 打底、
     `setThemeId` 把所选主题的**基础模式**一并持久化（`toolbox.theme.base` / Rust `themeBase`）；

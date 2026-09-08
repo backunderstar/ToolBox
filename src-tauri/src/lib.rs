@@ -72,7 +72,18 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         // shell.exec：进程插件核心 API 经此官方插件（替代 std::process 直接 spawn）
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // 窗口状态记忆：恢复尺寸/位置/最大化，但**不含 VISIBLE**——窗口可见性由
+        // 前端控制（启动 visible:false + 首帧渲染后延迟 show），否则插件恢复状态时会
+        // 重新 show() 窗口，导致启动瞬间先冒出"未渲染/白色"窗口（白闪）。
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         // 自动更新：检查/下载/安装新版本（发布包在 GitHub Releases，见 tauri.conf.json updater）
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(float_hotkey_plugin)
