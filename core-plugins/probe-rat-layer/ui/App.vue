@@ -144,7 +144,9 @@ function applyParams(v: Record<string, unknown>): void {
 function applyPreset(p: "custom" | "hv" | "full" | "ac" | "power"): void {
   presetName.value = p;
   if (p === "hv") {
-    // DC 信号推荐：cell 2.0 / threshold 3.0 + 4 层 + 0.2/0.2（对应原项目 in/hv_config.json + README）
+    // DC 信号推荐：cell 2.0 / threshold 3.0 + 4 层 + 0.2/0.2（对应原项目 in/hv_config.json + README）。
+    // 算法项用"质量优先"：更充分收敛（更多 SA 重启/初温、冲突消解轮数）+ 开启拥塞均衡（降层占用峰值、提走通率）。
+    // 计算时间会稍长；不调 sa_max_steps（实测更差，见 HANDOVER §1.23）。
     layers.value = 4;
     width.value = 0.2;
     clearance.value = 0.2;
@@ -152,6 +154,21 @@ function applyPreset(p: "custom" | "hv" | "full" | "ac" | "power"): void {
     congestionHardThreshold.value = 3.0;
     method.value = "packing";
     optimizer.value = "sa";
+    resolveConflictRounds.value = 15;
+    balanceLengthRounds.value = 6;
+    minimizeCrossingsPasses.value = 6;
+    saRestarts.value = 3;
+    saInitialTemp.value = 12.0;
+    saCooling.value = 0.9995;
+    saMaxSteps.value = 0;
+    saSwapRatio.value = 0.7;
+    saBalanceSlack.value = 2.0;
+    sectorAngleDeg.value = 45.0;
+    layerCapacity.value = 1.0;
+    capacityUtilization.value = 0.6;
+    viaAreaCost.value = 0.1;
+    congestionBalance.value = true;
+    congestionBalancePasses.value = 40;
   } else if (p === "full") {
     layers.value = 4;
     width.value = 0.2;

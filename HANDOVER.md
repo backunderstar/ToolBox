@@ -772,6 +772,26 @@ API 后实施/取舍：
   probe-rat-layer 共 6 处 Cargo.toml），`sync-version --check` 通过；CHANGELOG 新增 `[0.4.4]`。
 - 推送门禁本地全绿后推送（用户已确认）。
 
+### 1.31 增量（2026-09-08：DC 预设算法项改"质量优先" + 本地打包 0.4.4）
+
+用户（看到部分层交叉后）要求"按当前层数改 DC 预设默认，其他算法项要求分层效果好、时间可稍长"。
+**A/B 实测（1165P 数据 1677 网，`layer.run` 同输入）**：只有**加层数**真正降同层交叉
+（4 层 2210 → **8 层 350**、洪泛 100%、占用 0.67）；更猛 SA（pass10/restart5）、更小扇区（30°）、
+dsatur 都**不降**（2210 / 2210 / 2349）——4 层同层交叉已近几何下限。**结论：质量提升主靠加层数**，
+故 DC 预设按"算法项质量优先"设置（层数/线宽不变）。
+
+- **DC 预设（`ui/App.vue::applyPreset("hv")`）改为质量优先**：`resolve_conflict_rounds=15`、
+  `sa_restarts=3`、`sa_initial_temp=12.0`、**开启拥塞均衡**（`congestion_balance=true`, passes=40）；
+  层数 4 / 线宽 0.2 / cell 2.0 / 阈值 3.0 / packing+sa 不变；`sa_max_steps` 保持 0（调高更差）。
+  （前端 ref 默认仍是 config.rs 默认 12/2/8/false/20，**不改**——那是"custom/算法原始默认"；
+   DC 预设覆盖后即上述质量优先值。）
+- **文档同步**：`docs/探针卡分层算法-学习导言.md` §3.7/旋钮表（标注"DC 预设已开拥塞均衡 + 质量优先值"）、
+  `CHANGELOG [0.4.4]` 补 DC 预设条目、`HANDOVER` 本节。
+- **本地打包（路径 B 签名）**：`pnpm tauri build` → `target/release/bundle/nsis/ToolBox_0.4.4_x64-setup.exe`
+  + `.sig`（updater 签名 OK；不含 `latest.json`——那是 CI 路径 A 的产物）。前置（`resources/_core`、
+  `bundled-plugins`、`resources/python`、签名私钥）齐备，release 档 clippy 已先过（0 告警）。
+- 验证：`node scripts/sync-version.mjs --check` 一致 · `build:core` 已部署（需全量重启生效）。
+
 ---
 
 ## 2. 项目一句话

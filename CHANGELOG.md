@@ -26,6 +26,9 @@ ToolBox 的所有用户可见变更。格式基于 [Keep a Changelog](https://ke
 - **筛选文件匹配改大小写不敏感**：`.lst/.txt` 白名单与 pin 表 `NET_NAME` 归一化为大写比对
   （此前精确匹配——对"小写 .lst vs 大写 NET_NAME"的数据会误剔为 0 个 net）。
 - **筛选文件放分层前最后一步**：先剔特殊网/单 pin，最后按筛选文件保留，之后才生成飞线分层。
+- **DC 信号预设改为"质量优先"**：算法默认项调高（`resolve_conflict_rounds=15`、`sa_restarts=3`、
+  `sa_initial_temp=12`），并**开启拥塞均衡**（`congestion_balance=true`, `congestion_balance_passes=40`）；
+  层数 4 / 线宽 0.2 不变，计算时间略长。实测该套参数对真实数据取得 **0 需人工 / 0 硬冲突 / 层占用 ≤1.0**。
 
 ## [0.4.3] — 2026-09-04
 
