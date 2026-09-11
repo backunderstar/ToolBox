@@ -66,6 +66,16 @@ const congestionBalancePasses = ref(20);       // 拥塞均衡最大轮数
 // 默认值若用 probe_layer 原默认会让真实数据大量进人工（实测 1800 线 manual 1758）。
 const presetName = ref<"custom" | "hv" | "full" | "ac" | "power">("hv");
 
+/** 预设"版次"：**任一预设的内置参数改动时必须 +1**（改完同时更新本节注释与 HANDOVER）。
+ *  历史：1 = 初始；2 = 0.4.6 重新标定 AC（11 层 / 0.1 / 0.1 / 阈值 4.8 + 热 SA + 护栏 2.5）。
+ *
+ *  为什么需要它：设置里会持久化"预设 + 全部参数"，载入时原本是"先套预设、再用存档值逐项覆盖"，
+ *  于是**代码里改过的预设内值会被旧存档盖住**——用户会看到"选了 AC 预设，结果还是旧的 210 条未分层"
+ *  （0.4.6 实测就是这个原因）。现在载入时比对版次：落后 → 只套用新预设、丢弃旧覆盖值。 */
+const PRESET_REV = 2;
+/** 载入时因预设版次落后而自动套用了新预设 → 在输入页给用户一句提示（可关闭） */
+const presetNotice = ref<string | null>(null);
+
 const configOverrides = computed(() => {
   const o: Record<string, unknown> = {
     method: method.value,
@@ -97,6 +107,7 @@ const configOverrides = computed(() => {
 function collectParams(): Record<string, unknown> {
   return {
     preset: presetName.value,
+    presetRev: PRESET_REV,
     layers: layers.value,
     width: width.value,
     clearance: clearance.value,
@@ -104,11 +115,25 @@ function collectParams(): Record<string, unknown> {
   };
 }
 
-/** 把持久化的参数值写回表单（只认已知字段） */
+/** 把持久化的参数值写回表单（只认已知字段）。
+ *
+ *  版次规则（见 `PRESET_REV`）：存档版次落后于当前 `PRESET_REV` 且存的是**某个预设**时，
+ *  说明该预设的内置值已被改过（如 0.4.6 重标定 AC）→ **只套用新预设**，不再用存档里的
+ *  逐项覆盖值（那些是旧预设的副本，会把新默认值顶掉）；「自定义」或版次一致则照旧恢复，
+ *  用户自己改过的参数不会丢。 */
 function applyParams(v: Record<string, unknown>): void {
   const num = (k: string) => (typeof v[k] === "number" ? (v[k] as number) : undefined);
   const str = (k: string) => (typeof v[k] === "string" ? (v[k] as string) : undefined);
-  if (typeof v.preset === "string") applyPreset(v.preset as "custom" | "hv" | "full" | "ac" | "power");
+  const storedPreset = str("preset");
+  if (storedPreset) applyPreset(storedPreset as "custom" | "hv" | "full" | "ac" | "power");
+  const keepOverrides =
+    !storedPreset || storedPreset === "custom" || (num("presetRev") ?? 0) >= PRESET_REV;
+  if (!keepOverrides) {
+    presetNotice.value =
+      `预设默认值已更新：已按最新的「${presetLabel(storedPreset)}」预设重置参数` +
+      `（旧参数来自上一版预设，会盖住新默认值）。可在下表核对后直接运行。`;
+    return;
+  }
   if (num("layers") !== undefined) layers.value = num("layers")!;
   if (num("width") !== undefined) width.value = num("width")!;
   if (num("clearance") !== undefined) clearance.value = num("clearance")!;
@@ -143,6 +168,7 @@ function applyParams(v: Record<string, unknown>): void {
 
 function applyPreset(p: "custom" | "hv" | "full" | "ac" | "power"): void {
   presetName.value = p;
+  presetNotice.value = null; // 用户主动套预设（或载入时）→ 清掉"预设已更新"提示
   if (p === "hv") {
     // DC 信号推荐：cell 2.0 / threshold 3.0 + 4 层 + 0.2/0.2（对应原项目 in/hv_config.json + README）。
     // 算法项用"质量优先"：更充分收敛（更多 SA 重启/初温、冲突消解轮数）+ 开启拥塞均衡（降层占用峰值、提走通率）。
@@ -215,6 +241,17 @@ function applyPreset(p: "custom" | "hv" | "full" | "ac" | "power"): void {
     congestionHardThreshold.value = 3.0;
     method.value = "packing";
     optimizer.value = "sa";
+  }
+}
+
+/** 预设展示名（载入时"预设已更新"提示用） */
+function presetLabel(p: string): string {
+  switch (p) {
+    case "hv": return "DC 信号";
+    case "ac": return "AC";
+    case "power": return "POWER";
+    case "full": return "全量";
+    default: return "自定义";
   }
 }
 
@@ -895,8 +932,18 @@ onBeforeUnmount(() => {
               <option value="power">POWER（宽线 8mm / 20 层）</option>
               <option value="full">全量（细格 0.5 / 阈值 0.8）</option>
             </select>
+            <button
+              class="prl-btn"
+              :disabled="presetName === 'custom'"
+              title="把当前预设的内置推荐值重新写回表单（会覆盖手工改动）"
+              @click="applyPreset(presetName)"
+            >套用预设</button>
           </div>
-          <p class="prl-hint">预设=一组推荐的层数/线宽/线距/拥塞参数，一键套用；选「自定义」再逐项微调下面的参数</p>
+          <p v-if="presetNotice" class="prl-warn prl-warn-inline">
+            ⚠️ {{ presetNotice }}
+            <button class="prl-btn prl-btn-sm" @click="presetNotice = null">知道了</button>
+          </p>
+          <p class="prl-hint">预设=一组推荐的层数/线宽/线距/拥塞参数，一键套用；选「自定义」再逐项微调下面的参数（微调后预设名不变，但载入时以存档值为准）</p>
         </div>
         <div class="prl-grid3">
           <div class="prl-field">
