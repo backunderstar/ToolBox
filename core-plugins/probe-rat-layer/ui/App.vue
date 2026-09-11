@@ -128,7 +128,7 @@ function applyParams(v: Record<string, unknown>): void {
   if (storedPreset) applyPreset(storedPreset as "custom" | "hv" | "full" | "ac" | "power");
   const keepOverrides =
     !storedPreset || storedPreset === "custom" || (num("presetRev") ?? 0) >= PRESET_REV;
-  if (!keepOverrides) {
+  if (!keepOverrides && storedPreset) {
     presetNotice.value =
       `预设默认值已更新：已按最新的「${presetLabel(storedPreset)}」预设重置参数` +
       `（旧参数来自上一版预设，会盖住新默认值）。可在下表核对后直接运行。`;
