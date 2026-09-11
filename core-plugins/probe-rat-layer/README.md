@@ -76,10 +76,29 @@ viz.rs        plotters 按需渲染 layer/overview/rose/manual → PNG(base64 da
 - 随应用分发（`bundle.resources` 的 `_core`），首启 `ensure_core_plugins` 部署；**默认启用**
   （核心插件语义），管理类命令不依赖工作区。
 
+## 预设（UI 一键套用，见 `ui/App.vue::applyPreset`）
+
+| 预设 | 层数 / 线宽 / 线距 | 关键参数 |
+|---|---|---|
+| DC 信号（默认） | 4 / 0.2 / 0.2 | cell 2.0、阈值 3.0、质量优先 + 拥塞均衡 |
+| **AC** | **11 / 0.1 / 0.1** | cell 2.0、**阈值 4.8**、**热 SA(20/0.9998/0.9)**、**护栏 2.5**、拥塞均衡 |
+| POWER | 20 / 8 / 0.2 | cell 2.0、阈值 3.0 |
+| 全量 | 4 / 0.2 / 0.2 | cell 0.5、阈值 0.8（严） |
+
+AC 预设用项目现成的 4 个 TDQ 筛选文件（`AC_TDQ0/1/8/9`，并集 4660 网）实测定参：
+**需人工 0 / 同层交叉 2482 / 层线数失衡 0.094 / 扇区失衡 0.035 / 占用峰值 0.89 / 洪泛走通 100% / ~23s**。
+标定表与推导见 [HANDOVER §1.34](../../HANDOVER.md)。
+
 ## 测试
 
 `cargo test -p tb-probe-rat-layer --lib`：pipeline 合成数据 / geometry / config 覆盖 /
 扇区索引 / report 往返 / dispatch 命令路由 / **FFI ABI 冒烟**（libloading 直接加载 DLL）。
+
+真实数据（`#[ignore]`，本地手工跑 `cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture`）：
+
+- `real_data_ac_sweep`：AC 预设标定对照表 + 确定性复核（1165P + 4 个 TDQ list）；
+- `real_data_dc_preset_regression`：**DC 回归守护**（锁 `已分配 1798 / 需人工 2`，防 AC 标定波及 DC）；
+- 另有历史基线测试（hv 1800 网、POWER width8 pin 邻近等）。
 
 ## 与旧版的关系
 

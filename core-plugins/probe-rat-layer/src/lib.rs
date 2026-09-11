@@ -656,6 +656,236 @@ mod tests {
         assert_eq!(violations, 0, "仍存在同层 pin 邻近违规: {violations}");
     }
 
+    /// AC 预设标定扫描（本地手工运行）：用真实项目的 4 个 TDQ 筛选文件（1165P_3D，4660 网）
+    /// 逐一评估候选参数组合，输出决定性指标：
+    /// - **分层效果**：需人工 net 数、同层交叉（各层 soft_conflict_count 之和）、洪泛走通率、占用峰值；
+    /// - **各层均匀**：层线数失衡 `(max-min)/mean`、层长失衡；
+    /// - **各扇区均匀**：`metrics::sector_imbalance`（每扇区在各层间的 max-min 之和 / 总线数）、
+    ///   以及扇区总线数的 min/max。
+    ///
+    /// 运行：`cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture real_data_ac_sweep`
+    #[test]
+    #[ignore]
+    fn real_data_ac_sweep() {
+        use crate::metrics;
+        use std::collections::HashMap as StdHashMap;
+        let dir = r"D:\ToolBoxData\Project\1165P_3D";
+        let input = format!("{dir}\\1165P_3D.xlsx");
+        let filters: Vec<String> = ["AC_TDQ0", "AC_TDQ1", "AC_TDQ8", "AC_TDQ9"]
+            .iter()
+            .map(|n| format!("{dir}\\LIST\\{n}.lst"))
+            .collect();
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+
+        // "质量优先"基线（与 DC 预设同款算法项）；各档只改需要比较的旋钮。
+        let base = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 3, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 15, "balance_length_rounds": 6,
+            "minimize_crossings_passes": 6, "sa_restarts": 3, "sa_seed": 42,
+            "sa_initial_temp": 12, "sa_cooling": 0.9995, "sa_max_steps": 0,
+            "sa_swap_ratio": 0.7, "sa_balance_slack": 2, "via_area_cost": 0.1,
+            "congestion_balance": true, "congestion_balance_passes": 40,
+            "congestion_balance_cross_weight": 0.5,
+        });
+        let merge = |extra: serde_json::Value| -> serde_json::Value {
+            let mut o = base.as_object().cloned().unwrap_or_default();
+            if let Some(e) = extra.as_object() {
+                for (k, v) in e {
+                    o.insert(k.clone(), v.clone());
+                }
+            }
+            serde_json::Value::Object(o)
+        };
+        // (标签, 层数, 线宽, 线距, 覆盖项) —— 终选对照：11 层 / 0.1 / 0.1，阈值 4.8 + 热 SA + 护栏 2.5
+        let chosen = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 4.8, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 15, "balance_length_rounds": 6,
+            "minimize_crossings_passes": 6, "sa_restarts": 3, "sa_seed": 42,
+            "sa_initial_temp": 20, "sa_cooling": 0.9998, "sa_max_steps": 0,
+            "sa_swap_ratio": 0.9, "sa_balance_slack": 2.5, "via_area_cost": 0.1,
+            "congestion_balance": true, "congestion_balance_passes": 40,
+            "congestion_balance_cross_weight": 0.5,
+        });
+        let cfgs: Vec<(&str, i64, f64, f64, serde_json::Value)> = vec![
+            (
+                "J0 旧AC几何+DC式算参(阈值3.0 基线)",
+                11,
+                0.1,
+                0.1,
+                merge(serde_json::json!({ "congestion_hard_threshold": 3.0 })),
+            ),
+            (
+                "J1 终选 AC 预设(阈值4.8+热SA+护栏2.5)",
+                11,
+                0.1,
+                0.1,
+                chosen.clone(),
+            ),
+            ("J2 终选复核(确定性)", 11, 0.1, 0.1, chosen.clone()),
+        ];
+
+        let mut cache: StdHashMap<(i64, i64, i64), LoadedData> = StdHashMap::new();
+        for (label, layers, width, clearance, ov) in cfgs {
+            let key = (layers, (width * 1000.0) as i64, (clearance * 1000.0) as i64);
+            let data = cache
+                .entry(key)
+                .or_insert_with(|| {
+                    crate::io::load_input(&input, &filters, layers, width, clearance).expect("读入应成功")
+                })
+                .clone();
+            let cfg = default_config().with_overrides(&ov).expect("config 覆盖应成功");
+            let prog = Progress::new(&active, &cancel);
+            let t = std::time::Instant::now();
+            let r = pipeline::run_once(&data, &cfg, &prog).expect("pipeline 应成功");
+            let el = t.elapsed().as_secs_f64();
+
+            let mut lc: crate::collections::HashMap<i64, i64> = crate::collections::HashMap::default();
+            let mut llen: crate::collections::HashMap<i64, f64> = crate::collections::HashMap::default();
+            let mut lsec: crate::collections::HashMap<i64, crate::collections::HashMap<i64, i64>> =
+                crate::collections::HashMap::default();
+            let mut sec_total: crate::collections::HashMap<i64, i64> = crate::collections::HashMap::default();
+            let mut total = 0i64;
+            for w in &data.wires {
+                if let Some(&l) = r.assignment.get(&w.wire_id) {
+                    *lc.entry(l).or_insert(0) += 1;
+                    *llen.entry(l).or_insert(0.0) += w.length();
+                    let si = metrics::sector_index(
+                        crate::layer_packing::wire_dir_angle(w),
+                        cfg.sector_angle_deg,
+                    );
+                    *lsec.entry(l).or_default().entry(si).or_insert(0) += 1;
+                    *sec_total.entry(si).or_insert(0) += 1;
+                    total += 1;
+                }
+            }
+            let c_imb = metrics::count_imbalance(&lc);
+            let l_imb = metrics::length_imbalance(&llen, &lc);
+            let s_imb = metrics::sector_imbalance(&lsec, total);
+            let same_cross: i64 = r.layers.iter().map(|l| l.soft_conflict_count).sum();
+            let max_occ = r.layers.iter().fold(0.0f64, |m, l| if l.max_occupancy > m { l.max_occupancy } else { m });
+            let per_layer_sectors: Vec<String> = r
+                .layers
+                .iter()
+                .filter(|l| l.kind == "signal")
+                .map(|l| {
+                    let n = lsec.get(&l.layer_index).map(|m| m.len()).unwrap_or(0);
+                    format!("L{}:{}线/{}扇区", l.layer_index, l.wires.len(), n)
+                })
+                .collect();
+            eprintln!(
+                "[AC {label}]\n    nets={} wires={} 已分配={} 需人工={} 同层交叉={} 硬冲突(几何)={} 洪泛={}/{} 占用峰值={:.2}\n    层线数失衡={:.4} 层长失衡={:.4} 扇区失衡={:.4} 用时={:.1}s\n    {}",
+                data.nets.len(),
+                data.wires.len(),
+                r.assignment.len(),
+                r.manual_route_nets.len(),
+                same_cross,
+                r.hard_conflicts.len(),
+                r.routable_flood_net_count,
+                r.total_net_count,
+                max_occ,
+                c_imb,
+                l_imb,
+                s_imb,
+                el,
+                per_layer_sectors.join(" | ")
+            );
+        }
+    }
+
+    /// **DC 预设回归守护**（本地手工运行）：AC 预设标定**只改 `ui/App.vue` 的 `ac` 分支**
+    /// （Rust 侧零行为改动），本测试用两份真实数据跑 DC 预设（4 层 / 0.2 / 0.2 / 阈值 3.0 + 质量优先）
+    /// 并**锁定**结果，证明 DC 未被波及、且将来若有人改共享默认值会立刻报警。
+    ///
+    /// 基线（§1.16 / §1.22 的 hv 1800 网）：`已分配 1798 / 需人工 2`。
+    ///
+    /// 运行：`cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture real_data_dc_preset_regression`
+    #[test]
+    #[ignore]
+    fn real_data_dc_preset_regression() {
+        use crate::metrics;
+        // 与 ui/App.vue 的 "hv"（DC 信号）预设逐字段一致
+        let cfg = default_config()
+            .with_overrides(&serde_json::json!({
+                "congestion_grid_cell": 2, "congestion_hard_threshold": 3, "layer_capacity": 1,
+                "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+                "optimizer": "sa", "resolve_conflict_rounds": 15, "balance_length_rounds": 6,
+                "minimize_crossings_passes": 6, "sa_restarts": 3, "sa_seed": 42,
+                "sa_initial_temp": 12, "sa_cooling": 0.9995, "sa_max_steps": 0,
+                "sa_swap_ratio": 0.7, "sa_balance_slack": 2, "via_area_cost": 0.1,
+                "congestion_balance": true, "congestion_balance_passes": 40,
+                "congestion_balance_cross_weight": 0.5,
+            }))
+            .expect("config 覆盖应成功");
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+
+        // 数据集 A：§1.16/§1.22 的 DC 基线（1800 网）；数据集 B：1165P + DC_VFSBLN_IN（单筛选文件）
+        let a = r"D:\ToolBoxData\Project\测试";
+        let b = r"D:\ToolBoxData\Project\1165P_3D";
+        let cases: Vec<(&str, String, Vec<String>)> = vec![
+            ("A 测试/1.xlsx + hv_all.lst", format!("{a}\\1.xlsx"), vec![format!("{a}\\hv_all.lst")]),
+            (
+                "B 1165P_3D.xlsx + DC_VFSBLN_IN.lst",
+                format!("{b}\\1165P_3D.xlsx"),
+                vec![format!("{b}\\LIST\\DC_VFSBLN_IN.lst")],
+            ),
+        ];
+        let mut assigned_a = 0usize;
+        let mut manual_a = 0usize;
+        // 额外对照：同一 DC 预设但**关掉拥塞均衡**，用于说明均衡在 DC 上是否真的生效（不改 DC 配置）
+        let mut no_bal = cfg.clone();
+        no_bal.congestion_balance = false;
+        for (label, input, filters) in cases {
+            let data = crate::io::load_input(&input, &filters, 4, 0.2, 0.2).expect("读入应成功");
+            for (tag, c) in [("均衡开", &cfg), ("均衡关", &no_bal)] {
+                let prog = Progress::new(&active, &cancel);
+                let t = std::time::Instant::now();
+                let r = pipeline::run_once(&data, c, &prog).expect("pipeline 应成功");
+                let el = t.elapsed().as_secs_f64();
+
+                let mut lc: crate::collections::HashMap<i64, i64> = crate::collections::HashMap::default();
+                let mut lsec: crate::collections::HashMap<i64, crate::collections::HashMap<i64, i64>> =
+                    crate::collections::HashMap::default();
+                let mut total = 0i64;
+                for w in &data.wires {
+                    if let Some(&l) = r.assignment.get(&w.wire_id) {
+                        *lc.entry(l).or_insert(0) += 1;
+                        let si = metrics::sector_index(
+                            crate::layer_packing::wire_dir_angle(w),
+                            c.sector_angle_deg,
+                        );
+                        *lsec.entry(l).or_default().entry(si).or_insert(0) += 1;
+                        total += 1;
+                    }
+                }
+                let max_occ = r.layers.iter().fold(0.0f64, |m, l| if l.max_occupancy > m { l.max_occupancy } else { m });
+                eprintln!(
+                    "[DC 回归 {label} · {tag}] 网={} 已分配={} 需人工={} 同层交叉={} 洪泛={}/{} 占用峰值={:.2} 层线数失衡={:.4} 扇区失衡={:.4} 用时={:.2}s",
+                    data.nets.len(),
+                    r.assignment.len(),
+                    r.manual_route_nets.len(),
+                    r.layers.iter().map(|l| l.soft_conflict_count).sum::<i64>(),
+                    r.routable_flood_net_count,
+                    r.total_net_count,
+                    max_occ,
+                    metrics::count_imbalance(&lc),
+                    metrics::sector_imbalance(&lsec, total),
+                    el
+                );
+                if label.starts_with('A') && tag == "均衡开" {
+                    assigned_a = r.assignment.len();
+                    manual_a = r.manual_route_nets.len();
+                }
+            }
+        }
+        // §1.16/§1.22 记录的 DC 基线（1800 网 hv）：已分配 1798、需人工 2 —— 逐点锁定，防 DC 被波及
+        assert_eq!(assigned_a, 1798, "DC 基线已分配数变了（DC 结果被波及）");
+        assert_eq!(manual_a, 2, "DC 基线需人工数变了（DC 结果被波及）");
+    }
+
     fn synthetic_data() -> LoadedData {
         let mut nets: Vec<Net> = Vec::new();
         let mut wires: Vec<Wire> = Vec::new();

@@ -178,14 +178,34 @@ function applyPreset(p: "custom" | "hv" | "full" | "ac" | "power"): void {
     method.value = "packing";
     optimizer.value = "sa";
   } else if (p === "ac") {
-    // AC 信号：细线 0.1mm、更多层（12 层）；其余同 DC 预设
-    layers.value = 12;
+    // AC 信号：细线 0.1 / 线距 0.1 / 11 层；算法项与 DC 预设同源（"质量优先"），并按 AC 数据独立标定：
+    // **阈值 4.8 + 热 SA（初温 20 / 冷却 0.9998 / 交换率 0.9）+ 均衡护栏 2.5**。
+    // 标定数据 = 1165P_3D 现有 4 个 TDQ 筛选文件（AC_TDQ0/1/8/9，并集 4660 网），
+    // 实测（11 层）：需人工 0、同层交叉 2482、层线数失衡 0.094、扇区失衡 0.035、
+    // 占用峰值 0.89、洪泛走通 100%、约 23s（对照与推导见 HANDOVER §1.34；勿凭感觉改，
+    // 改前用 `cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture real_data_ac_sweep` 复测）。
+    layers.value = 11;
     width.value = 0.1;
-    clearance.value = 0.2;
+    clearance.value = 0.1;
     congestionGridCell.value = 2.0;
-    congestionHardThreshold.value = 3.0;
+    congestionHardThreshold.value = 4.8;
     method.value = "packing";
     optimizer.value = "sa";
+    resolveConflictRounds.value = 15;
+    balanceLengthRounds.value = 6;
+    minimizeCrossingsPasses.value = 6;
+    saRestarts.value = 3;
+    saInitialTemp.value = 20.0;
+    saCooling.value = 0.9998;
+    saMaxSteps.value = 0;
+    saSwapRatio.value = 0.9;
+    saBalanceSlack.value = 2.5;
+    sectorAngleDeg.value = 45.0;
+    layerCapacity.value = 1.0;
+    capacityUtilization.value = 0.6;
+    viaAreaCost.value = 0.1;
+    congestionBalance.value = true;
+    congestionBalancePasses.value = 40;
   } else if (p === "power") {
     // POWER：宽线 8mm、更多层（20 层）；其余同 DC 预设
     layers.value = 20;
@@ -871,7 +891,7 @@ onBeforeUnmount(() => {
             <select v-model="presetName" class="prl-input prl-select" @change="applyPreset(presetName)">
               <option value="custom">自定义</option>
               <option value="hv">DC 信号（cell 2.0 / threshold 3.0 / 4 层 / 0.2mm）</option>
-              <option value="ac">AC（细线 0.1mm / 12 层）</option>
+              <option value="ac">AC（细线 0.1 / 线距 0.1 / 11 层 / 阈值 4.8）</option>
               <option value="power">POWER（宽线 8mm / 20 层）</option>
               <option value="full">全量（细格 0.5 / 阈值 0.8）</option>
             </select>
@@ -882,7 +902,7 @@ onBeforeUnmount(() => {
           <div class="prl-field">
             <label class="prl-label">层数（xlsx 输入）</label>
             <input v-model.number="layers" type="number" min="1" max="40" class="prl-input" />
-            <p class="prl-field-hint">信号层数（Allegro 建层数）。越多每层越不挤、越散，但超过实际层数无用。推荐：DC/HV 4、AC 12、POWER 20（预设已带）</p>
+            <p class="prl-field-hint">信号层数（Allegro 建层数）。越多每层越不挤、越散，但超过实际层数无用。推荐：DC/HV 4、AC 11、POWER 20（预设已带）</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">线宽 mm（DC 0.2 / AC 0.1 / POWER 8）</label>
@@ -892,7 +912,7 @@ onBeforeUnmount(() => {
           <div class="prl-field">
             <label class="prl-label">线距 mm</label>
             <input v-model.number="clearance" type="number" step="0.05" class="prl-input" />
-            <p class="prl-field-hint">线与线最小间距 mm，参与拥塞占用估算：越大占用越大、越易判冲突。推荐 0.2（与板子实际一致）</p>
+            <p class="prl-field-hint">线与线最小间距 mm，参与拥塞占用估算：越大占用越大、越易判冲突。默认 0.2；DC/HV 0.2、AC 0.1（与板子实际一致）</p>
           </div>
         </div>
       </div>
@@ -915,7 +935,7 @@ onBeforeUnmount(() => {
           <strong>圆心拥塞</strong>：若层占用峰值仍 &gt;1.0（圆心/圆心处线挤），开启<strong>「拥塞均衡」</strong>
           （后处理压峰值，实测 1.56→1.11 + 走通率到 100%，仅 +0.2s）。<br />
           <strong>推荐路径</strong>：先选「输入设置→预设」，再回来微调；DC/HV 用 cell 2.0 + threshold 3.0，
-          AC 12 层 / POWER 20 层（预设已带）。
+          AC 用 cell 2.0 + threshold 4.8 / 11 层 / 0.1 / 0.1，POWER 20 层（预设已带）。
         </p>
       </div>
       <div class="prl-card">
@@ -1018,9 +1038,9 @@ onBeforeUnmount(() => {
             <p class="prl-field-hint">拥塞网格边长 mm：越小判得越细、但越易判冲突（更严）。默认 0.5（偏严）；DC/HV 推荐 2.0，全量 0.5</p>
           </div>
           <div class="prl-field">
-            <label class="prl-label">硬冲突阈值（HV 用 3.0）</label>
+            <label class="prl-label">硬冲突阈值（HV 3.0 / AC 4.8）</label>
             <input v-model.number="congestionHardThreshold" type="number" step="0.1" class="prl-input" />
-            <p class="prl-field-hint">交点拥塞超过该值判<strong>硬冲突</strong>。<u>越大越宽松</u>（硬冲突、需人工越少，但同层交叉更多）。默认 0.8 太严；DC/HV 推荐 3.0，全量 0.8</p>
+            <p class="prl-field-hint">交点拥塞超过该值判<strong>硬冲突</strong>。<u>越大越宽松</u>（硬冲突、需人工越少，但同层交叉更多）。默认 0.8 太严；DC/HV 推荐 3.0，AC 推荐 4.8（11 层实测 210→0 需人工、且层/扇区更均匀），全量 0.8</p>
           </div>
           <div class="prl-field">
             <label class="prl-label">层容量（勿 >1）</label>
