@@ -1330,6 +1330,23 @@ cargo test --workspace                 # Rust 测试（当前 62）
 
 ## 7. 重要决策记录
 
+- **更新签名密钥轮换（2026-09-28，用户口令遗失）**：原 `%USERPROFILE%\.tauri\toolbox-updater.key`
+  的口令已无法找回，遂**生成新密钥对**并把新公钥写入 `tauri.conf.json → plugins.updater.pubkey`：
+  - 新私钥 `%USERPROFILE%\.tauri\toolbox-updater.key`（+ `.key.pub`）；
+  - 新口令与公钥另存于桌面 `ToolBox-签名密钥与口令.txt`（UTF-8 BOM，勿入库）；
+  - 旧密钥 + 旧 `tauri.conf.json` 备份在 `target/updater-key-backup-20260928/`（gitignored）；
+  - 本地签名构建已验证：新 `.sig` 的 key id 与自签对照一致。
+  - ⚠ **公钥变更的后果**：已安装且用旧公钥的版本**无法通过自动更新**升级到新密钥签名的包
+    （签名校验失败），这些机器需**手动安装一次**新版；此后自动更新恢复正常。
+  - ⚠ **GitHub Secrets 必须同步换新**：`TAURI_SIGNING_PRIVATE_KEY`（新私钥内容）+
+    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（新口令），否则 CI 打不出签名产物。
+  - 教训：口令别只记在脑子里——私钥/口令一旦丢失就只能轮换密钥并付出上述升级代价。
+- **本地构建的签名环境变量写法**（踩过）：`TAURI_SIGNING_PRIVATE_KEY` 要的是**私钥字符串**，
+  传**文件路径**会 `failed to decode base64 secret key`；传路径请用
+  `TAURI_SIGNING_PRIVATE_KEY_PATH`（`pnpm tauri signer sign -f` 同义）。
+  实测 `tauri build` 时传路径**仍能签出**（bundler 走了自己的路径解析），但 `signer sign` 会失败——
+  两种写法别混用。
+
 - 宿主与插件 UI **全 Vue 3**，React 版存档在 `react` 分支（用户决策：以后主要用 Vue 3 开发）
 - 笔记编辑器 **Vditor → md-editor-v3**（Vue 3 生态；产物全打进 IIFE，gzip ~702kB，离线可用）
 - **插件沙箱**：仅规划在 PLAN.md §5.2（P0：CSP 收紧 + 命令面最小化 + ShadowRealm；P1：iframe + wasm；P2：process 权限 + AppContainer），**未排期未实现**
