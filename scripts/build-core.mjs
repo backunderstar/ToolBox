@@ -16,7 +16,8 @@ const isRelease = process.argv.includes("--release");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const VERSION = pkg.version;
 
-// 教学基线：核心插件仅保留一个教学示例（core-example）。
+// 教学基线 + 真实算法：核心插件 = core-example（教学示例，覆盖全部实现要点）
+// + probe-rat-layer（探针卡分层，真实算法工具）。
 // 新增核心插件：在 core-plugins/<id>/ 写 crate + ui/，然后往 PLUGINS 加一项即可
 // （manifest 由本脚本生成，含 bundled 标记；id 必须与 core-plugins/<id> 目录对应）。
 // dir：插件 crate/ui 源码目录名（默认 = id 去掉 "core-" 前缀；id 非 core- 前缀时必须显式给）

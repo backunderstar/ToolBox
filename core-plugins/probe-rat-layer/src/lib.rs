@@ -670,7 +670,7 @@ mod tests {
         use crate::metrics;
         use std::collections::HashMap as StdHashMap;
         let dir = r"D:\ToolBoxData\Project\1165P_3D";
-        let input = format!("{dir}\\1165P_3D.xlsx");
+        let input = format!("{dir}\\1165P_3D_new.xlsx");
         let filters: Vec<String> = ["AC_TDQ0", "AC_TDQ1", "AC_TDQ8", "AC_TDQ9"]
             .iter()
             .map(|n| format!("{dir}\\LIST\\{n}.lst"))
@@ -828,8 +828,8 @@ mod tests {
         let cases: Vec<(&str, String, Vec<String>)> = vec![
             ("A 测试/1.xlsx + hv_all.lst", format!("{a}\\1.xlsx"), vec![format!("{a}\\hv_all.lst")]),
             (
-                "B 1165P_3D.xlsx + DC_VFSBLN_IN.lst",
-                format!("{b}\\1165P_3D.xlsx"),
+                "B 1165P_3D_new.xlsx + DC_VFSBLN_IN.lst",
+                format!("{b}\\1165P_3D_new.xlsx"),
                 vec![format!("{b}\\LIST\\DC_VFSBLN_IN.lst")],
             ),
         ];
@@ -884,6 +884,440 @@ mod tests {
         // §1.16/§1.22 记录的 DC 基线（1800 网 hv）：已分配 1798、需人工 2 —— 逐点锁定，防 DC 被波及
         assert_eq!(assigned_a, 1798, "DC 基线已分配数变了（DC 结果被波及）");
         assert_eq!(manual_a, 2, "DC 基线需人工数变了（DC 结果被波及）");
+    }
+
+    /// 对单个 PWR 名单真跑一遍分层（AC 预设几何/算参：11 层 / 0.1 / 0.1 + 阈值 4.8 + 热 SA + 护栏 2.5），
+    /// 给出候选名单的"能不能分层 / 分了多少 / 需人工多少"结论。
+    /// `cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture pwr_sense_layering`
+    #[test]
+    #[ignore]
+    fn real_data_pwr_sense_layering() {
+        let dir = r"D:\ToolBoxData\Project\1165P_3D";
+        let input = format!("{dir}\\1165P_3D_new.xlsx");
+        // AC 预设（ui/App.vue::applyPreset("ac") 的算法项）
+        let ac = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 4.8, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 15, "balance_length_rounds": 6,
+            "minimize_crossings_passes": 6, "sa_restarts": 3, "sa_seed": 42,
+            "sa_initial_temp": 20, "sa_cooling": 0.9998, "sa_max_steps": 0,
+            "sa_swap_ratio": 0.9, "sa_balance_slack": 2.5, "via_area_cost": 0.1,
+            "congestion_balance": true, "congestion_balance_passes": 40,
+            "congestion_balance_cross_weight": 0.5,
+        });
+        let cfg = default_config().with_overrides(&ac).expect("config 覆盖应成功");
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+        for f in ["PWR_VDD1_SENSE.lst", "PWR_VDD1_IN.lst"] {
+            let filter = format!("{dir}\\LIST\\{f}");
+            let data = crate::io::load_input(&input, &[filter], 11, 0.1, 0.1).expect("读入应成功");
+            let hist: std::collections::BTreeMap<usize, usize> =
+                data.nets.iter().fold(std::collections::BTreeMap::new(), |mut m, n| {
+                    *m.entry(n.pins.len()).or_insert(0) += 1;
+                    m
+                });
+            let prog = Progress::new(&active, &cancel);
+            let t = std::time::Instant::now();
+            let r = pipeline::run_once(&data, &cfg, &prog).expect("pipeline 应成功");
+            let same_cross: i64 = r.layers.iter().map(|l| l.soft_conflict_count).sum();
+            let max_occ = r.layers.iter().fold(0.0f64, |m, l| if l.max_occupancy > m { l.max_occupancy } else { m });
+            let mut lc: crate::collections::HashMap<i64, i64> = crate::collections::HashMap::default();
+            for w in &data.wires {
+                if let Some(&l) = r.assignment.get(&w.wire_id) {
+                    *lc.entry(l).or_insert(0) += 1;
+                }
+            }
+            eprintln!(
+                "[{f}] net={}（pin 数分布 {hist:?}）飞线={} 已分配={} 需人工={} 同层交叉={} 洪泛={}/{} 占用峰值={:.2} 层线数失衡={:.4} 用时={:.1}s",
+                data.nets.len(),
+                data.wires.len(),
+                r.assignment.len(),
+                r.manual_route_nets.len(),
+                same_cross,
+                r.routable_flood_net_count,
+                r.total_net_count,
+                max_occ,
+                crate::metrics::count_imbalance(&lc),
+                t.elapsed().as_secs_f64()
+            );
+        }
+    }
+
+    /// DC 预设 + "VDD1_SENSE ∪ DC_VFSBLN_IN" 组合跑分层（4 层 / 0.2 线宽 / 0.2 线距）。
+    /// 回答"一个名单能否匹配 + 两名单合起来 4 层能不能装下、各层多少"。
+    /// `cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture pwr_dc_layering`
+    #[test]
+    #[ignore]
+    fn real_data_pwr_dc_layering() {
+        let dir = r"D:\ToolBoxData\Project\1165P_3D";
+        let input = format!("{dir}\\1165P_3D_new.xlsx");
+        // DC（hv）预设：ui/App.vue::applyPreset("hv") 的全部算法项
+        let dc = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 3, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 15, "balance_length_rounds": 6,
+            "minimize_crossings_passes": 6, "sa_restarts": 3, "sa_seed": 42,
+            "sa_initial_temp": 12, "sa_cooling": 0.9995, "sa_max_steps": 0,
+            "sa_swap_ratio": 0.7, "sa_balance_slack": 2, "via_area_cost": 0.1,
+            "congestion_balance": true, "congestion_balance_passes": 40,
+            "congestion_balance_cross_weight": 0.5,
+        });
+        let cfg = default_config().with_overrides(&dc).expect("config 覆盖应成功");
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+        let sense = format!("{dir}\\LIST\\PWR_VDD1_SENSE.lst");
+        let vfsbln = format!("{dir}\\LIST\\DC_VFSBLN_IN.lst");
+
+        let sets: Vec<(&str, Vec<String>)> = vec![
+            ("组合：VDD1_SENSE ∪ DC_VFSBLN_IN", vec![sense.clone(), vfsbln.clone()]),
+            ("单跑：VDD1_SENSE", vec![sense.clone()]),
+            ("单跑：DC_VFSBLN_IN", vec![vfsbln.clone()]),
+        ];
+
+        for (label, filters) in sets {
+            let data = crate::io::load_input(&input, &filters, 4, 0.2, 0.2).expect("读入应成功");
+            let hist: std::collections::BTreeMap<usize, usize> =
+                data.nets.iter().fold(std::collections::BTreeMap::new(), |mut m, n| {
+                    *m.entry(n.pins.len()).or_insert(0) += 1;
+                    m
+                });
+            // 各名单分别命中多少（对已加载的 net 集合取交集）
+            let mut per_file: Vec<String> = Vec::new();
+            for f in &filters {
+                let wl = crate::io::xlsx::read_net_filter(f).unwrap();
+                let hit = data
+                    .nets
+                    .iter()
+                    .filter(|n| wl.contains(&n.net_id.to_uppercase()))
+                    .count();
+                let name = std::path::Path::new(f).file_name().unwrap().to_string_lossy().to_string();
+                per_file.push(format!("{name}: 名单 {} 条 → 命中 {hit}", wl.len()));
+            }
+            let prog = Progress::new(&active, &cancel);
+            let t = std::time::Instant::now();
+            let r = pipeline::run_once(&data, &cfg, &prog).expect("pipeline 应成功");
+            let same_cross: i64 = r.layers.iter().map(|l| l.soft_conflict_count).sum();
+            let max_occ = r.layers.iter().fold(0.0f64, |m, l| if l.max_occupancy > m { l.max_occupancy } else { m });
+            let per_layer: Vec<String> = r
+                .layers
+                .iter()
+                .filter(|l| l.kind == "signal")
+                .map(|l| format!("L{}:{}线/交叉{}/峰值{:.2}", l.layer_index, l.wires.len(), l.soft_conflict_count, l.max_occupancy))
+                .collect();
+            eprintln!(
+                "[{label}]\n    net={}（pin 数分布 {hist:?}）飞线={} 已分配={} 需人工={} 同层交叉={} 硬冲突(几何)={} 洪泛={}/{} 占用峰值={:.2} 用时={:.1}s\n    {}\n    warnings={:?}",
+                data.nets.len(),
+                data.wires.len(),
+                r.assignment.len(),
+                r.manual_route_nets.len(),
+                same_cross,
+                r.hard_conflicts.len(),
+                r.routable_flood_net_count,
+                r.total_net_count,
+                max_occ,
+                t.elapsed().as_secs_f64(),
+                per_layer.join(" | "),
+                data.warnings
+            );
+            eprintln!("    {}", per_file.join("；"));
+        }
+
+        // 组合场景再加几档"放宽约束/加减层"对照，用来看 4 层的**拥塞下限**（峰值由几何决定）
+        for (tag, layers, mut c) in [
+            ("组合·4 层（正式）", 4i64, cfg.clone()),
+            ("组合·5 层", 5i64, cfg.clone()),
+            ("组合·6 层", 6i64, cfg.clone()),
+            ("组合·8 层", 8i64, cfg.clone()),
+        ] {
+            c.congestion_hard_threshold = cfg.congestion_hard_threshold;
+            let data = crate::io::load_input(&input, &[sense.clone(), vfsbln.clone()], layers, 0.2, 0.2)
+                .expect("读入应成功");
+            let prog = Progress::new(&active, &cancel);
+            let r = pipeline::run_once(&data, &c, &prog).expect("pipeline 应成功");
+            let same_cross: i64 = r.layers.iter().map(|l| l.soft_conflict_count).sum();
+            let max_occ = r.layers.iter().fold(0.0f64, |m, l| if l.max_occupancy > m { l.max_occupancy } else { m });
+            let mut lc: crate::collections::HashMap<i64, i64> = crate::collections::HashMap::default();
+            for w in &data.wires {
+                if let Some(&l) = r.assignment.get(&w.wire_id) {
+                    *lc.entry(l).or_insert(0) += 1;
+                }
+            }
+            eprintln!(
+                "[{tag}] net={} 已分配={} 需人工={} 同层交叉={} 占用峰值={:.2} 层线数失衡={:.4} 洪泛={}/{}",
+                data.nets.len(),
+                r.assignment.len(),
+                r.manual_route_nets.len(),
+                same_cross,
+                max_occ,
+                crate::metrics::count_imbalance(&lc),
+                r.routable_flood_net_count,
+                r.total_net_count
+            );
+        }
+        // 放宽单一约束的对照（说明峰值是几何下限）
+        let data = crate::io::load_input(&input, &[sense.clone(), vfsbln.clone()], 4, 0.2, 0.2)
+            .expect("读入应成功");
+        for (tag, mut c) in [
+            ("组合·放宽硬冲突阈值 12.0（4 层）", cfg.clone()),
+            ("组合·放开层容量 10.0（4 层）", cfg.clone()),
+        ] {
+            if tag.contains("硬冲突阈值") {
+                c.congestion_hard_threshold = 12.0;
+            } else {
+                c.layer_capacity = 10.0;
+            }
+            let prog = Progress::new(&active, &cancel);
+            let r = pipeline::run_once(&data, &c, &prog).expect("pipeline 应成功");
+            let same_cross: i64 = r.layers.iter().map(|l| l.soft_conflict_count).sum();
+            let max_occ = r.layers.iter().fold(0.0f64, |m, l| if l.max_occupancy > m { l.max_occupancy } else { m });
+            eprintln!(
+                "[{tag}] 已分配={} 需人工={} 同层交叉={} 占用峰值={:.2}",
+                r.assignment.len(),
+                r.manual_route_nets.len(),
+                same_cross,
+                max_occ
+            );
+        }
+    }
+
+    /// 统一指标收集：各层线数/交叉/峰值、层线数失衡、层长失衡、扇区失衡、跨层 net 数、过孔估算、走通率。
+    /// 用于 DC/AC 参数扫描对比（见 `real_data_dc_quality_sweep`）。
+    fn sweep_metrics(
+        data: &LoadedData,
+        r: &crate::model::LayeringResult,
+        cfg: &crate::config::LayeringConfig,
+    ) -> String {
+        let mut lc: crate::collections::HashMap<i64, i64> = crate::collections::HashMap::default();
+        let mut llen: crate::collections::HashMap<i64, f64> = crate::collections::HashMap::default();
+        let mut lsec: crate::collections::HashMap<i64, crate::collections::HashMap<i64, i64>> =
+            crate::collections::HashMap::default();
+        let mut total = 0i64;
+        for w in &data.wires {
+            if let Some(&l) = r.assignment.get(&w.wire_id) {
+                *lc.entry(l).or_insert(0) += 1;
+                *llen.entry(l).or_insert(0.0) += w.length();
+                let si = crate::metrics::sector_index(
+                    crate::layer_packing::wire_dir_angle(w),
+                    cfg.sector_angle_deg,
+                );
+                *lsec.entry(l).or_default().entry(si).or_insert(0) += 1;
+                total += 1;
+            }
+        }
+        let same_cross: i64 = r.layers.iter().map(|l| l.soft_conflict_count).sum();
+        let max_occ = r
+            .layers
+            .iter()
+            .fold(0.0f64, |m, l| if l.max_occupancy > m { l.max_occupancy } else { m });
+        let per_layer: Vec<String> = r
+            .layers
+            .iter()
+            .filter(|l| l.kind == "signal")
+            .map(|l| format!("L{}:{}", l.layer_index, l.wires.len()))
+            .collect();
+        format!(
+            "已分配={} 需人工={} 同层交叉={} 峰值={:.2} 层线数失衡={:.4} 层长失衡={:.4} 扇区失衡={:.4} 跨层net={} 过孔≈{} 洪泛={}/{} 各层[{}]",
+            r.assignment.len(),
+            r.manual_route_nets.len(),
+            same_cross,
+            max_occ,
+            crate::metrics::count_imbalance(&lc),
+            crate::metrics::length_imbalance(&llen, &lc),
+            crate::metrics::sector_imbalance(&lsec, total),
+            r.multi_layer_nets,
+            r.via_estimate,
+            r.routable_flood_net_count,
+            r.total_net_count,
+            per_layer.join(" ")
+        )
+    }
+
+    /// DC 预设"分层质量"扫描：用户场景 = `VDD1_SENSE ∪ DC_VFSBLN_IN`（1280 net / 1362 飞线，4 层 / 0.2 / 0.2）。
+    /// 目标：**每层均匀 + 同层交叉更少 + 需人工更少**。允许牺牲时间。
+    /// 参考基线：`cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture real_data_dc_quality_sweep`
+    #[test]
+    #[ignore]
+    fn real_data_dc_quality_sweep() {
+        let dir = r"D:\ToolBoxData\Project\1165P_3D";
+        let input = format!("{dir}\\1165P_3D_new.xlsx");
+        let filters = vec![
+            format!("{dir}\\LIST\\PWR_VDD1_SENSE.lst"),
+            format!("{dir}\\LIST\\DC_VFSBLN_IN.lst"),
+        ];
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+        // DC 预设（ui/App.vue::applyPreset("hv")）逐项
+        let dc = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 3, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 15, "balance_length_rounds": 6,
+            "minimize_crossings_passes": 6, "sa_restarts": 3, "sa_seed": 42,
+            "sa_initial_temp": 12, "sa_cooling": 0.9995, "sa_max_steps": 0,
+            "sa_swap_ratio": 0.7, "sa_balance_slack": 2, "via_area_cost": 0.1,
+            "congestion_balance": true, "congestion_balance_passes": 40,
+            "congestion_balance_cross_weight": 0.5,
+        });
+        let merge = |extra: serde_json::Value| -> serde_json::Value {
+            let mut o = dc.as_object().cloned().unwrap_or_default();
+            if let Some(e) = extra.as_object() {
+                for (k, v) in e {
+                    o.insert(k.clone(), v.clone());
+                }
+            }
+            serde_json::Value::Object(o)
+        };
+        // (标签, 层数, 覆盖项)
+        let cases: Vec<(&str, i64, serde_json::Value)> = vec![
+            ("T0 DC 现状基线", 4, dc.clone()),
+            ("T1 初温 20", 4, merge(serde_json::json!({"sa_initial_temp": 20}))),
+            ("T2 初温 40", 4, merge(serde_json::json!({"sa_initial_temp": 40}))),
+            ("T3 慢冷却 0.9999", 4, merge(serde_json::json!({"sa_cooling": 0.9999}))),
+            ("T4 热+慢（20/0.9999/0.9）", 4, merge(serde_json::json!({"sa_initial_temp": 20, "sa_cooling": 0.9999, "sa_swap_ratio": 0.9}))),
+            ("T5 重启 10 + 初温 20", 4, merge(serde_json::json!({"sa_restarts": 10, "sa_initial_temp": 20}))),
+            ("T6 交叉轮 20 + 消解 30", 4, merge(serde_json::json!({"minimize_crossings_passes": 20, "resolve_conflict_rounds": 30}))),
+            ("T7 均衡 200 轮 + 交叉权重 1.0", 4, merge(serde_json::json!({"congestion_balance_passes": 200, "congestion_balance_cross_weight": 1.0}))),
+            ("T8 阈值 4.8", 4, merge(serde_json::json!({"congestion_hard_threshold": 4.8}))),
+            ("T9 阈值 6.0", 4, merge(serde_json::json!({"congestion_hard_threshold": 6.0}))),
+            ("T10 阈值 4.8 + 热慢 SA + 均衡 200", 4, merge(serde_json::json!({
+                "congestion_hard_threshold": 4.8, "sa_initial_temp": 20, "sa_cooling": 0.9999,
+                "sa_swap_ratio": 0.9, "sa_restarts": 8, "congestion_balance_passes": 200,
+                "congestion_balance_cross_weight": 1.0 }))),
+            ("T11 同上 + 护栏 3.0", 4, merge(serde_json::json!({
+                "congestion_hard_threshold": 4.8, "sa_initial_temp": 20, "sa_cooling": 0.9999,
+                "sa_swap_ratio": 0.9, "sa_restarts": 8, "congestion_balance_passes": 200,
+                "congestion_balance_cross_weight": 1.0, "sa_balance_slack": 3.0 }))),
+            ("T12 6 层 + 阈值 4.8 + 热慢 SA", 6, merge(serde_json::json!({
+                "congestion_hard_threshold": 4.8, "sa_initial_temp": 20, "sa_cooling": 0.9999,
+                "sa_swap_ratio": 0.9, "sa_restarts": 8, "congestion_balance_passes": 200 }))),
+        ];
+        for (label, layers, ov) in cases {
+            let cfg = default_config().with_overrides(&ov).expect("config 覆盖应成功");
+            let data = crate::io::load_input(&input, &filters, layers, 0.2, 0.2).expect("读入应成功");
+            let prog = Progress::new(&active, &cancel);
+            let t = std::time::Instant::now();
+            let r = pipeline::run_once(&data, &cfg, &prog).expect("pipeline 应成功");
+            eprintln!(
+                "[{label}] {} 用时={:.1}s",
+                sweep_metrics(&data, &r, &cfg),
+                t.elapsed().as_secs_f64()
+            );
+        }
+    }
+
+    /// 同一 net 的 2 段线（3-pin net）是否同层：`same_net_same_layer`（硬整网）与
+    /// `same_net_via_penalty`（软偏好 + 段级兜底）在真实数据上的效果对比。
+    /// `cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture same_net_layer_sweep`
+    #[test]
+    #[ignore]
+    fn real_data_same_net_layer_sweep() {
+        let dir = r"D:\ToolBoxData\Project\1165P_3D";
+        let input = format!("{dir}\\1165P_3D_new.xlsx");
+        let filters = vec![
+            format!("{dir}\\LIST\\PWR_VDD1_SENSE.lst"),
+            format!("{dir}\\LIST\\DC_VFSBLN_IN.lst"),
+        ];
+        let active = Arc::new(Mutex::new(ActiveStateData::default()));
+        let cancel = new_cancel();
+        let dc = serde_json::json!({
+            "congestion_grid_cell": 2, "congestion_hard_threshold": 3, "layer_capacity": 1,
+            "capacity_utilization": 0.6, "sector_angle_deg": 45, "method": "packing",
+            "optimizer": "sa", "resolve_conflict_rounds": 15, "balance_length_rounds": 6,
+            "minimize_crossings_passes": 6, "sa_restarts": 3, "sa_seed": 42,
+            "sa_initial_temp": 12, "sa_cooling": 0.9995, "sa_max_steps": 0,
+            "sa_swap_ratio": 0.7, "sa_balance_slack": 2, "via_area_cost": 0.1,
+            "congestion_balance": true, "congestion_balance_passes": 40,
+            "congestion_balance_cross_weight": 0.5,
+        });
+        for layers in [4i64, 6] {
+            let data = crate::io::load_input(&input, &filters, layers, 0.2, 0.2).expect("读入应成功");
+            // 多段网（>1 根飞线）总览
+            let mut per_net: crate::collections::HashMap<String, usize> = crate::collections::HashMap::default();
+            for w in &data.wires {
+                *per_net.entry(w.net_id.clone()).or_insert(0) += 1;
+            }
+            let multi = per_net.values().filter(|&&c| c > 1).count();
+            let multi_wires: usize = per_net.values().filter(|&&c| c > 1).sum();
+            eprintln!(
+                "[{layers} 层] 飞线 {} 条；多段网 {multi} 个（共 {multi_wires} 条线，占 {:.0}%）",
+                data.wires.len(),
+                100.0 * multi_wires as f64 / data.wires.len() as f64
+            );
+            for (label, same_layer, via_penalty, consolidate, merge_slack) in [
+                ("改动前基线（无归层）", false, 0.0f64, false, 1.15f64),
+                ("整网归层 开（新默认）", false, 0.0, true, 1.15),
+                ("整网归层 + 软偏好 λ=1", false, 1.0, true, 1.15),
+                ("整网归层 + 硬整网 packing", true, 0.0, true, 1.15),
+                ("整网归层 + 上限放宽 1.5", false, 0.0, true, 1.5),
+            ] {
+                let mut cfg = default_config().with_overrides(&dc).expect("config 覆盖应成功");
+                cfg.same_net_same_layer = same_layer;
+                cfg.same_net_via_penalty = via_penalty;
+                cfg.same_net_consolidate = consolidate;
+                cfg.same_net_merge_slack = merge_slack;
+                let prog = Progress::new(&active, &cancel);
+                let t = std::time::Instant::now();
+                let r = pipeline::run_once(&data, &cfg, &prog).expect("pipeline 应成功");
+                // 同 net 拆层统计（只看多段网）
+                let mut net_layers: crate::collections::HashMap<String, crate::collections::HashSet<i64>> =
+                    crate::collections::HashMap::default();
+                for w in &data.wires {
+                    if let Some(&l) = r.assignment.get(&w.wire_id) {
+                        net_layers.entry(w.net_id.clone()).or_default().insert(l);
+                    }
+                }
+                let split = net_layers
+                    .iter()
+                    .filter(|(n, ls)| per_net.get(*n).copied().unwrap_or(0) > 1 && ls.len() > 1)
+                    .count();
+                eprintln!(
+                    "  [{label}] {} 同net拆层={split}/{multi} 用时={:.1}s",
+                    sweep_metrics(&data, &r, &cfg),
+                    t.elapsed().as_secs_f64()
+                );
+            }
+        }
+    }
+
+    /// 诊断：逐个 PWR 筛选文件读入，打印"白名单条数 / 命中 net 数 / pin 数分布 / 未匹配条数"。
+    /// 用于排查"筛选文件里的 net 没被识别/没被分层"（本地手工跑，需要真实数据）：
+    /// `cargo test --release -p tb-probe-rat-layer -- --ignored --nocapture pwr_filter_diagnose`
+    #[test]
+    #[ignore]
+    fn real_data_pwr_filter_diagnose() {
+        let dir = r"D:\ToolBoxData\Project\1165P_3D";
+        let input = format!("{dir}\\1165P_3D_new.xlsx");
+        let files = [
+            "PWR_VDD1_SENSE.lst",
+            "PWR_VDD1_IN.lst",
+            "PWR_VDD2_Force.lst",
+            "PWR_VDD2_Sense.lst",
+            "PWR_UtiL.lst",
+        ];
+        for f in files {
+            let path = format!("{dir}\\LIST\\{f}");
+            let wl = crate::io::xlsx::read_net_filter(&path).unwrap();
+            let data = match crate::io::load_input(&input, &[path], 4, 0.2, 0.2) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("[{f}] 读入失败: {e}");
+                    continue;
+                }
+            };
+            let mut hist: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+            for n in &data.nets {
+                *hist.entry(n.pins.len()).or_insert(0) += 1;
+            }
+            let matched: std::collections::HashSet<String> =
+                data.nets.iter().map(|n| n.net_id.to_uppercase()).collect();
+            let unmatched: Vec<&String> = wl.iter().filter(|k| !matched.contains(*k)).take(4).collect();
+            eprintln!(
+                "[{f}] 白名单 {} 条 → 命中 net {} / 飞线 {}；pin 数分布 {hist:?}；未匹配示例 {unmatched:?}",
+                wl.len(),
+                data.nets.len(),
+                data.wires.len()
+            );
+            eprintln!("        warnings: {:?}", data.warnings);
+        }
     }
 
     fn synthetic_data() -> LoadedData {

@@ -235,6 +235,27 @@ pub fn run_once(
         )?;
     }
 
+    // 同 net 整网归层（默认开）：同一 net 的多段飞线尽量落同一层（同层放不下才跨层，少过孔）
+    if cfg.same_net_consolidate {
+        let soft_pairs: Vec<(String, String)> = conflicts
+            .iter()
+            .filter(|c| c.level == ConflictLevel::Soft)
+            .map(|c| (c.wire_a.clone(), c.wire_b.clone()))
+            .collect();
+        let (merged, still, d_cross) = pp::consolidate_same_net_layers(
+            &mut assignment,
+            &wires,
+            &hard_graph,
+            &allowed,
+            &soft_pairs,
+            cfg,
+            prog.cancel_flag(),
+        )?;
+        prog.log_info(&format!(
+            "[阶段 同 net 整网归层] 合并 {merged} 个跨层 net（仍跨层 {still}，同层交叉增量 {d_cross:+}）"
+        ));
+    }
+
     prog.check_cancel()?;
     prog.set("后处理与人工兜底", 90.0, "后处理与人工兜底");
     let viol = pp::verify_hard_free(&assignment, &hard_graph);

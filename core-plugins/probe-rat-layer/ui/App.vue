@@ -61,18 +61,21 @@ const shortSegmentLen = ref(0.0);              // 短线长度阈值(mm)；0=关
 const shortSegmentCrossingFactor = ref(1.0);   // 短线交叉硬冲突阈值放大系数；1=不放大(默认)
 const congestionBalance = ref(false);          // 后处理拥塞均衡；关=不改变现状(默认)
 const congestionBalancePasses = ref(20);       // 拥塞均衡最大轮数
+const sameNetConsolidate = ref(true);          // 同 net 整网归层（多段飞线尽量同层，默认开）
+const sameNetMergeSlack = ref(1.15);           // 整网归层的层均衡上限系数
 
 // 首启默认 DC 信号预设（cell 2.0 / threshold 3.0）——原项目文档明确"默认 0.8/0.5 对 DC/HV 太严"，
 // 默认值若用 probe_layer 原默认会让真实数据大量进人工（实测 1800 线 manual 1758）。
 const presetName = ref<"custom" | "hv" | "full" | "ac" | "power">("hv");
 
 /** 预设"版次"：**任一预设的内置参数改动时必须 +1**（改完同时更新本节注释与 HANDOVER）。
- *  历史：1 = 初始；2 = 0.4.6 重新标定 AC（11 层 / 0.1 / 0.1 / 阈值 4.8 + 热 SA + 护栏 2.5）。
+ *  历史：1 = 初始；2 = 0.4.6 重新标定 AC（11 层 / 0.1 / 0.1 / 阈值 4.8 + 热 SA + 护栏 2.5）；
+ *  3 = 0.4.6 新增"同 net 整网归层"并纳入 DC/AC/POWER 预设（`same_net_consolidate` 默认开）。
  *
  *  为什么需要它：设置里会持久化"预设 + 全部参数"，载入时原本是"先套预设、再用存档值逐项覆盖"，
  *  于是**代码里改过的预设内值会被旧存档盖住**——用户会看到"选了 AC 预设，结果还是旧的 210 条未分层"
  *  （0.4.6 实测就是这个原因）。现在载入时比对版次：落后 → 只套用新预设、丢弃旧覆盖值。 */
-const PRESET_REV = 2;
+const PRESET_REV = 3;
 /** 载入时因预设版次落后而自动套用了新预设 → 在输入页给用户一句提示（可关闭） */
 const presetNotice = ref<string | null>(null);
 
@@ -99,6 +102,8 @@ const configOverrides = computed(() => {
     short_segment_crossing_factor: shortSegmentCrossingFactor.value,
     congestion_balance: congestionBalance.value,
     congestion_balance_passes: congestionBalancePasses.value,
+    same_net_consolidate: sameNetConsolidate.value,
+    same_net_merge_slack: sameNetMergeSlack.value,
   };
   return o;
 });
@@ -140,6 +145,7 @@ function applyParams(v: Record<string, unknown>): void {
   if (str("method")) method.value = str("method")!;
   if (str("optimizer")) optimizer.value = str("optimizer")!;
   if (typeof v.congestion_balance === "boolean") congestionBalance.value = v.congestion_balance;
+  if (typeof v.same_net_consolidate === "boolean") sameNetConsolidate.value = v.same_net_consolidate;
   const map: Array<[keyof typeof configOverrides.value, (n: number) => void]> = [
     ["resolve_conflict_rounds", (n) => (resolveConflictRounds.value = n)],
     ["balance_length_rounds", (n) => (balanceLengthRounds.value = n)],
@@ -159,6 +165,7 @@ function applyParams(v: Record<string, unknown>): void {
     ["short_segment_len", (n) => (shortSegmentLen.value = n)],
     ["short_segment_crossing_factor", (n) => (shortSegmentCrossingFactor.value = n)],
     ["congestion_balance_passes", (n) => (congestionBalancePasses.value = n)],
+    ["same_net_merge_slack", (n) => (sameNetMergeSlack.value = n)],
   ];
   for (const [k, set] of map) {
     const n = num(k);
@@ -195,6 +202,8 @@ function applyPreset(p: "custom" | "hv" | "full" | "ac" | "power"): void {
     viaAreaCost.value = 0.1;
     congestionBalance.value = true;
     congestionBalancePasses.value = 40;
+    sameNetConsolidate.value = true;
+    sameNetMergeSlack.value = 1.15;
   } else if (p === "full") {
     layers.value = 4;
     width.value = 0.2;
@@ -232,6 +241,8 @@ function applyPreset(p: "custom" | "hv" | "full" | "ac" | "power"): void {
     viaAreaCost.value = 0.1;
     congestionBalance.value = true;
     congestionBalancePasses.value = 40;
+    sameNetConsolidate.value = true;
+    sameNetMergeSlack.value = 1.15;
   } else if (p === "power") {
     // POWER：宽线 8mm、更多层（20 层）；其余同 DC 预设
     layers.value = 20;
@@ -1123,6 +1134,16 @@ onBeforeUnmount(() => {
             <label class="prl-label">拥塞均衡轮数</label>
             <input v-model.number="congestionBalancePasses" type="number" min="1" step="5" class="prl-input" />
             <p class="prl-field-hint">最大轮数：越大摊得越彻底、越慢。默认 20，推荐 10–40（超过后基本无收益）</p>
+          </div>
+          <div class="prl-field">
+            <label class="prl-label">同 net 整网归层（3-pin 两段线同层）</label>
+            <input v-model="sameNetConsolidate" type="checkbox" class="prl-input" />
+            <p class="prl-field-hint">同一 net 的多段飞线（3-pin = 2 段、≥4-pin = MST 多段）<strong>整网挪到同一层</strong>；该层放不下时才跨层。判据含硬冲突与层均衡上限，<strong>只减跨层、不新增硬冲突</strong>（实测 1280 网 4 层：跨层 net <strong>65→0</strong>、层线数失衡 <strong>0.0385→0.0089</strong>，同层交叉 +195）。默认开</p>
+          </div>
+          <div class="prl-field">
+            <label class="prl-label">整网归层均衡上限（倍）</label>
+            <input v-model.number="sameNetMergeSlack" type="number" min="1" step="0.05" class="prl-input" />
+            <p class="prl-field-hint">合并后目标层线数不得超过"候选层平均线数 × 本系数"：调大更偏向合并（可能牺牲层均衡），调小更保守。默认 1.15</p>
           </div>
         </div>
         <p class="prl-hint">「硬冲突阈值」越大越宽松（硬冲突、需人工越少，但同层交叉更多）；开启「拥塞均衡」可压圆心层占用峰值（实测 1.56→1.11）+ 走通率到 100%。其余参数未列出的字段用 probe_layer 默认值。短线容忍、拥塞均衡均默认关闭，行为与现状一致</p>

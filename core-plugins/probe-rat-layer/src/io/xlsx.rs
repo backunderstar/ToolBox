@@ -246,11 +246,27 @@ pub fn load_xlsx(
     // 筛选文件（.lst/.txt）放**最后一步**：分层前剔除不在并集白名单内的 net（**大小写不敏感**）。
     if let Some(w) = &whitelist {
         let before = nets.len();
+        // 名单里查无此网的真实原因要能看见：此时 nets 已剔过特殊网/单 pin，
+        // 所以"名单命中 0"可能是 ① 名字对不上（表里没这个 net）② 表里有但只有 1 个 pin（无法成飞线）。
+        let table_names: crate::collections::HashSet<String> =
+            nets.iter().map(|n| n.net_id.to_uppercase()).collect();
+        let unmatched_list_names = w.iter().filter(|k| !table_names.contains(*k)).count();
         nets.retain(|n| w.contains(&n.net_id.to_uppercase()));
+        if nets.is_empty() && before > 0 {
+            warnings.push(format!(
+                "⚠ 筛选文件与 pin 表无交集：名单 {} 条中 {} 条在 pin 表（剔特殊网/单 pin 后）里找不到同名 net。\
+请检查筛选文件的 net 名是否来自同一份 pin 表（常见差异：尾缀 X/大小写以外的后缀、不同版本导出、Sense/Force 名单混用）",
+                w.len(),
+                unmatched_list_names
+            ));
+        }
         warnings.push(format!(
-            "白名单筛选（{} 个筛选文件，大小写不敏感）：保留 {} 个 net（原始 {raw_count} 个，剔特殊网/单 pin 后 {before} 个）",
+            "白名单筛选（{} 个筛选文件，大小写不敏感）：保留 {} 个 net（原始 {raw_count} 个，剔特殊网/单 pin 后 {before} 个）；\
+名单 {} 条中 {} 条未匹配到表内 net",
             filter_paths.len(),
-            nets.len()
+            nets.len(),
+            w.len(),
+            unmatched_list_names
         ));
     }
 
@@ -313,6 +329,27 @@ mod tests {
         assert!(u.contains("NET_B")); // 两文件共有（小写归一化后合并）
         assert!(u.contains("NET_C"));
         assert_eq!(u.len(), 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 名单来自"另一份 pin 表"的场景：名字尾缀不同（如 X 变体）时交集为空，
+    /// 这正是"筛选文件里的 net 没被分层（命中 0）"的形态。
+    #[test]
+    fn filter_names_from_other_table_do_not_match() {
+        let dir = std::env::temp_dir().join(format!("tb-prl3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("other.lst");
+        // 尾缀不同（X 变体）→ 与 pin 表名字不相等，白名单会整份落空
+        std::fs::write(&f, "1_SA10_S1_A_DPS_S1A\n1_SA10_S1_A_DPS_S2A\n").unwrap();
+        let wl = read_net_filter(f.to_str().unwrap()).unwrap();
+        assert_eq!(wl.len(), 2);
+        // 模拟 pin 表侧只有 X 变体：交集应为空（这正是"分层 0 个 net"的形态）
+        let table: crate::collections::HashSet<String> =
+            ["1_SA10_S1_A_DPS_S1AX", "1_SA10_S1_A_DPS_S2AX"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        assert_eq!(wl.iter().filter(|k| table.contains(*k)).count(), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

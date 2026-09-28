@@ -13,6 +13,13 @@ pub struct LayeringConfig {
     /// 同 net 尽量同层的软偏好强度 λ：>0 时启用"先整网、放不下按段拆"的两级决策
     /// （里程碑 0）；λ=0 完全按段（现状）。0 为完全按段，越大越偏向整网同层（少过孔）。
     pub same_net_via_penalty: f64,
+    /// **同 net 整网归层**（默认 true）：分层/SA 之后，把同一 net 的多段飞线（3-pin = 2 段、
+    /// ≥4-pin = MST 多段）整网挪到同一层——同层找不到位置时才允许跨层。判据含硬冲突与层均衡上限，
+    /// 只会减少跨层、不新增硬冲突（见 `post_process::consolidate_same_net_layers`）。
+    pub same_net_consolidate: bool,
+    /// 整网归层的**层均衡上限**：目标层线数不得超过"候选层平均线数 × 本系数"（默认 1.15），
+    /// 防止为了合并而把线堆到同一层。调大=更偏向合并（可能牺牲层均衡），调小=更保守。
+    pub same_net_merge_slack: f64,
     // —— 迭代参数 ——
     pub resolve_conflict_rounds: i64,
     pub balance_length_rounds: i64,
@@ -76,6 +83,8 @@ impl Default for LayeringConfig {
             sector_angle_deg: 45.0,
             same_net_same_layer: false,
             same_net_via_penalty: 0.0,
+            same_net_consolidate: true,
+            same_net_merge_slack: 1.15,
             resolve_conflict_rounds: 12,
             balance_length_rounds: 6,
             minimize_crossings_passes: 6,
@@ -180,6 +189,8 @@ impl LayeringConfig {
             "sa_seed" => self.sa_seed = v.as_u64().unwrap_or(42),
             "same_net_same_layer" => self.same_net_same_layer = b(v)?,
             "same_net_via_penalty" => self.same_net_via_penalty = f(v)?,
+            "same_net_consolidate" => self.same_net_consolidate = b(v)?,
+            "same_net_merge_slack" => self.same_net_merge_slack = f(v)?,
             "keepout_enabled" => self.keepout_enabled = b(v)?,
             "plane_nets_excluded" => self.plane_nets_excluded = b(v)?,
             "feedback_enabled" => self.feedback_enabled = b(v)?,

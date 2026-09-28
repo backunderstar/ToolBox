@@ -354,6 +354,189 @@ fn cell_of(x: f64, y: f64, cmap: &congestion::CongestionMap) -> Option<(usize, u
     }
 }
 
+/// **同 net 整网归层**（同一 net 的 2 段线尽量放同一层，实在放不下才拆层）：
+/// 分层/SA 之后，把"被拆到多层"的多段 net（3-pin = 2 段、≥4-pin = MST 多段）**整网**挪到某一层，
+/// 前提是该层：① 在网内每根线的 `allowed` 交集内；② 与已有线**无硬冲突**（逐线查硬邻接，O(deg)）；
+/// ③ 合并不把该层线数推过 `同 net 归层线数上限` 的均衡阈值（防把线全堆到一层）。
+///
+/// 候选层优先"已经放着该网最多段数的层"（挪动最少、最少扰动），并列时取当前线数最少的层（更均匀）。
+/// 因为判据里含硬冲突检查，**归层只会减少跨层，不会新增硬冲突**；同层交叉可能小幅变化（返回值报告增量）。
+/// 返回 `(归层成功的 net 数, 剩余仍跨层 net 数, 同层交叉增量)`。
+pub fn consolidate_same_net_layers(
+    assignment: &mut HashMap<String, i64>,
+    wires: &[Wire],
+    graph: &ConflictGraph,
+    allowed: &HashMap<String, crate::collections::HashSet<i64>>,
+    soft_pairs: &[(String, String)],
+    cfg: &LayeringConfig,
+    cancel: &crate::cancel::CancelFlag,
+) -> Result<(usize, usize, i64), crate::cancel::LayeringCancelled> {
+    use crate::cancel::check_cancel;
+    if !cfg.same_net_consolidate || assignment.is_empty() {
+        return Ok((0, 0, 0));
+    }
+    let wire_by_id: HashMap<&str, &Wire> = wires.iter().map(|w| (w.wire_id.as_str(), w)).collect();
+    // net → 该网的线 id（按 net 聚合）
+    let mut net_wires: HashMap<String, Vec<String>> = HashMap::default();
+    for w in wires {
+        if assignment.contains_key(&w.wire_id) {
+            net_wires.entry(w.net_id.clone()).or_default().push(w.wire_id.clone());
+        }
+    }
+    let multi: Vec<(String, Vec<String>)> = net_wires
+        .into_iter()
+        .filter(|(_, ws)| ws.len() > 1)
+        .collect();
+    if multi.is_empty() {
+        return Ok((0, 0, 0));
+    }
+    // 层 → 线集合（维护中）
+    let mut layer_wires: HashMap<i64, crate::collections::HashSet<String>> = HashMap::default();
+    for (wid, l) in assignment.iter() {
+        layer_wires.entry(*l).or_default().insert(wid.clone());
+    }
+    // 软交叉邻接（用于统计交叉增量）
+    let mut soft_adj: HashMap<String, crate::collections::HashSet<String>> = HashMap::default();
+    for (a, b) in soft_pairs {
+        soft_adj.entry(a.clone()).or_default().insert(b.clone());
+        soft_adj.entry(b.clone()).or_default().insert(a.clone());
+    }
+    let cross_of = |wid: &str, l: i64, lw: &HashMap<i64, crate::collections::HashSet<String>>| -> i64 {
+        count_soft(wid, l, lw, &soft_adj)
+    };
+    // 完全在单层的 net 先不动
+    let in_one_layer = |ws: &[String]| -> bool {
+        let mut it = ws.iter().filter_map(|w| assignment.get(w));
+        match it.next() {
+            Some(first) => it.all(|l| l == first),
+            None => true,
+        }
+    };
+    let mut todo: Vec<(String, Vec<String>)> = multi
+        .into_iter()
+        .filter(|(_, ws)| !in_one_layer(ws))
+        .collect();
+    // 多段数多的先做（它们跨层代价最大）；同数量按 net 名排序，保证确定性
+    todo.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+
+    let mut merged = 0usize;
+    let mut d_cross_total = 0i64;
+    for (net_id, ws) in &todo {
+        check_cancel(cancel)?;
+        // 候选层 = 网内每根线 allowed 的交集（没有 allowed 记录时视为"不限制，可沿用现状层"）
+        let mut cand: Option<crate::collections::HashSet<i64>> = None;
+        for wid in ws {
+            match allowed.get(wid) {
+                Some(a) if !a.is_empty() => {
+                    cand = Some(match cand {
+                        None => a.clone(),
+                        Some(c) => c.intersection(a).copied().collect(),
+                    });
+                }
+                _ => {}
+            }
+        }
+        let Some(cand) = cand else { continue };
+        if cand.is_empty() {
+            continue;
+        }
+        // 目标层线数（用于均衡判定）
+        let counts: Vec<(i64, i64)> = {
+            let mut v: Vec<(i64, i64)> = cand
+                .iter()
+                .map(|&l| (l, layer_wires.get(&l).map(|s| s.len() as i64).unwrap_or(0)))
+                .collect();
+            v.sort();
+            v
+        };
+        let mean = if counts.is_empty() {
+            0.0
+        } else {
+            counts.iter().map(|(_, c)| *c as f64).sum::<f64>() / counts.len() as f64
+        };
+        let limit = (mean * cfg.same_net_merge_slack).ceil() as i64;
+
+        // 评估每个候选层：优先"已含该网段数最多"（扰动最小），其次线数最少（更均匀），再次交叉增量最小
+        let mut best: Option<(i64, i64, i64, i64)> = None; // (已在该层的段数, 线数, d_cross, layer)
+        for &(l, lc) in &counts {
+            let here = ws.iter().filter(|w| assignment.get(*w) == Some(&l)).count() as i64;
+            if here == 0 {
+                continue; // 至少要保住一段原位（避免凭空搬整网）
+            }
+            // 移入后用该层的线数（正在该层的段不需要再算）
+            let incoming = ws.len() as i64 - here;
+            if lc + incoming > limit {
+                continue;
+            }
+            // 硬冲突检查：待移入的每根线与该层已有线（非同 net）不能有硬冲突
+            let mut ok = true;
+            let mut d_cross = 0i64;
+            for wid in ws {
+                if assignment.get(wid) == Some(&l) {
+                    continue;
+                }
+                for nb in graph.neighbors(wid) {
+                    if layer_wires.get(&l).map(|s| s.contains(&nb)).unwrap_or(false) {
+                        // 同 net 的邻接不算跨网冲突
+                        let same_net = wire_by_id
+                            .get(nb.as_str())
+                            .map(|w| &w.net_id == net_id)
+                            .unwrap_or(false);
+                        if !same_net {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if !ok {
+                    break;
+                }
+                d_cross += cross_of(wid, l, &layer_wires);
+                if let Some(cur) = assignment.get(wid) {
+                    d_cross -= cross_of(wid, *cur, &layer_wires);
+                }
+            }
+            if !ok {
+                continue;
+            }
+            let better = match &best {
+                None => true,
+                Some((bh, blc, bd, _)) => (here, -lc, -d_cross) > (*bh, -*blc, -*bd),
+            };
+            if better {
+                best = Some((here, lc, d_cross, l));
+            }
+        }
+        let Some((_, _, d_cross, target)) = best else { continue };
+        // 提交：把该网所有线搬到 target
+        for wid in ws {
+            let Some(&cur) = assignment.get(wid) else { continue };
+            if cur == target {
+                continue;
+            }
+            if let Some(s) = layer_wires.get_mut(&cur) {
+                s.remove(wid);
+            }
+            layer_wires.entry(target).or_default().insert(wid.clone());
+            assignment.insert(wid.clone(), target);
+        }
+        merged += 1;
+        d_cross_total += d_cross;
+    }
+    // 统计仍跨层的多段网
+    let still_split = todo
+        .iter()
+        .filter(|(_, ws)| {
+            let mut it = ws.iter().filter_map(|w| assignment.get(w));
+            match it.next() {
+                Some(first) => !it.all(|l| l == first),
+                None => false,
+            }
+        })
+        .count();
+    Ok((merged, still_split, d_cross_total))
+}
+
 /// 线 `wid` 在其**软交叉邻接**中有多少个同伴落在 `layer`（同层交叉数；用于拥塞均衡的交叉增量）。
 fn count_soft(
     wid: &str,
