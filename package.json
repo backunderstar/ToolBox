@@ -45,5 +45,24 @@
     "vite-plus": "^0.2.9",
     "vitest": "^4.1.11",
     "vue-tsc": "^3.3.10"
+  },
+  "//pnpm.overrides": [
+    "统一抬高**传递依赖**里的已知漏洞版本（CI 的 pnpm audit 门禁要求零漏洞）。",
+    "都是构建/开发期依赖，不进产品二进制（产品是 Rust exe + 打包好的前端产物），",
+    "但保持门禁绿色才能让 push 不被拦。每次升级完用 `pnpm audit --registry=https://registry.npmjs.org/` 复核。",
+    "注：brace-expansion 4→5 跨大版本，实际只被 minimatch 内部使用；",
+    "升级后以 pnpm lint / build / test 与模板测试全绿验证（见 HANDOVER §6.4）。"
+  ],
+  "pnpm": {
+    "overrides": {
+      "brace-expansion": "^5.0.12",
+      "markdown-it": "^14.3.1",
+      "source-map-js": "^1.2.2",
+      "tinypool": "^2.1.2",
+      "vitest": "^4.1.11",
+      "@vitest/mocker": "^4.1.11",
+      "@vitest/browser-preview": "^4.1.11",
+      "@vue/server-renderer": "^3.5.42"
+    }
   }
 }
