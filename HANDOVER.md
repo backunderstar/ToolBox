@@ -1291,6 +1291,18 @@ cargo test --workspace                 # Rust 测试（当前 62）
   且本机 VS Build Tools 装在**非标准路径** `D:\SDK\Microsoft Visual Studio\18\BuildTools`。
 - **TypeScript 7（tsgo，Go 原生）未升级**：生态未就绪，保持 TS 5.x。
 - **reqwest 锁 0.13.1**：tauri-updater 约束，勿随意升（0.13.4 已发布但没升）。
+- **CI 的 `pnpm audit` 门禁会因"新披露公告"突然变红（2026-09-28 实测）**：v0.4.8 的 CI 里
+  lint/typecheck+build/vitest/clippy/cargo test **全过**，唯独最后一步 `Dependency audit (pnpm)` 失败——
+  本次改动**没碰任何依赖**，是新公告把 v0.4.7 的"通过"变成"失败"。
+  - 本机 registry 是 npmmirror，**没有 audit 端点**（`ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`）→
+    本地复核要显式换源：`pnpm audit --registry=https://registry.npmjs.org/`。
+  - 修法：在 `package.json` 加 `pnpm.overrides` **只抬传递依赖**（当时 10 条：brace-expansion /
+    markdown-it / source-map-js / tinypool(2 条 critical) / vitest+@vitest/mocker+@vitest/browser-preview /
+    @vue/server-renderer），然后 `pnpm install` 更新锁文件。
+  - **`pnpm overrides` 改动必须同步提交 `pnpm-lock.yaml`**，否则 CI 的
+    `pnpm install --frozen-lockfile` 会失败；改完本地按 CI 顺序复跑一遍（含 `--frozen-lockfile`）。
+  - 影响面判断：都是构建/开发期依赖，**不进产品二进制**（产品 = Rust exe + 打包好的前端产物），
+    实际风险低——收紧只为让门禁恢复绿色。
 - Rust crates 走 rsproxy 镜像（`rsproxy-sparse`），vendored 在 `D:\SDK\Rust\.cargo\registry\...`。
 
 ### 6.5 运行时 / 验证
