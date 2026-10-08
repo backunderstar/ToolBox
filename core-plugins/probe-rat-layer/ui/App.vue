@@ -314,8 +314,20 @@ const browserSelected = ref<string | null>(null);
 const browserKind = ref<"input" | "filter" | "outdir">("input");
 const browserSel = ref<string[]>([]); // filter 多选暂存
 const browserMulti = computed(() => browserKind.value === "filter");
-/* 当前工作区（宿主注入）：文件操作只允许在这个根目录下进行 */
+/** 当前工作区（宿主注入）：文件操作只允许在这个根目录下进行 */
 const workspaceRoot = props.api.context.vault ?? "";
+/* 没有当前工作区 → 所有"浏览"都会失败（layer.listDir 只允许工作区/文件输入两个根，
+   而工作区为空时两个根都不存在）。此时必须给出**能照做的指引**，而不是让用户点浏览看报错。
+   注意：context.vault 是挂载时快照，宿主在切工作区时会重新挂载插件 UI（PluginUiView watch），
+   所以这里读一次即可；但如果父级后续传入新 api（同一实例），watch 兜底刷新。 */
+const ctxVault = ref(workspaceRoot);
+watch(
+  () => (props.api.context as { vault?: string | null }).vault,
+  (v) => {
+    ctxVault.value = v ?? "";
+  },
+);
+const workspaceMissing = computed(() => !ctxVault.value.trim());
 /* 文件输入（Inbox，数据根/Input）：待处理文件（如 Allegro pin 表）可只读浏览 */
 const inputDir = (props.api.context.inputDir as string | undefined) ?? "";
 /* 浏览根来源：工作区 或 文件输入（pin 表向导可在两者间切换） */
@@ -330,6 +342,14 @@ async function openBrowser(
   startPath: string,
   kind: "input" | "filter" | "outdir" = "input",
 ): Promise<void> {
+  inputError.value = null;
+  // 没有工作区时浏览必然失败（可读根只有 工作区 / 文件输入 两个）→ 直接给可照做的指引，
+  // 不开一个只会显示"（空目录）"的空弹层。
+  if (workspaceMissing.value) {
+    inputError.value =
+      "还没有当前工作区，无法浏览文件——请在主窗口顶栏的工作区按钮里「新建工作区」或选择一个工作区，再回来配置。";
+    return;
+  }
   browserMode.value = mode;
   browserTitle.value = title;
   browserOpen.value = true;
@@ -426,15 +446,34 @@ function removeFilter(i: number): void {
   filterPaths.value.splice(i, 1);
 }
 
+/** 三个必填项的**统一校验**（首次配置向导与「运行」共用，避免两处判断漂移）：
+ *  ⓪ 有当前工作区（否则连文件浏览/落盘都无处可去）① Allegro pin 表
+ *  ② 筛选文件（至少一个）③ 输出目录。
+ *  返回 null = 通过；否则返回可直接显示的错误文案。 */
+function validateRunInputs(): string | null {
+  if (workspaceMissing.value) {
+    return "还没有当前工作区：请先在主窗口顶栏的工作区按钮里「新建工作区」或选择一个工作区";
+  }
+  if (!inputPath.value.trim()) {
+    return "请先选择输入 1：Allegro pin 表（.xls/.xlsx）";
+  }
+  if (!filterPaths.value.length) {
+    return "请先选择输入 2：筛选文件（必填；.lst/.txt 一行一个 net，可多选并集）";
+  }
+  if (!outDir.value.trim()) {
+    return "请先指定输出目录（必填，必须在当前工作区内）";
+  }
+  return null;
+}
+
 /** 完成首次配置：记录 configured=true 并持久化，进入现有页签 */
 async function completeSetup(): Promise<void> {
   inputError.value = null;
-  if (!inputPath.value.trim()) {
-    inputError.value = "请先选择 Allegro pin 表数据文件（必填）";
-    return;
-  }
-  if (!filterPaths.value.length) {
-    inputError.value = "请先选择至少一个筛选文件（必填；一行一个待分层 net，可多选并集）";
+  // 首次配置也要校验**全部三个必填项**——否则用户配完 pin 表后卡在这一步
+  // （页签里才有筛选/输出目录入口，而未完成配置时页签根本不显示）。
+  const bad = validateRunInputs();
+  if (bad) {
+    inputError.value = bad;
     return;
   }
   try {
@@ -454,6 +493,11 @@ async function completeSetup(): Promise<void> {
     inputError.value = `保存配置失败: ${e}`;
   }
 }
+
+/** 首次配置的"三项都齐了吗"——用于给「完成配置」按钮加禁用态与原因提示 */
+const setupReady = computed(() => validateRunInputs() === null);
+/** 首次配置里还差什么（按钮旁提示，避免"按钮灰着不知道为什么"） */
+const setupMissing = computed(() => validateRunInputs());
 
 /* ---------- 运行 ---------- */
 const status = ref<Status>({ state: "idle" });
@@ -540,18 +584,10 @@ function stopPolling(): void {
 async function startRun(): Promise<void> {
   runError.value = null;
   inputError.value = null;
-  if (!inputPath.value.trim()) {
-    inputError.value = "请选择输入文件（Allegro pin 表 .xls/.xlsx）";
-    activeTab.value = "input";
-    return;
-  }
-  if (!filterPaths.value.length) {
-    inputError.value = "请选择至少一个筛选文件（必填；.lst/.txt/.xls/.xlsx，一行一个待分层 net，可多选并集）";
-    activeTab.value = "input";
-    return;
-  }
-  if (!outDir.value.trim()) {
-    inputError.value = "请指定输出目录（必填）";
+  // 与首次配置向导共用同一套校验（三项必填），避免两处判断漂移
+  const bad = validateRunInputs();
+  if (bad) {
+    inputError.value = bad;
     activeTab.value = "input";
     return;
   }
@@ -838,25 +874,98 @@ onBeforeUnmount(() => {
     <section v-if="!configured" class="prl-setup">
       <div class="prl-setup-head">
         <h2>首次使用：配置分层输入</h2>
-        <p>从 Allegro 导出的 <strong>pin 表数据文件</strong>出发；配置好即可进入分层。之后可在「输入设置」随时修改。</p>
+        <p>
+          共 3 项必填：<strong>pin 表</strong> + <strong>筛选文件</strong>（决定哪些 net 参与分层）
+          + <strong>输出目录</strong>。三项齐了之后才进入分层界面。
+        </p>
       </div>
       <div v-if="inputError" class="prl-error" role="alert">{{ inputError }}</div>
+      <!-- 没有当前工作区：浏览按钮点了也没用（可读根为空）→ 先明确告诉用户去哪儿补 -->
+      <div v-if="workspaceMissing" class="prl-warn" role="alert">
+        <div class="prl-warn-body">
+          <strong>还没有当前工作区</strong>
+          <span>
+            分层结果与筛选文件都放在工作区内，所以需要先有一个工作区：请在主窗口<strong>顶栏的工作区按钮</strong>里
+            点「新建工作区」（或切换到已有工作区），然后回到这里。
+          </span>
+        </div>
+      </div>
       <div class="prl-card">
         <div class="prl-field">
-          <label class="prl-label">Allegro pin 表数据文件（.xls/.xlsx）— 必填</label>
+          <label class="prl-label">输入 1：Allegro pin 表数据文件（.xls/.xlsx）— 必填</label>
           <div class="prl-row">
             <input v-model="inputPath" class="prl-input" placeholder="如 D:\...\in\1.xlsx" />
-            <button class="prl-btn" @click="openBrowser('file', '选择输入文件', '', 'input')">浏览</button>
+            <button
+              class="prl-btn"
+              :disabled="workspaceMissing"
+              :title="workspaceMissing ? '请先在主窗口顶栏新建/选择工作区' : ''"
+              @click="openBrowser('file', '选择输入文件', '', 'input')"
+            >浏览</button>
           </div>
           <p class="prl-hint">
             文件可在当前工作区或「文件输入」目录中浏览选择——通常 Allegro 导出的文件先放到
             文件输入（Inbox），再在这里选中开始分层。
           </p>
         </div>
+        <div class="prl-field">
+          <label class="prl-label">
+            输入 2：筛选文件（.lst/.txt，一行一个 net）— 必填，可多选（多个取并集）
+          </label>
+          <div class="prl-row">
+            <button
+              class="prl-btn"
+              :disabled="workspaceMissing"
+              :title="workspaceMissing ? '请先在主窗口顶栏新建/选择工作区' : ''"
+              @click="openBrowser('file', '选择筛选文件', '', 'filter')"
+            >
+              浏览(可多选)
+            </button>
+            <button v-if="filterPaths.length" class="prl-btn prl-btn-sm" @click="filterPaths = []">
+              清空
+            </button>
+          </div>
+          <div class="prl-filter-box" :class="{ empty: !filterPaths.length }">
+            <div class="prl-filter-head">
+              <span class="prl-filter-count">{{ filterPaths.length }}</span>
+              <span class="prl-filter-title">已选筛选文件（多个取并集）</span>
+              <button v-if="filterPaths.length" class="prl-btn prl-btn-sm" @click="filterPaths = []">清空</button>
+            </div>
+            <div class="prl-filter-list">
+              <span v-if="!filterPaths.length" class="prl-filter-empty">尚未选择——点「浏览(可多选)」</span>
+              <span v-for="(f, i) in filterPaths" :key="f" class="prl-filter-chip">
+                <span class="prl-filter-chip-name">{{ i + 1 }}.&nbsp;{{ basename(f) }}</span>
+                <span class="prl-filter-chip-path">{{ f }}</span>
+                <button class="prl-filter-chip-x" @click="removeFilter(i)" :aria-label="'移除 ' + f">×</button>
+              </span>
+            </div>
+          </div>
+          <p class="prl-hint">
+            不在筛选文件里的 net 全部不参与分层。想一次圈多组网就<strong>多选</strong>几个文件（名单取并集）。
+          </p>
+        </div>
+        <div class="prl-field">
+          <label class="prl-label">输出目录 — 必填（必须在当前工作区内）</label>
+          <div class="prl-row">
+            <input v-model="outDir" class="prl-input" placeholder="如 D:\...\Project\1165P_3D\out" />
+            <button
+              class="prl-btn"
+              :disabled="workspaceMissing"
+              :title="workspaceMissing ? '请先在主窗口顶栏新建/选择工作区' : ''"
+              @click="openBrowser('dir', '选择输出目录', '', 'outdir')"
+            >浏览</button>
+          </div>
+          <p class="prl-hint">未创建会自动创建；产出 report.json / layer_N.lst / csv 等</p>
+        </div>
       </div>
       <div class="prl-actions">
-        <button class="prl-btn prl-btn-primary" :disabled="!inputPath.trim()" @click="completeSetup">
-          完成配置，开始使用
+        <span v-if="setupMissing" class="prl-setup-missing">还差：{{ setupMissing }}</span>
+        <button
+          class="prl-btn prl-btn-primary"
+          :disabled="!setupReady"
+          :title="setupMissing ?? ''"
+          @click="completeSetup"
+        >
+          完成配置，进入分层界面
         </button>
       </div>
     </section>
@@ -880,6 +989,16 @@ onBeforeUnmount(() => {
       <!-- ═══ Tab 1 输入设置 ═══ -->
       <section v-show="activeTab === 'input'" class="prl-pane">
       <div v-if="inputError" class="prl-error" role="alert">{{ inputError }}</div>
+      <!-- 切走工作区/新工作区尚未选中时：这里也要有指引（浏览按钮已禁用） -->
+      <div v-if="workspaceMissing" class="prl-warn" role="alert">
+        <div class="prl-warn-body">
+          <strong>还没有当前工作区</strong>
+          <span>
+            请先在主窗口<strong>顶栏的工作区按钮</strong>里点「新建工作区」或切换到已有工作区，
+            再回来选择输入与输出目录。
+          </span>
+        </div>
+      </div>
 
       <div class="prl-card">
         <div class="prl-card-head">
@@ -898,7 +1017,12 @@ onBeforeUnmount(() => {
             输入 2：筛选文件（必填；.lst/.txt 一行一个 net，空行/# 注释跳过；可**多选**，多个取并集）
           </label>
           <div class="prl-row">
-            <button class="prl-btn" @click="openBrowser('file', '选择筛选文件', '', 'filter')">
+            <button
+              class="prl-btn"
+              :disabled="workspaceMissing"
+              :title="workspaceMissing ? '请先在主窗口顶栏新建/选择工作区' : ''"
+              @click="openBrowser('file', '选择筛选文件', '', 'filter')"
+            >
               浏览(可多选)
             </button>
             <button v-if="filterPaths.length" class="prl-btn prl-btn-sm" @click="filterPaths = []">
@@ -929,7 +1053,12 @@ onBeforeUnmount(() => {
           <label class="prl-label">输出目录（必填，强制指定）</label>
           <div class="prl-row">
             <input v-model="outDir" class="prl-input" placeholder="D:\...\out_demo" />
-            <button class="prl-btn" @click="openBrowser('dir', '选择输出目录', '', 'outdir')">浏览</button>
+            <button
+              class="prl-btn"
+              :disabled="workspaceMissing"
+              :title="workspaceMissing ? '请先在主窗口顶栏新建/选择工作区' : ''"
+              @click="openBrowser('dir', '选择输出目录', '', 'outdir')"
+            >浏览</button>
           </div>
           <p class="prl-hint">必须在当前工作区内；未创建会自动创建。产出 report.json / layer_N.lst / csv 等</p>
         </div>
@@ -1391,12 +1520,14 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* 三项必填 + 提示后内容变高：用 flex-start 而非 center，
+     否则内容高于视口时顶部会被裁掉且滚不到（flex 居中溢出的经典问题） */
+  justify-content: flex-start;
   gap: var(--space-4);
   max-width: 560px;
   width: 100%;
   margin: 0 auto;
-  padding: var(--space-8);
+  padding: var(--space-6) var(--space-8);
   box-sizing: border-box;
 }
 .prl-setup-head h2 {
@@ -1410,6 +1541,13 @@ onBeforeUnmount(() => {
   color: var(--fg-muted);
   font-size: var(--text-sm);
   line-height: 1.6;
+}
+/* 「完成配置」按钮旁：还差哪一项（避免按钮灰着却不知原因） */
+.prl-setup-missing {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
 }
 .prl-tabs {
   flex: none;

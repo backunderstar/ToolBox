@@ -330,7 +330,19 @@ function removeCustom(id: string): void {
           <span class="settings-label">工作区</span>
           <div class="settings-actions">
             <button class="btn" @click="vault.pickWorkspaceRoot">选择数据根目录</button>
-            <span class="settings-hint">围绕一个文件夹展开的工具箱：数据始终是你的</span>
+            <!-- 已配数据根但还没有当前工作区：必须在这里也能新建，否则本页无法自洽
+                 （v-if 分支的「新建工作区」要求 path 已存在，形成死循环） -->
+            <button v-if="vault.state.root" class="btn" @click="createWorkspace">
+              <Icon name="plus" :size="13" />
+              新建工作区
+            </button>
+            <span class="settings-hint">
+              {{
+                vault.state.root
+                  ? "数据根已设置，但还没有工作区——点「新建工作区」开始"
+                  : "围绕一个文件夹展开的工具箱：数据始终是你的"
+              }}
+            </span>
           </div>
         </div>
       </section>

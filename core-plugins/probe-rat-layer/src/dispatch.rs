@@ -977,6 +977,60 @@ fn set_int_field(cfg: &mut LayeringConfig, field: &str, v: i64) {
 mod tests {
     use super::*;
 
+    /// `layer.listDir` 必须接受**三个实际调用点**传来的路径形式（首次配置向导/页签的
+    /// "浏览"都依赖它，否则用户只会看到"浏览失败"）：
+    /// ① 空路径 → 工作区根；② 工作区子目录的绝对路径（工作区按钮切换后）；③ 文件输入目录
+    /// 的绝对路径（"文件输入"按钮切换后——宿主注入的 inputDir 用 `/` 分隔）。
+    /// 越界路径要被钳制回工作区根，而不是报错或泄露外部目录。
+    #[test]
+    fn list_dir_accepts_workspace_and_input_roots() {
+        let base = std::env::temp_dir().join(format!("tb-prl-lsdir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let ws = base.join("Project").join("ws");
+        let inp = base.join("Input");
+        std::fs::create_dir_all(ws.join("sub")).unwrap();
+        std::fs::create_dir_all(&inp).unwrap();
+        std::fs::write(ws.join("a.xlsx"), "x").unwrap();
+        std::fs::write(ws.join("sub/b.lst"), "x").unwrap();
+        std::fs::write(inp.join("pin.xlsx"), "x").unwrap();
+        let ws_s = ws.to_string_lossy().to_string();
+        let inp_s = inp.to_string_lossy().to_string();
+
+        let names = |v: &Value| -> Vec<String> {
+            v.as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|e| e.get("name").and_then(|n| n.as_str()).map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+
+        // ① 空路径 → 工作区根
+        let v = cmd_list_dir(&ws_s, &inp_s, None).expect("空路径应列出工作区根");
+        assert!(names(&v).contains(&"a.xlsx".to_string()), "工作区根应含 a.xlsx");
+
+        // ② 工作区子目录（绝对路径，正斜杠/反斜杠都要能用）
+        let v = cmd_list_dir(&ws_s, &inp_s, Some(&format!("{ws_s}/sub"))).expect("工作区子目录应可列");
+        assert!(names(&v).contains(&"b.lst".to_string()), "sub 应含 b.lst");
+
+        // ③ 文件输入目录（宿主注入的 inputDir 是正斜杠形式）
+        let v = cmd_list_dir(&ws_s, &inp_s, Some(&inp_s)).expect("文件输入目录应可列");
+        assert!(names(&v).contains(&"pin.xlsx".to_string()), "Input 应含 pin.xlsx");
+
+        // 越界 → 钳制回工作区根（不报错、不泄露外部）
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), "x").unwrap();
+        let v = cmd_list_dir(&ws_s, &inp_s, Some(&outside.to_string_lossy()))
+            .expect("越界路径应被钳制而非报错");
+        let got = names(&v);
+        assert!(!got.contains(&"secret.txt".to_string()), "不应列出工作区外的文件");
+        assert!(got.contains(&"a.xlsx".to_string()), "越界应回落到工作区根");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     /// prune_jobs：只清空 jobs/ 下的历史 job 子目录，其他不动。
     #[test]
     fn prune_jobs_removes_all_job_dirs() {

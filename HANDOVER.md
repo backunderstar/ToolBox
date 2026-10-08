@@ -1330,6 +1330,23 @@ cargo test --workspace                 # Rust 测试（当前 62）
 
 ## 7. 重要决策记录
 
+- **首次使用/无工作区的界面死路（2026-09-28 用户实测，已修）**：
+  1. **探针卡分层首次配置向导死路**（用户报的原始 bug）：向导只渲染 pin 表字段，「完成配置」
+     却要求 pin 表 + 筛选文件 + 输出目录三项 → 按钮永久灰着，而筛选/输出目录入口在"完成配置后
+     才显示的页签"里 → 用户彻底卡死。修法：向导补齐两个字段 + 抽 `validateRunInputs()` 共用 +
+     "还差：…"提示；`.prl-setup` 改 `flex-start`（居中溢出裁顶部）。
+  2. **"数据根已设置但没有工作区"连锁死路**（同类排查发现）：首启引导只要求选数据根，
+     `workspace_set_root` 在空 `Project/` 下 `current=None` → 主界面无工作区，
+     **设置页的「新建工作区」被 `v-if="vault.state.path"` 挡住（要 path 才有按钮，而 path 要有工作区）**
+     → 设置页自己无法补救；Input 归位/文件/搜索/备份/插件文件操作全崩；`ensure_workspace_matches`
+     还误报"未配置数据根目录"。修法：选根时**空 Project/ 自动建「默认」工作区**（名字冲突退化「默认2」）；
+     设置页 v-else 也渲染「新建工作区」；错误文案区分"没根"/"没当前工作区"。
+  3. 教训：**任何 `:disabled`/校验都要配上"能达成它的控件"，而且那个控件必须在当前状态下可见**；
+     向导这类"先决条件页"尤其要核对"所需 ≥ 所给"。同类隐患扫过全部插件/宿主界面，
+     `templates/external-plugin` 已按 core-example 的 `vaultMissing` 空态模式补齐。
+- **rustc 1.99 弃用坑（2026-09-28）**：工具链自动升级到 1.99 后 `std::f64::INFINITY` 变 deprecated，
+  本仓库 clippy 以 `-D warnings` 跑 → 整个门禁失败（CI 用 `dtolnay/rust-toolchain@stable`，会同样中招）。
+  已改 `f64::INFINITY`。**提示：工具链自动升级会让"昨天还绿的"仓库变红，改完记得本地跑一遍 clippy。**
 - **更新签名密钥轮换（2026-09-28，用户口令遗失）**：原 `%USERPROFILE%\.tauri\toolbox-updater.key`
   的口令已无法找回，遂**生成新密钥对**并把新公钥写入 `tauri.conf.json → plugins.updater.pubkey`：
   - 新私钥 `%USERPROFILE%\.tauri\toolbox-updater.key`（+ `.key.pub`）；

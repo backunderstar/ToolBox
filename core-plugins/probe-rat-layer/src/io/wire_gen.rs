@@ -1,7 +1,8 @@
 //! 飞线生成：2-pin 单线 / 3-pin share / ≥4-pin MST（移植自 Python `io/wire_gen.py`）。
 
 use crate::model::{Net, NetClass, Pin, Wire};
-use std::f64::INFINITY;
+// 注意：用 `f64::INFINITY` 关联常量，不用 `std::f64::INFINITY`——后者自 rustc 1.99 起 deprecated，
+// 而本仓库 clippy 以 `-D warnings` 运行，会直接把构建判失败。
 
 const _SHARE_SHORT_IGNORE: f64 = 10.0;
 
@@ -47,13 +48,13 @@ pub fn mst_wires(n: &Net, start_i: usize) -> Vec<Wire> {
     let pins = &n.pins;
     let npins = pins.len();
     let mut in_tree = vec![false; npins];
-    let mut dist = vec![INFINITY; npins];
+    let mut dist = vec![f64::INFINITY; npins];
     let mut parent = vec![-1i64; npins];
     dist[0] = 0.0;
     let mut wires: Vec<Wire> = Vec::new();
     for _ in 0..npins {
         let mut u = None;
-        let mut best = INFINITY;
+        let mut best = f64::INFINITY;
         for i in 0..npins {
             if !in_tree[i] && dist[i] < best {
                 best = dist[i];

@@ -205,7 +205,7 @@ function onKeyDown(e: KeyboardEvent): void {
       :title="
         searchEnabled
           ? '搜索文件名与内容（Ctrl+K 聚焦，↑/↓ 选择，Enter 打开）'
-          : '进入「笔记」并选择工作区后可用'
+          : '选择工作区后可用'
       "
     >
       <svg

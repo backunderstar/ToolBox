@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { PluginBridgeApi } from "./bridge";
 
 /**
@@ -16,8 +16,6 @@ const info = ref<{ plugin: string; vault: string; author: string } | null>(null)
 const error = ref<string | null>(null);
 /** 外壳动作日志（顶栏按钮/托盘菜单项触发，source 标记来源） */
 const actionLog = ref<string[]>([]);
-
-const vaultMissing = computed(() => !props.api.context.vault);
 
 onMounted(() => {
   let alive = true;
@@ -64,7 +62,9 @@ async function refreshInfo(): Promise<void> {
       <span class="settings-value">
         作者：{{ info.author }} · 工作区：{{ info.vault || "（未选择）" }}
       </span>
-      <button class="btn btn-sm" @click="refreshInfo" :disabled="vaultMissing">刷新</button>
+      <!-- `example.info` 只回显插件配置与工作区路径，**不依赖工作区** → 不该被 vaultMissing 禁用
+           （否则没有工作区时连自己的配置都刷不出来） -->
+      <button class="btn btn-sm" @click="refreshInfo">刷新</button>
     </div>
 
     <div class="settings-row">

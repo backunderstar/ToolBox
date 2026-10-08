@@ -236,7 +236,50 @@ pub fn workspace_get(app: tauri::AppHandle) -> Result<WorkspaceInfo, String> {
     info(&app)
 }
 
-/// 设置数据根目录：确保 Project/ 存在，current 自动取第一个工作区。
+/// 默认工作区名：数据根下 Project/ 为空时自动创建它。
+/// 解决的问题（2026-09 用户实测的死路）：首次引导只让用户选"数据根"，Project/ 是新建的空目录
+/// → `current` 为 None → 主界面照常进入但**没有任何工作区**：设置页「新建工作区」按钮被
+/// `v-if="vault.state.path"` 挡住（要 path 才显示按钮，而 path 要有工作区才有）、探针卡分层的
+/// 文件浏览报"未配置工作区"、Input 归位/files/搜索/备份全部不可用，且没有任何入口能补救。
+/// 因此把"选根"这一步做成自洽的：根下没有工作区就地建一个并设为当前。
+pub const DEFAULT_WORKSPACE: &str = "默认";
+
+/// 数据根下的 Project/ 目录（不存在则创建），供选根/新建工作区复用。
+fn ensure_projects_dir(dir: &std::path::Path) -> Result<PathBuf, String> {
+    let proj = dir.join(PROJECTS_DIR);
+    std::fs::create_dir_all(&proj).map_err(|e| format!("创建 Project/ 目录失败: {e}"))?;
+    Ok(proj)
+}
+
+/// 工作区名校验（新建工作区用）：非空、不以 `.` 开头、不含路径分隔符与 Windows 非法字符。
+fn validate_ws_name(name: &str) -> Result<String, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("工作区名称不能为空".to_string());
+    }
+    if name.starts_with('.') || name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) {
+        return Err(format!("工作区名称含非法字符: {name}"));
+    }
+    Ok(name)
+}
+
+/// 在 Project/ 下创建并落地工作区（含 `.toolbox` 元数据）。已存在 → 报错（与 `workspace_create` 同语义）。
+/// 只负责"建目录"，**不切换当前工作区**（切换由调用方 `save_settings` 决定）。
+fn create_workspace_in(root: &str, name: &str) -> Result<(), String> {
+    let name = validate_ws_name(name)?;
+    let ws = PathBuf::from(root).join(PROJECTS_DIR).join(&name);
+    if ws.exists() {
+        return Err(format!("工作区已存在: {name}"));
+    }
+    std::fs::create_dir_all(&ws).map_err(|e| format!("创建工作区失败: {e}"))?;
+    if let Err(e) = ensure_ws_meta(&ws) {
+        crate::core::log::warn(&format!("[workspace] 元数据维护失败: {e}"));
+    }
+    Ok(())
+}
+
+/// 设置数据根目录：确保 Project/ 与 Input/ 存在；current 取第一个工作区，
+/// **若 Project/ 下没有任何工作区则自动创建并选中 `DEFAULT_WORKSPACE`**（见该常量说明）。
 /// 传空串 = 未实现清除（数据根是应用核心配置，不提供 UI 清除）。
 #[tauri::command]
 pub fn workspace_set_root(app: tauri::AppHandle, path: String) -> Result<WorkspaceInfo, String> {
@@ -244,15 +287,25 @@ pub fn workspace_set_root(app: tauri::AppHandle, path: String) -> Result<Workspa
     if !dir.is_dir() {
         return Err(format!("路径不是有效文件夹: {path}"));
     }
-    let proj = dir.join(PROJECTS_DIR);
-    std::fs::create_dir_all(&proj).map_err(|e| format!("创建 Project/ 目录失败: {e}"))?;
+    let proj = ensure_projects_dir(&dir)?;
     // 文件输入（Inbox）目录：数据根/Input（未知/待分类文件的暂存区）
     let input = dir.join(INPUTS_DIR);
     std::fs::create_dir_all(&input).map_err(|e| format!("创建 Input/ 目录失败: {e}"))?;
-    let current = list_workspaces(&proj)
-        .into_iter()
-        .map(|i| i.name)
-        .next();
+    let mut current = list_workspaces(&proj).into_iter().map(|i| i.name).next();
+    if current.is_none() {
+        // 空 Project/（全新数据根）或名字冲突（已有名为「默认」的文件而非目录）→ 退化为带序号的名字
+        let mut name = DEFAULT_WORKSPACE.to_string();
+        for seq in 2..100 {
+            match create_workspace_in(&dir.to_string_lossy(), &name) {
+                Ok(()) => {
+                    current = Some(name.clone());
+                    break;
+                }
+                Err(e) if e.starts_with("工作区已存在") => name = format!("{DEFAULT_WORKSPACE}{seq}"),
+                Err(e) => return Err(e),
+            }
+        }
+    }
     save_settings(&app, &dir.to_string_lossy(), current.as_deref())?;
     let _ = app.emit("workspace-changed", ());
     info(&app)
@@ -284,23 +337,8 @@ pub fn workspace_create(app: tauri::AppHandle, name: String) -> Result<Workspace
     let Some(root) = read_root(&app) else {
         return Err("尚未配置数据根目录（请先完成引导）".to_string());
     };
-    let name = name.trim().to_string();
-    if name.is_empty() {
-        return Err("工作区名称不能为空".to_string());
-    }
-    if name.starts_with('.')
-        || name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
-    {
-        return Err(format!("工作区名称含非法字符: {name}"));
-    }
-    let ws = PathBuf::from(&root).join(PROJECTS_DIR).join(&name);
-    if ws.exists() {
-        return Err(format!("工作区已存在: {name}"));
-    }
-    std::fs::create_dir_all(&ws).map_err(|e| format!("创建工作区失败: {e}"))?;
-    if let Err(e) = ensure_ws_meta(&ws) {
-        crate::core::log::warn(&format!("[workspace] 元数据维护失败: {e}"));
-    }
+    let name = validate_ws_name(&name)?;
+    create_workspace_in(&root, &name)?;
     save_settings(&app, &root, Some(&name))?;
     let _ = app.emit("workspace-changed", ());
     info(&app)
@@ -315,10 +353,16 @@ fn normalize(s: &str) -> String {
 }
 
 /// 服务端校验：命令携带的 `vault` 参数必须等于当前工作区路径
-/// （数据根/Project/<current>；未配置根 → 报"请先完成引导"）。
+/// （数据根/Project/<current>；未配置根或未选中工作区 → 给出区分开的提示）。
 pub fn ensure_workspace_matches(app: &tauri::AppHandle, vault: &str) -> Result<(), String> {
     let Some(cur) = current_workspace_path(app)? else {
-        return Err("未配置数据根目录，请先完成基础配置".to_string());
+        // 区分两种情形：数据根都没配 vs 配了根但没有当前工作区（后者曾误报"请先完成基础配置"，
+        // 而用户其实已经配好了根——提示与实际不符，排查时被误导）。
+        return Err(if read_root(app).is_none() {
+            "未配置数据根目录，请先完成基础配置".to_string()
+        } else {
+            "未选择当前工作区（请在顶栏工作区按钮或设置页「新建/选择工作区」）".to_string()
+        });
     };
     let same = {
         #[cfg(target_os = "windows")]
@@ -360,6 +404,57 @@ mod tests {
         let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, vec!["MG5"], "应只识别 Project 下子目录: {names:?}");
         assert!(items[0].meta.is_some(), "应读到 .toolbox 元数据");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 名字校验：空/`.` 开头/含分隔符与 Windows 非法字符都要拒绝（新建工作区与自动创建共用）。
+    #[test]
+    fn validate_ws_name_rejects_illegal() {
+        assert!(validate_ws_name("  MG5  ").is_ok(), "合法名应通过并 trim");
+        assert_eq!(validate_ws_name("  MG5  ").unwrap(), "MG5");
+        for bad in ["", "   ", ".hidden", "a/b", "a\\b", "C:x", "a*b", "a?b", "a\"b", "a<b", "a>b", "a|b"] {
+            assert!(validate_ws_name(bad).is_err(), "非法名应被拒绝: {bad:?}");
+        }
+    }
+
+    /// 回归（用户实测死路）：数据根下 Project/ 为空时，**必须自动建一个工作区**，
+    /// 否则 current 为 None → 主界面无工作区 → 设置页的「新建工作区」被 `v-if="path"` 挡住、
+    /// 插件浏览报"未配置工作区"，而没有任何入口能补救。
+    /// 这里直接测 `create_workspace_in` + `list_workspaces` 的组合语义（不依赖 AppHandle）。
+    #[test]
+    fn empty_project_gets_default_workspace() {
+        let base = std::env::temp_dir().join(format!("tb-ws-default-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let proj = ensure_projects_dir(&base).unwrap();
+        assert!(proj.is_dir(), "选根时应创建 Project/");
+
+        // 模拟修复后的 workspace_set_root：空 Project/ → 建默认工作区
+        let mut current = list_workspaces(&proj).into_iter().map(|i| i.name).next();
+        assert!(current.is_none(), "前置：空 Project/ 应无工作区（这就是曾经的空窗）");
+        if current.is_none() {
+            create_workspace_in(&base.to_string_lossy(), DEFAULT_WORKSPACE).unwrap();
+            current = list_workspaces(&proj).into_iter().map(|i| i.name).next();
+        }
+        assert_eq!(current.as_deref(), Some(DEFAULT_WORKSPACE), "应自动选中默认工作区");
+        assert!(proj.join(DEFAULT_WORKSPACE).join(".toolbox/workspace.json").is_file(), "元数据应落地");
+
+        // 已有工作区时不重复自动创建（选根只补空窗）
+        let names: Vec<String> = list_workspaces(&proj).into_iter().map(|i| i.name).collect();
+        assert_eq!(names, vec![DEFAULT_WORKSPACE.to_string()]);
+
+        // 名字冲突（已有同名**文件**）→ 报"已存在"，由调用方退化为「默认2」
+        let base2 = base.join("conflict");
+        let proj2 = ensure_projects_dir(&base2).unwrap();
+        std::fs::write(proj2.join(DEFAULT_WORKSPACE), "x").unwrap();
+        let err = create_workspace_in(&base2.to_string_lossy(), DEFAULT_WORKSPACE).unwrap_err();
+        assert!(err.starts_with("工作区已存在"), "冲突应报已存在: {err}");
+        create_workspace_in(&base2.to_string_lossy(), &format!("{DEFAULT_WORKSPACE}2")).unwrap();
+        assert_eq!(
+            list_workspaces(&proj2).into_iter().map(|i| i.name).collect::<Vec<_>>(),
+            vec![format!("{DEFAULT_WORKSPACE}2")],
+            "退化名应可创建"
+        );
+
         let _ = std::fs::remove_dir_all(&base);
     }
 }

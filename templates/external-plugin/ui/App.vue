@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import type { PluginBridgeApi } from "./bridge";
 
 /**
@@ -12,6 +12,11 @@ import type { PluginBridgeApi } from "./bridge";
  * 只引用宿主设计令牌（tokens.css 变量，见 DEVELOPER.md §6），随亮暗主题自适应。
  */
 const props = defineProps<{ api: PluginBridgeApi }>();
+
+/* 没有当前工作区时，"工作区文件/搜索"这类依赖 vault 的能力都会失败——
+   这里用一个统一的 empty-state + 禁用，而不是把后端报错甩给用户
+   （模板是给人照抄的，所以示范正确姿势：**必有补救指引**）。 */
+const vaultMissing = computed(() => !props.api.context.vault);
 
 const greeting = ref<string | null>(null);
 const events = ref<string[]>([]);
@@ -145,9 +150,10 @@ onBeforeUnmount(off);
         <h3>工作区文件</h3>
         <code class="tpl-cmd">api.call("fileList") → fs.listDir</code>
       </div>
-      <button class="tpl-btn" :disabled="filesBusy" @click="listFiles">
+      <button class="tpl-btn" :disabled="filesBusy || vaultMissing" @click="listFiles">
         {{ filesBusy ? "列文件中…" : "列出 vault 内 Markdown" }}
       </button>
+      <p v-if="vaultMissing" class="tpl-meta">请先在主窗口顶栏选择或新建一个工作区</p>
       <p v-if="fileCount > 0" class="tpl-meta">共 {{ fileCount }} 个 .md（显示前 {{ files.length }} 个）</p>
       <ul v-if="files.length" class="tpl-files">
         <li v-for="f in files" :key="f" class="tpl-file">{{ f }}</li>
@@ -164,10 +170,11 @@ onBeforeUnmount(off);
         <input
           v-model="searchQuery"
           class="tpl-input"
-          placeholder="全文搜索（FTS + 插件提供者）"
+          :disabled="vaultMissing"
+          :placeholder="vaultMissing ? '请先选择工作区' : '全文搜索（FTS + 插件提供者）'"
           @keydown.enter="doSearch"
         />
-        <button class="tpl-btn" :disabled="searchBusy" @click="doSearch">
+        <button class="tpl-btn" :disabled="searchBusy || vaultMissing" @click="doSearch">
           {{ searchBusy ? "搜索中…" : "搜索" }}
         </button>
       </div>
